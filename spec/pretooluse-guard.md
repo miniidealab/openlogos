@@ -881,7 +881,7 @@ Windows 上 guard-check 读取 `tool_name` 的两条路径同时失效：`python
 - **内置默认**：`guard.exempt` 缺省时等价于 `["logos/resources/reference/", "logos/resources/verify/baseline-seed-runs/*/staging/", "logos/environments.yaml"]`；显式写出时以写出内容为准，包括显式空数组 `[]`（表示不豁免任何路径，不回落内置默认）。`guard.exempt` 缺省时，`openlogos exempt add` 与 `openlogos exempt remove` 都先把内置默认物化为显式数组再修改；删光全部条目后写入显式 `[]`。
 - **条目语法**：项目根相对路径，`/` 分隔；以 `/` 结尾表示该目录本身及其全部后代（完整段匹配），否则只匹配该单个文件；`*` 只能独占一个路径段，匹配恰好一个路径段，且被匹配的实际段须满足 `^[A-Za-z0-9][A-Za-z0-9._-]*$`。拒绝：绝对路径、含 `..` / `.` / 空段、含 `\`、空串、`/`、单独 `*`、以 `logos/.openlogos-runtime/` 开头、忽略规则来源（任意层级的 `.gitignore`、`.git/info/exclude`）、`.git` 本身或 `.git/` 下路径，以及 `logos/logos.config.json`——exempt 不能把保护范围来源与 git 元数据移出保护。手工写入配置的此类条目按非法条目跳过。
 - **与原规则的等价性**：内置默认第一项与原 R-REF 命中集合相同（`logos/resources/reference` 本身及其后代，`reference-evil`、`references` 不命中）；第二项与原 R-STAGING 相同（第 5 段为单层 run_id 且满足标识符约束、第 6 段恰为 `staging`、其后 0 个或多个后代段；`staging-backup`、多层伪 run 路径不命中）。§资料目录与基线 staging 默认路径豁免（规范性）「仍受保护的相邻路径」表继续有效。
-- **环境登记表（environment-registry，决策 C07）**：内置默认第三项 `logos/environments.yaml` 只匹配该单个文件（不以 `/` 结尾）。它是运维配置而非业务逻辑——环境定义、别名、健康检查与版本地址、密钥**变量名**——修改不需立案；真正执行部署的脚本仍在受保护的源码目录。同目录的 `logos/environments.yml`、`logos/environments.yaml.bak` 等不命中。已显式写出 `guard.exempt` 的项目不自动获得该项，需由用户经保护范围命令手动添加。
+- **环境登记表（environment-registry，决策 C07）**：内置默认第三项 `logos/environments.yaml` 只匹配该单个文件（不以 `/` 结尾）。它是运维配置而非业务逻辑——环境定义、别名、健康检查与版本地址、密钥**变量名**——修改不需立案；真正执行部署的脚本仍在受保护的源码目录。同目录的 `logos/environments.yml`、`logos/environments.yaml.bak` 等不命中。已显式写出 `guard.exempt` 的项目不自动获得该项，需由用户经保护范围命令手动添加。**例外——已配置门禁的登记表**（来源变更 environment-promotion-approval，决策 C11）：该文件内容中出现 `promote_from` 或 `require_approval` 字段名时，它是部署门禁策略来源，不适用本项内置默认或显式 `guard.exempt` 中的同名条目，判定见「保护范围变更的宿主原生审批（C14）」中的「已配置门禁的环境登记表」。
 - **字段缺省**（`guard` 或 `guard.exempt` 不存在）→ 使用内置默认。
 - **配置损坏**（`logos.config.json` 无法解析，或 `guard` / `guard.exempt` 类型不符）→ exempt 视为 `[]`，不豁免任何路径，并在 stderr 输出警告；不回落内置默认（例如显式 `guard.exempt: []` 之后配置损坏，`logos/resources/reference/x.md` 仍受保护）。单个非法条目跳过并警告，其余条目照常生效。
 - 两种模式（git 判据生效 / 非 git 回落）都从 `guard.exempt` 读取豁免；`is_whitelisted_path` 不再硬编码 R-REF / R-STAGING 两条规则。
@@ -1032,7 +1032,7 @@ git 元数据**不采集**（git 自身或引擎写入、变化频繁）：`obje
 - **处理**：独立调用不报告变化。不存在未关闭记录时不拍快照；存在未关闭记录时，调用前 `snapshot --rebase-only`、调用后（PostToolUse / PostToolUseFailure）`check --rebase-only`，求出本次调用改动的路径，只把这些路径在全部未关闭记录中的基线更新为调用后的内容，其余路径的基线不动。后台服务运行期间的 `checkout` / `pull` 因此不会在之后的检查中被误报；后台随后再改这些路径时，内容与新基线不同，照样会被发现。
 - **引擎 restore 调用（R9a，按 C13 同等对待）**：允许 `cd` 前缀段，`node "<引擎路径>" restore <record_id> -- <path>` 必须是唯一的非 `cd` 段，且引擎路径须等于已部署的托管路径（Claude 宿主 `$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs`，Cursor 宿主 `.cursor/hooks/openlogos-guard-post.cjs`）。满足时不报告变化，只把被恢复路径的基线（各未关闭记录中的条目与 `raw-baseline.json`）改回被恢复记录中的执行前状态，并清除该路径的去重条目；其他路径的基线不受影响。这样这次调用拍下的快照不会把违规后的内容当作执行前状态，恢复动作也就不会被误报为新变化。与其他命令组成复合调用（如 `node "<引擎路径>" restore … && echo x > other`）时不享受此豁免，按普通 Bash 调用拍快照并对比。
 - **不豁免**：任一段不满足（如 `git status && node modify-source.js`、`git diff > src/a.ts`、`git apply $(…)`、`openlogos sync && node modify-source.js`）→ 豁免不传播到整条调用，按普通调用拍快照并对比，反馈提示拆分调用。
-- **受限命令优先**：`openlogos exempt add|remove`、`openlogos ignore add|remove` 先过「保护范围变更的宿主原生审批」，用户批准并执行后再按本条处理基线。
+- **受限命令优先**：`openlogos exempt add|remove`、`openlogos ignore add|remove`，以及部署审批类命令 `openlogos approve …` 与带 `--force-promote` 的 `openlogos deploy …`（来源变更 environment-promotion-approval）先过「保护范围变更的宿主原生审批」，用户批准并执行后再按本条处理基线。
 - **残余风险（规范性声明）**：
   1. git 自身触发的钩子（如 pre-commit 改写文件）、git 别名中以 `!` 执行的 shell 命令、过滤器与外部 diff 驱动产生的写入，都归属该 git 调用，不报告；
   2. 独立 openlogos 调用内部执行的用户配置命令（如 `openlogos verify` 的 `pre_run_command`、`openlogos smoke` 的 `command`）产生的写入同样归属该调用，不报告；
@@ -1040,16 +1040,23 @@ git 元数据**不采集**（git 自身或引擎写入、变化频繁）：`obje
 
 ### 保护范围变更的宿主原生审批（C14）
 
-- **受限命令**：`openlogos exempt add|remove`、`openlogos ignore add|remove`（`list` 不受限）。在任何 lifecycle、任何提案状态下都受限（有活跃提案时也需确认），且在两种模式下都先于安全白名单与独立调用豁免识别。受限命令只接受独立调用形态（允许 `cd` 前缀段）；复合形态一律 exit 2。
+- **受限命令**：`openlogos exempt add|remove`、`openlogos ignore add|remove`（`list` 不受限）；部署审批类命令（来源变更 environment-promotion-approval，决策 C05）：`openlogos approve …`（任何参数形态，含 `--help`）与带 `--force-promote` 的 `openlogos deploy …`（不带 `--force-promote` 的 `openlogos deploy` 不受限）。在任何 lifecycle、任何提案状态下都受限（有活跃提案时也需确认），且在两种模式下都先于安全白名单与独立调用豁免识别。受限命令只接受独立调用形态（允许 `cd` 前缀段）；复合形态一律 exit 2。
 - **确认来源**：确认必须来自宿主对**这一次实际工具调用**的原生审批。guard 不采信 AI 在对话中转述的「用户已同意」，也不使用任何可被普通工具调用伪造的本地凭据文件。
 - **Claude Code**：PreToolUse 按 hook 输入的 `permission_mode` 处理：
-  - `default` 或 `acceptEdits` → stdout 输出 `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"该命令会改变 guard 的保护范围（<命令原文>），需要您确认后执行"}}`，exit 0。由宿主对这一次调用弹出审批：用户批准则执行（之后按独立 openlogos 调用更新基线），拒绝则不执行。
+  - `default` 或 `acceptEdits` → stdout 输出 `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"该命令会改变 guard 的保护范围（<命令原文>），需要您确认后执行"}}`，exit 0。部署审批类命令的 reason 按类别改写：`approve` 为「该命令会写入部署审批（<命令原文>），需要您确认后执行」，`--force-promote` 为「该命令会越过晋级检查（<命令原文>），需要您确认后执行」。由宿主对这一次调用弹出审批：用户批准则执行（之后按独立 openlogos 调用更新基线），拒绝则不执行。
   - 其他值（`bypassPermissions`、`dontAsk`、`auto`、`plan`）、字段缺失或未知值、非交互运行 → exit 2 阻断，reason：「当前权限模式（<mode>）下宿主不会弹出确认，无法证明由用户批准。请让用户在终端用 `! <命令原文>` 自行执行，或切换到默认权限模式后重试；不要用对话中的口头同意替代。」（双通道输出）。
   - **依据**：Claude Code 官方 hooks 文档说明，`permissionDecision: "ask"` 在 `bypassPermissions` / `dontAsk` 模式下静默放行，在非交互模式下按 `defer` 处理，因此只有 `default` / `acceptEdits` 能保证弹出审批。实施时以真实宿主再次核实；若核实结果与此不同，以「不能证明会弹出审批即阻断」为不变量收紧。
 - **Cursor**：`beforeShellExecution` 对受限命令返回 `{"permission": "ask", ...}`；宿主在自动运行等模式下是否仍弹出审批，以真实宿主实测为准；实测不能保证弹出时改为 deny，并在 `spec/cursor-plugin.md` 写明。
 - **其他宿主**：不能保证人机审批 → 阻断受限命令（本案不改其适配层的，见「已知覆盖限制」）。
 - **`--auto` / 无人值守**：`openlogos next --auto` 的 standing 授权不覆盖保护范围变更。无人值守运行通常处于 `bypassPermissions` / `auto` / 非交互模式，受限命令因此被阻断，不另设机制。**对宿主的合同要求**：任何驱动 AI 会话的宿主 driver（如 RunLogos 全自动模式）不得代替用户批准此类宿主审批，必须把审批交给真实用户，或让该调用保持阻断。
 - **保护范围来源受保护**：各级 `.gitignore`、`info/exclude`、项目内 `core.excludesFile` 文件与 `logos/logos.config.json`（`guard.exempt` / `guard.unversioned` 所在的配置文件）属不可豁免项，纳入受保护判定与每次事后检查快照，即使被 git 忽略、位于白名单或 exempt 目录之下也受保护，Edit / Write / Bash 直接修改须立案；`logos.config.json` 中的保护范围只由经审批的受限子命令写入（之后按独立 openlogos 调用更新基线），`openlogos sync` 只按配置当前内容渲染托管区块、不改配置；`.gitignore` 托管区块只由经审批的 `openlogos ignore` 与 `openlogos sync`（按配置重渲染，适用独立 openlogos 调用豁免）写入。
+- **已配置门禁的环境登记表**（来源变更 environment-promotion-approval，决策 C11，D14）：
+  - **识别**：guard 读取 `logos/environments.yaml` 当前内容，出现 `promote_from` 或 `require_approval` 字段名，或出现反斜杠字符（YAML 双引号键可用 `\u`、`\x` 转义或续行写出字段名，guard 不解析 YAML、无法可靠证明无门禁），即视为已配置门禁；误判只会多拦。与之配套，登记表加载器要求门禁字段以普通键名书写，原文不含字段名字面量而解析出门禁字段时按 `ENV_FIELD_INVALID` 拒绝（`spec/environments.md` §12.1），因此 CLI 认定的门禁必然被本条识别（review delta-r1 F2）。文件不存在，或既无两个字段名也无反斜杠字符时不适用本条。
+  - **保护**：已配置门禁时，该文件是部署门禁策略来源，与「保护范围来源受保护」同属不可豁免项——不适用内置默认豁免或 `guard.exempt`，不以活跃提案作为放行理由，有无活跃提案、任何 lifecycle 下结论相同。
+  - **Edit / Write / MultiEdit / NotebookEdit**：Claude Code 在 `permission_mode` 为 `default` / `acceptEdits` 时返回 `permissionDecision: ask`，reason「该修改会改变部署门禁配置（logos/environments.yaml），需要您确认后执行」，由宿主对这一次修改弹出审批；其他模式、字段缺失、未知值、非交互运行 → exit 2，reason 提示由用户自行编辑该文件，或切换到默认权限模式后重试。不区分修改是否削弱门禁。
+  - **Bash / PowerShell**：可确定写入目标为该文件的形态（重定向、`tee`、`sed -i`、`rm` / `mv` / `cp` 目标等）一律 exit 2（不返回 `ask`），提示同上；无法事前确定目标的写法属「已知覆盖限制」第 4、7 条。
+  - **Cursor 与其他宿主**：不能保证弹出审批的入口一律阻断；Cursor `beforeShellExecution` 对可确定写入或删除该文件的命令返回 deny，文件编辑为事后报告（同 Cursor 既有限制）。
+  - **未识别为已配置门禁**（既无两个字段名也无反斜杠字符）：按 `guard.exempt`（含内置默认）判定，行为与引入前一致；从无门到加门的那一次修改按此放行。
 
 ### Claude Code hook 注册与引擎分发
 
@@ -1113,7 +1120,7 @@ git 元数据**不采集**（git 自身或引擎写入、变化频繁）：`obje
 2. 事后检查发生在写入之后：受保护内容已被改动，依赖反馈与恢复合同回滚；超过 5 MiB 或无法读取的条目不可自动恢复；恢复命令在 git 对象回收前有效。
 3. 独立 git / openlogos 调用的残余风险见「独立 git / openlogos 调用豁免」。
 4. Bash 经无法事前确定目标的写法（如 `node -e`）写入 `logos/.openlogos-runtime/` 时，该目录被忽略且不在快照范围内，事后检查无法发现；运行时目录的保护以 Edit / Write 事前阻断与可确定目标的 Bash 事前阻断为限。
-5. qoder / workbuddy / zcode 的现有 shell 判定若把 `openlogos *` 视为安全命令，会放行保护范围变更受限命令而不经宿主审批；本案不改这三个适配层，该差异如实保留。
+5. qoder / workbuddy / zcode 的现有 shell 判定若把 `openlogos *` 视为安全命令，会放行保护范围变更受限命令（含部署审批类命令 `openlogos approve` 与带 `--force-promote` 的 `openlogos deploy`）而不经宿主审批；这三个适配层也不实施「已配置门禁的环境登记表」保护；本案与 environment-promotion-approval 均不改这三个适配层，该差异如实保留。
 7. **威胁模型**：guard 防的是 AI 无意或惯性越界，不防有意对抗的 agent（例如它可以修改白名单内 `.claude/` 下的 hook 注册，或以无法事前确定目标的写法篡改运行时目录）。C14 的保证范围是：在宿主会弹出审批的模式下，保护范围变更必须经用户在宿主界面批准。
 6. 被 git 忽略、不在 `logos/resources/` 下、未被跟踪且不属不可豁免项的内容按设计不受保护，事后检查不覆盖。
 

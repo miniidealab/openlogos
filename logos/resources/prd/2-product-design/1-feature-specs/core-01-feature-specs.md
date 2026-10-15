@@ -5079,8 +5079,9 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 
 - 项目可在 `logos/environments.yaml` 登记环境：`schema_version: 1` 与 `environments` 数组，每项含 `id`（必填，`^[a-z0-9][a-z0-9-]*$`）、`name`（必填）、`tier`（必填，`dev | test | staging | prod`）、`aliases`、`description`、`health`、`version`、`secrets`（只写环境变量名）。id 与 alias 不区分大小写全局唯一。
 - 文件不存在表示未启用环境管理，全部既有行为不变；文件存在但非法时相关命令 fail-closed（`ENV_REGISTRY_INVALID`），`status` 不崩溃并输出 `environment_registry_error`。
-- 未知字段只警告（`ENV_UNKNOWN_FIELD`），为后续 C 提案预留。环境项可选的 `deploy` 字段声明部署执行方式（来源变更 environment-deploy，§2.94）：只允许引用仓库内脚本与 CI 工作流、不承载命令字符串（D13），由 `env check` 与 `deploy` 校验，非法时按登记表非法处理。
-- 登记表由 deployment-designer 按部署方案产出，RunLogos 或人可直接编辑；它属于 `guard.exempt` 内置默认，修改不需立案（决策 C07）。`openlogos init` 不默认生成该文件。
+- 未知字段只警告（`ENV_UNKNOWN_FIELD`）。环境项可选的 `deploy` 字段声明部署执行方式（来源变更 environment-deploy，§2.94）：只允许引用仓库内脚本与 CI 工作流、不承载命令字符串（D13），由 `env check` 与 `deploy` 校验，非法时按登记表非法处理。
+- 环境项可选的 `promote_from`（上游环境 id）与 `require_approval`（布尔）声明晋级顺序与审批门禁（来源变更 environment-promotion-approval，§2.95）：只在配置了 `deploy` 的环境上合法；`promote_from` 只接受登记表中已存在的环境 id（不接受 alias），不得指向自身，各环境之间不得成环；两个字段须以普通键名书写（不得用 YAML 转义等写法，否则 CLI 认定的门禁可能逃过 guard 识别）；非法时 `env check` 与 `deploy` 以 `ENV_FIELD_INVALID` / `ENV_REGISTRY_INVALID` 拒绝。
+- 登记表由 deployment-designer 按部署方案产出，RunLogos 或人可直接编辑；它属于 `guard.exempt` 内置默认，修改不需立案（决策 C07）。例外：只要任一环境配置了 `promote_from` 或 `require_approval`，该文件就是门禁策略来源，不再适用默认豁免或 `guard.exempt`、不以活跃提案放行，AI 对它的直接修改与删除须经宿主原生审批由人批准（来源变更 environment-promotion-approval，决策 C11，§2.95.5）。`openlogos init` 不默认生成该文件。
 - `deployment_gates.<module>.environments` 保留原语义，登记表存在时由 `env check` 校验其引用均已登记。
 
 ### 2.93.2 `--env` 解析
@@ -5103,7 +5104,7 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 
 ### 2.93.5 本机部署账本与已验证判据
 
-- 账本 `logos/.openlogos-runtime/deployments.jsonl` 只由 `deploy-done --env`、`deploy`（来源变更 environment-deploy，§2.94）与 `smoke --env` 写入；不进 git、不同步（单机，决策 C02）。**正常路径只追加**：两个写入方共用同一把账本锁（运行态目录下的锁文件），每次在锁内追加一整行。**写入失败时只撤销本次写入**：追加中途失败只截掉本次写出的残片；本次已追加、后续步骤失败时，按整行原文移除本次那一行，其他记录逐字节保留（来源变更 fix-environment-registry-review-gaps，决策 C02、C03）。
+- 账本 `logos/.openlogos-runtime/deployments.jsonl` 只由 `deploy-done --env`、`deploy`（来源变更 environment-deploy，§2.94）、`approve`（来源变更 environment-promotion-approval，§2.95）与 `smoke --env` 写入；不进 git、不同步（单机，决策 C02）。**正常路径只追加**：两个写入方共用同一把账本锁（运行态目录下的锁文件），每次在锁内追加一整行。**写入失败时只撤销本次写入**：追加中途失败只截掉本次写出的残片；本次已追加、后续步骤失败时，按整行原文移除本次那一行，其他记录逐字节保留（来源变更 fix-environment-registry-review-gaps，决策 C02、C03）。
 - **写入顺序**：`deploy-done` 与 `smoke` 都是先追加账本、最后写提案标记（`DEPLOY_DONE`；`SMOKE_PASS` / `SMOKE_FAIL`），因此标记在场即蕴含对应账本记录已写入。
   - `smoke` 账本追加失败（含账本锁等待超时）时：不写、不改任何 smoke 标记，以错误 `SMOKE_LEDGER_WRITE_FAILED`（退出码 1）结束，不以未捕获异常退出。
   - `smoke` 账本已写、随后标记阶段失败（写目标标记失败，或目标标记已写成、删除对侧标记失败）时：按执行前快照把 `SMOKE_PASS` / `SMOKE_FAIL` 恢复到原有存在性与原始内容，撤销本次账本行，同样以 `SMOKE_LEDGER_WRITE_FAILED` 结束；恢复动作本身失败时如实报告恢复未完成及未恢复的位置，不声称已完整恢复。
@@ -5112,12 +5113,13 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 - smoke 记录的 `ref` 继承所依据的部署记录；`verified=true` 当且仅当结果通过、环境证据为 declared、本次实际运行了 `smoke.command` 产生新结果（`fresh_results=true`）、部署环境已确认、ref 非 null。未运行命令而只汇总已有结果文件时（结果可能属于上一代部署）不算已验证。环境视图与后续晋级判断只认 `verified=true`。
 - 读取时顺序扫描完整账本，按环境保留最近 deploy、最近 smoke 与最近 20 条历史；按 kind 校验必需字段、类型、枚举与 `verified` 一致性，不合格的行整行跳过并计数，不覆盖之前的有效状态。
 - **部署记录扩展**（来源变更 environment-deploy，决策 C06）：`deploy` 写出的记录另含通道、执行方式、请求版本与已确认版本（未确认时 `ref` 为 null）、回滚信息、耗时、CI 运行身份与回报值、失败原因与日志路径；`result` 可为 `done` / `failed` / `unknown`，版本通道记录的 `slug` 为 null；同一 `deploy_id` 的多条记录以最后一条为准。`current_ref` 改为最近一条成功部署的已确认版本（成功但未确认时为 null，不沿用更早版本）；新增 `previous_ref` 为再往前最近一条成功且版本已确认、与当前不同的版本，基于完整账本计算，是回滚的唯一依据。账本追加以临时文件原子替换，账本末行缺换行时拒绝追加。
+- **审批记录**（来源变更 environment-promotion-approval，决策 C07）：`openlogos approve` 写入 `kind=approval` 的记录，含 `approval_id`、绑定的 40 位 commit（`ref`）、用户给出的原始写法、`approver`（git 用户名与邮箱，只作展示、不作身份认证）与 `note`。审批在该环境出现一条请求版本等于该 commit、`result=done` 的部署记录后视为已使用；使用单向，之后对同一部署的 `--abandon` 或补记不撤销；从未成功时 failed / unknown 不使用审批；该推导在读取账本的同一次扫描中完成，不写额外的消费记录。deploy 记录另含可选字段 `approval_id`、`promoted_from`、`promotion_override_reason`。0.16.4 及更早的读取方会把审批记录计为坏行并跳过。
 
 ### 2.93.6 查询命令与 status 视图
 
-- `openlogos env list`：全部环境与 `current_ref`、`previous_ref`、`deploy_mode`、`deploy_in_progress`、`last_deploy`、`last_smoke`（后三个新增字段来源变更 environment-deploy，只在部署执行已启用时输出；未启用时视图字段与原来逐字一致）；无登记表返回空数组。
+- `openlogos env list`：全部环境与 `current_ref`、`previous_ref`、`deploy_mode`、`deploy_in_progress`、`last_deploy`、`last_smoke`（后三个新增字段来源变更 environment-deploy，只在部署执行已启用时输出；未启用时视图字段与原来逐字一致）；无登记表返回空数组。配置了 `promote_from` 或 `require_approval` 的环境另输出 `promote_from`、`require_approval`、`open_approvals`（未使用的审批）与 `promotion`（`{from, candidate_ref}`，`candidate_ref` 为上游环境最近一条已验证 smoke 记录的版本），来源变更 environment-promotion-approval，只在该环境配置了任一字段时输出，未配置的项目输出逐字不变。
 - `openlogos env show <id|alias>`：单个环境配置与最近 20 条历史。
-- `openlogos env check [<id|alias>] [--probe]`：校验格式、冲突、`deployment_gates` 引用、密钥变量名是否存在（只报名字）；`--probe` 时 GET `health` / `version`（超时 5 秒）。
+- `openlogos env check [<id|alias>] [--probe]`：校验格式、冲突、`deployment_gates` 引用、`promote_from` 引用与成环、密钥变量名是否存在（只报名字）；`--probe` 时 GET `health` / `version`（超时 5 秒）。
 - 三个命令只读、不要求活跃提案、支持 `--format json`；无登记表时 `show` / `check` 报 `ENV_REGISTRY_NOT_FOUND`。
 - `status --format json` 在有登记表时新增 `environments` 与 `environment_ledger`；`status` 不发起网络请求。RunLogos 环境面板只消费这些 JSON 字段。
 - 命令文案走 i18n，中英文都要提供。
@@ -5149,9 +5151,9 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 
 ### 2.94.1 命令与前置
 
-- `openlogos deploy --env <id|alias> [--ref <revision>] [--rollback] [--channel proposal|version] [--dry-run] [--format json]` 按登记表中该环境的 `deploy` 配置执行部署；agent 方式另有 `--complete <deploy_id> --result done|failed`，agent 与 ci 方式共用 `--abandon <deploy_id>` 与 `--reconcile`。
+- `openlogos deploy --env <id|alias> [--ref <revision>] [--rollback] [--channel proposal|version] [--force-promote "<理由>"] [--dry-run] [--format json]` 按登记表中该环境的 `deploy` 配置执行部署；agent 方式另有 `--complete <deploy_id> --result done|failed`，agent 与 ci 方式共用 `--abandon <deploy_id>` 与 `--reconcile`。
 - 先分流再检查：`--complete`、`--abandon`、`--reconcile` 是处理未决记录的操作，只要求登记表合法、`--env` 可解析、该环境存在对应的未决记录（`deploy_id` 匹配），通道、版本与运行身份都取自未决记录，不做「环境未被占用」检查、不需要 `--ref`、不触发新部署，没有活跃提案时同样可用。
-- 部署操作的前置：登记表存在且合法、`--env` 可解析（不做单环境默认推断）、该环境配置了 `deploy`、项目是 git 仓库、该环境没有进行中的部署、声明的密钥变量名全部存在于进程环境（只报名字）、脚本或 CI 可用。任一不满足即零执行、零写入。
+- 部署操作的前置：登记表存在且合法、`--env` 可解析（不做单环境默认推断）、该环境配置了 `deploy`、项目是 git 仓库、该环境没有进行中的部署、晋级检查与审批检查通过（来源变更 environment-promotion-approval，§2.95；在版本解析之后、密钥检查之前）、声明的密钥变量名全部存在于进程环境（只报名字）、脚本或 CI 可用。任一不满足即零执行、零写入。晋级与审批在取得环境锁后、执行或登记未决记录之前还会重读账本再判定一次（§2.95.3）。
 - `--dry-run` 完成全部前置检查并输出将要执行的内容（通道、请求 commit、脚本或工作流、参数展开、调度 ref），不建工作树、不执行、不写任何文件。deployment-designer 在设计阶段以 `env check` 与 `deploy --dry-run` 自验证，不做真实部署。
 
 ### 2.94.2 三种执行方式
@@ -5187,7 +5189,7 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 
 - 部署执行未启用的项目（没有登记表，或登记表中没有任何 `deploy` 且账本中没有 `openlogos deploy` 写出的记录），既有命令的输出、写入与行为逐字不变——smoke 无活跃提案时不写账本、环境视图不出现部署执行字段；`deploy-done`、`DEPLOY_DONE` 格式、flow 节点与 smoke 前置检查不变。
 - 账本 deploy 记录只做加法扩展，旧记录原样有效；0.16.3 的读取方会把失败 / 未知记录、`slug` 为 null 的记录计为坏行并跳过，单机升级后即消失。
-- 晋级顺序与审批门禁不在本节范围（提案 C）；在此之前 `openlogos deploy --env prod` 不额外设门。
+- 晋级顺序与审批门禁见 §2.95（来源变更 environment-promotion-approval）；未配置 `promote_from` / `require_approval` 的环境，`openlogos deploy` 不额外设门、行为不变。
 
 ### 2.94.8 实现映射与追溯
 
@@ -5201,3 +5203,57 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 | smoke 部署身份核对 | `cli/src/commands/smoke.ts` | `cli/test/s19-*.test.ts` |
 | 环境视图新增字段 | `cli/src/commands/env.ts`、`cli/src/commands/status.ts` | `cli/test/s41-*.test.ts`、`cli/test/s11-*.test.ts` |
 | skill 分发链 | `scripts/build-plugin-skills.sh`、`cli/scripts/build-asset-manifest.mjs` | asset-manifest 与插件副本一致性测试 |
+
+## 2.95 环境晋级与部署审批
+
+> 来源变更：environment-promotion-approval（决策 C01～C11，D14）。权威格式与判据见 `spec/environments.md` §12；本节描述用户可见行为。场景：S43（新增）、S42、S41、S21、S09。
+
+### 2.95.1 晋级顺序（`promote_from`）
+
+- 环境配置 `promote_from: <上游环境 id>` 后，把 commit X 部署到该环境前，账本中必须存在上游环境对 X 的一条 `verified=true` smoke 记录；不要求 X 是上游的当前版本（上游已部署更新版本后，仍可把上一个已验证版本补发到生产）。只校验直接上游，链条的每一跳由各自环境的 `promote_from` 保证。
+- 不满足时以 `DEPLOY_PROMOTION_UNVERIFIED` 零执行、零写入结束，details 给出上游当前版本与可晋级的候选版本。
+- 确需越过时用 `--force-promote "<理由>"`：理由必须非空，只能用于配置了 `promote_from` 的环境，不能与 `--rollback` 同用（均为 `DEPLOY_ARGS_CONFLICT`）；越过时本次 deploy 记录写入 `promotion_override_reason` 留痕。
+- `--rollback` 不做晋级检查（回滚目标是本环境曾成功部署过的版本），但仍需审批。
+
+### 2.95.2 审批（`require_approval` 与 `openlogos approve`）
+
+- 环境配置 `require_approval: true` 后，部署 commit X 前必须有人执行过 `openlogos approve --env <id|alias> --ref <revision> [--note <文字>] [--format json]`，否则以 `DEPLOY_APPROVAL_REQUIRED` 零执行、零写入结束，错误与 details 给出可直接执行的审批命令原文。
+- `approve` 把版本解析为 40 位 commit 后写入账本一条审批记录；同一环境同一 commit 已有未使用的审批时幂等返回既有 `approval_id`、不写新行（查重与追加在同一个账本锁内完成，并发执行只写一条）。`approve` 只接受配置了 `require_approval: true` 的环境。
+- 部署只认绑定同一环境、同一 commit 且尚未被使用的审批；该版本成功部署一次即视为已使用（单向，之后对同一部署的 `--abandon` 或补记不撤销），再次部署需要重新审批；failed / unknown 不使用审批。对其他 commit 的审批不能放行 X。不提供撤销命令与过期时间，误批最多放行这一个 commit 一次。
+- `approver` 取 git 用户名与邮箱，只作展示；审批的可信度来自宿主原生审批（§2.95.5），本机 CLI 不做身份认证与多人会签。
+
+### 2.95.3 检查位置与并发
+
+- 两项检查在版本解析之后、密钥与脚本 / CI 检查之前进行；`--dry-run` 同样执行，通过时在 plan 中给出将使用的 `approval_id` 与晋级依据，不写任何文件。
+- 锁外的检查只用于提前报错：取得环境锁之后、执行 script / 触发 ci / 登记未决记录之前，CLI 重读账本再判定一次，确认审批仍未被使用；若已被其他部署用掉，以同样的错误码零执行结束并要求重新审批。因此两个并发部署不能共用同一审批，一次审批只放行一次发布。
+- agent 方式在开始时完成两项检查，未决记录携带 `approval_id`、`promoted_from` 与 `promotion_override_reason`，`--complete --result done` 写出的记录带上这些字段并使用该审批；`--complete` / `--abandon` / `--reconcile` 不重新检查。
+
+### 2.95.4 `--auto` 硬停点与绕道封堵
+
+- 目标环境要求审批而该版本未获审批，或晋级检查未通过，是继 `loop-exhausted` 之后第二条任何模式都不自动放行的硬停点：`--auto` 的 standing 授权不覆盖审批与晋级越过，部署停在「等待审批」或「晋级未满足」，人批准之后宿主重新驱动即可继续，不新增恢复机制。
+- deployment-executor 遇 `DEPLOY_APPROVAL_REQUIRED` / `DEPLOY_PROMOTION_UNVERIFIED` 停止并报告，任何模式下不得自行审批、不得加 `--force-promote`、不得换环境或版本、不得改用手工部署或 `deploy-done`。生成的 AGENTS.md / CLAUDE.md 硬红线条目同步写入这一例外。
+- `deploy-done --env` 指向配置了任一门的环境时以 `DEPLOY_DONE_GATED_ENV` 零写入拒绝，提示改用 `openlogos deploy`；未配置门的环境 `deploy-done` 行为不变。
+
+### 2.95.5 AI 不能自批、不能越过、不能改门（D14）
+
+- `openlogos approve` 与带 `--force-promote` 的 `openlogos deploy` 加入 guard 的受限命令清单，与 `openlogos ignore|exempt add|remove` 走同一套宿主原生审批：Claude Code 在 `default` / `acceptEdits` 下由宿主对这一次调用弹出审批；其他模式、字段缺失、非交互运行与复合命令形态一律阻断，提示用户在终端以 `! <命令原文>` 自行执行或经 RunLogos 界面执行。不使用任何本地凭据文件证明「人批过」。
+- 已配置门禁的登记表是门禁策略来源（guard 以字段名或反斜杠字符保守识别）：不再适用默认豁免或 `guard.exempt`、不以活跃提案放行；AI 对它的直接修改（Edit / Write、可识别写目标的 shell 写入）与删除 / 移动同样须经宿主原生审批，否则阻断，因此未经人批准无法「先关掉门再部署」。未配置门禁的登记表保持现有豁免。
+- 宿主 driver（如 RunLogos 全自动模式）不得代替用户批准上述宿主审批。
+
+### 2.95.6 视图与兼容性
+
+- EnvView 在配置了任一门的环境上新增 `promote_from`、`require_approval`、`open_approvals`、`promotion.candidate_ref`，供 RunLogos 做审批入口与「晋级到生产」按钮；`status.schema.json` 覆盖这些字段。
+- 未配置两个字段的项目（含没有登记表、有登记表但无门、已启用部署执行但无门），所有命令的输出、写入与行为逐字不变。已写了这两个字段的项目此前只得 `ENV_UNKNOWN_FIELD` 警告，升级后开始生效。
+
+### 2.95.7 实现映射与追溯
+
+| 能力 | 主要代码路径 | 主要测试路径 |
+|---|---|---|
+| 两个字段校验与环检测、审批记录读取与使用推导、EnvView 新字段 | `cli/src/lib/environments.ts`、`cli/src/commands/env.ts`、`cli/src/commands/status.ts` | `cli/test/s41-*.test.ts`、`cli/test/s43-*.test.ts` |
+| `approve` 命令 | `cli/src/commands/approve.ts`、`cli/src/index.ts` | `cli/test/s43-*.test.ts` |
+| 晋级与审批检查、取锁后复核、`--force-promote`、deploy 记录新字段 | `cli/src/commands/deploy.ts` | `cli/test/s43-*.test.ts` |
+| `deploy-done` 受门拒绝 | `cli/src/commands/deploy-done.ts` | `cli/test/s43-*.test.ts` |
+| guard 受限命令与已配置门禁的登记表保护 | `plugin/bin/guard-check`、`plugin-cursor/hooks/runtime.cjs` | `cli/test/s09-*.test.ts` |
+| 生成指令硬红线条目 | `cli/src/commands/init.ts` | `cli/test/s43-*.test.ts` |
+
+- 场景：S43（新增）、S42、S41、S21、S09；测试：`core-S43-test-cases.md` 全部用例与 `core-S41-test-cases.md`、`core-S09-test-cases.md` 中 environment-promotion-approval 新增用例；决策：D14。

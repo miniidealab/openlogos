@@ -2271,3 +2271,42 @@
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；**失败不得写 pass**。
 - 判据以 `--format json` 的结构化字段、退出码与命令实际输出为准，不解析人类可读文案。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-254～SMOKE-core-257 均被 runner 覆盖。
+
+## OpenLogos 0.16.5 环境晋级与审批安装态 smoke（SMOKE-core-258～262）
+
+> 这组用例验证晋级顺序、审批门禁、`openlogos approve`、`--force-promote` 留痕越过与 `deploy-done` 对受门环境的拒绝（来源提案 environment-promotion-approval，功能规格 §2.95）确实进入了本机全局安装态。它们是 CLI 运行时行为，只有全局 `openlogos` 升级后才对用户的各项目（含 RunLogos 审批入口）生效。
+>
+> 用例在 `mktemp -d` 一次性隔离 git 项目内执行（经全局 `openlogos init` 建立，登记 `staging` 与 `prod` 两个环境，均为 `deploy.mode: script`，prod 配置 `promote_from: staging` 与 `require_approval: true`；部署脚本把版本标识写入另一个一次性目录模拟「发布」，不触达任何真实服务）。runner 以子进程直接调用 CLI（不经 AI 宿主，因此不经过 guard），对全局安装态**只读**，不做安装或卸载，不触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态账本与用户其他仓库（包括 runlogos）；唯一读取本仓的是 SMOKE-core-258 ④ 对本仓托管副本的只读比对。判据用**行为断言**：全局 `--version` == 部署记录版本只证明装了新包。guard 的受限命令与登记表保护由源码测试（`core-S09-test-cases.md` UT-S09-461～UT-S09-466、ST-S09-205）以真实 guard-check 覆盖，安装态只核对 guard-check 同源。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-258 | 安装态版本、制品身份与本仓 sync 同源 | 本机全局已安装本次候选；部署记录中有候选版本与 tarball SHA-256；本仓已按部署方案执行 `openlogos sync` | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 检查全局包内存在 `dist/commands/approve.js`，`dist/index.js` 注册 `approve`，`claude-plugin-template/bin/guard-check` 含 `openlogos approve`、`--force-promote` 的受限识别与已配置门禁的登记表判定；④ 逐字节比对本仓 `.claude/openlogos/bin/guard-check`、`logos/skills/deployment-designer/SKILL.md`、`logos/skills/deployment-executor/SKILL.md` 与全局包内同名文件 | ① `--version` 等于部署记录版本，入口无 workspace link；② `payloadHash` 自洽；③ 全部成立；④ 字节一致 | 保留读取结果。①～③ 任一不符 → 停止后续流程，按部署方案用 `cli/rollback/miniidealab-openlogos-0.16.4.tgz` 回装全局；④ 不一致 → 重新执行本仓 `openlogos sync` 后复核，仍不一致则回流本提案 |
+| SMOKE-core-259 | 安装态晋级拦截与留痕越过 | 本机全局已安装本次候选；临时 git 项目含 tag `v1`、`v2`，各带一版可执行部署脚本 | ① `openlogos approve --env prod --ref v1 --format json`；② `openlogos deploy --env prod --ref v1 --format json`；③ `openlogos deploy --env staging --ref v1` 后 `openlogos smoke --env staging --format json`（夹具 runner 写 `target_environment`）；④ 再次 `deploy --env prod --ref v1`；⑤ `approve --env prod --ref v2` 后 `deploy --env prod --ref v2 --force-promote "smoke 越过" --format json` | ① 写入审批；② 错误 `DEPLOY_PROMOTION_UNVERIFIED`、退出码 1，发布目录无痕迹、账本无 deploy 记录；③ smoke `verified=true`；④ 成功，记录 `promoted_from=staging`、`approval_id` 为 ① 的值；⑤ 成功，记录 `promotion_override_reason="smoke 越过"`、`promoted_from=null` | 同上；保留每步 JSON 摘要与发布目录内容。任一不成立表示晋级检查未进入安装态，回装旧版并回流本提案 |
+| SMOKE-core-260 | 安装态审批拦截、写入、幂等与使用 | 同上；staging 已验证 `v1`、`v2` | ① `deploy --env prod --ref v1 --format json`（未审批）；② 连续两次 `approve --env prod --ref v1 --format json`；③ `deploy --env prod --ref v1`；④ `env show prod --format json`；⑤ 再次 `deploy --env prod --ref v1` | ① `DEPLOY_APPROVAL_REQUIRED`，`details.approve_command` 为可直接执行的命令原文，零执行；② 两次返回同一 `approval_id`，第二次 `created=false`，账本只多一条 `approval`；③ 成功，记录 `approval_id` 等于 ②；④ `open_approvals` 为空，`promotion.candidate_ref` 非空；⑤ 再次 `DEPLOY_APPROVAL_REQUIRED` | 同上；任一不成立表示审批门未进入安装态，回装旧版并回流本提案 |
+| SMOKE-core-261 | 安装态 dry-run、回滚审批与 `deploy-done` 受门拒绝 | 同上；prod 已先后成功部署 `v1`、`v2`；临时项目另有活跃提案处于 ready-to-deploy | ① 对 `v2` 审批后 `deploy --env prod --ref v2 --dry-run --format json`，记录执行前后临时项目全部文件的 SHA-256；② `deploy --env prod --rollback --format json`（未对回滚目标审批）；③ `deploy-done --env prod --ref HEAD --format json` | ① 退出码 0、`status=dry-run`，`plan.approval_id` 为该审批，文件快照前后一致，审批仍在 `open_approvals`；② `DEPLOY_APPROVAL_REQUIRED`（不报晋级错误）；③ `DEPLOY_DONE_GATED_ENV`、退出码 1，tasks.md、`DEPLOY_DONE` 与账本字节不变 | 同上；任一不成立表示 dry-run、回滚或受门拒绝未进入安装态，回装旧版并回流本提案 |
+| SMOKE-core-262 | 安装态未配置门禁零回归 | 本机全局已安装本次候选；另一临时项目登记表只有 `staging`（配置 `deploy`，无门） | ① `deploy --env staging --ref v1 --format json`；② `env show staging --format json`；③ `status --format json` | ① 成功，记录不含 `approval_id`、`promoted_from`、`promotion_override_reason` 字段；② ③ 视图不含 `promote_from`、`require_approval`、`open_approvals`、`promotion` | 同上；任一不成立表示零回归被破坏，回装旧版并回流本提案 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目与一次性「发布目录」内进行，结束即删除（含运行态账本、部署日志、锁、隔离工作树）。**不得**触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态目录、用户其他仓库（包括 runlogos）或本机全局 prefix；本节对全局安装态只读，对本仓只做 SMOKE-core-258 ④ 的只读比对。
+- 不触发真实 CI、不访问任何远程服务。
+- 命令图中不得出现 `npm publish` / dist-tag / `git tag`（临时项目内为构造夹具创建的本地 tag 除外）/ `gh release` / `git push`。
+- 断言中不硬编码主机路径、墙上时钟或本机全局安装现值；commit 以临时仓库内 `git rev-parse` 的实际值比较。
+
+### 三、追溯与覆盖
+
+- 功能规格：§2.95（环境晋级与部署审批）、§2.93、§2.94。
+- 根规范：`spec/environments.md` §12；`spec/cli-json-output.md`「`openlogos approve --format json`」。
+- 场景：S43；S41；S42；S21「受门环境拒绝」。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.5 发布方案（环境晋级与审批，本地全局）」。
+- 仓库内对应用例：`core-S43-test-cases.md` 全部用例、UT-S41-16～UT-S41-19、ST-S41-05、UT-S09-461～UT-S09-466、ST-S09-205；版本身份 `UT-S19-46` / `UT-S19-49`。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-environment-promotion-approval-0-16-5.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-258～SMOKE-core-262，不得依靠通配发现后无条件 PASS。runner 记录全局入口 realpath、安装态版本、每个隔离项目路径、每次命令的退出码与 JSON 摘要。
+- **适用性判定不得依赖自动流程不会设置的环境变量**：候选 tarball 先取显式环境变量，未设置时按候选版本取本仓 `cli/miniidealab-openlogos-<候选版本>.tgz`，并要求其 SHA-256 已写入部署记录；候选版本早于 0.16.5 时按缺候选制品处理。只有制品、部署记录或本仓 sync 确实缺失时才写显式 `skip` 并携带缺失项，不得标 `reason_code:"platform-unavailable"`。有 skip 时不得写 `SMOKE_PASS`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；**失败不得写 pass**。
+- 判据以 `--format json` 的结构化字段、退出码与命令实际输出为准，不解析人类可读文案。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-258～SMOKE-core-262 均被 runner 覆盖。

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.5] - 2026-10-15
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- **环境晋级与审批**（environment-promotion-approval）：`logos/environments.yaml` 中配置了 `deploy` 的环境可写 `promote_from`（晋级上游环境 id）与 `require_approval`（布尔），两者开始生效：
+  - 晋级检查：`openlogos deploy` 部署配置了 `promote_from` 的环境时，要求上游环境曾以 `verified=true` 的 smoke 验证过请求版本，否则以 `DEPLOY_PROMOTION_UNVERIFIED` 零执行结束；
+  - 审批门：`require_approval: true` 的环境部署前须有绑定该 commit 的未使用审批，否则以 `DEPLOY_APPROVAL_REQUIRED` 零执行结束并给出可直接执行的 approve 命令；成功部署一次即使用审批，失败或结果未知不使用。
+- 新增 `openlogos approve --env <id> --ref <revision> [--note <文字>]`：写入一条审批记录，重复执行幂等（`created=false`），并发执行只写一条。
+- `openlogos deploy --force-promote "<理由>"`：留痕越过晋级检查，记录 `promotion_override_reason`。
+- `env list` / `env show` / `status` 的环境视图在配置了门禁字段的环境上新增 `promote_from`、`require_approval`、`open_approvals`、`promotion`；`--dry-run` 计划给出将用的审批与晋级依据。
+
+### Changed
+
+- `--auto` 新增硬停点：目标环境要求审批而该版本未获审批，或晋级检查未通过时，任何模式都不自动放行；生成的 AGENTS.md / CLAUDE.md 硬红线同步新增该条。
+- `deploy-done --env` 对受门环境以 `DEPLOY_DONE_GATED_ENV` 拒绝，改用 `openlogos deploy`。
+- guard 受限命令清单新增 `openlogos approve` 与带 `--force-promote` 的 `openlogos deploy`；已配置门禁的 `logos/environments.yaml` 不再适用默认豁免与 `guard.exempt`，修改须经宿主原生审批，shell 写入、移动、删除一律阻断（Claude Code 与 Cursor）。
+
+### 升级提示
+
+- 已在登记表中写了 `promote_from` / `require_approval` 的项目，此前只得到 `ENV_UNKNOWN_FIELD` 警告，升级后两道门开始生效；门禁字段须以普通键名书写。
+- 0.16.4 及更早版本读取账本时会把 `approval` 记录计为坏行并跳过。
+
 ## [0.16.4] - 2026-10-15
 
 本机全局发布（未发布到 npm）。

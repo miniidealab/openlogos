@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 2346 |
+| Defined cases | 2376 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 2346 |
-| Passed | 2321 |
+| Executed cases | 2376 |
+| Passed | 2351 |
 | Failed | 0 |
 | Skipped | 25 |
 | Uncovered | 0 |
@@ -21,8 +21,8 @@
 
 - Mode: `final`
 - Attempted slice: `null`
-- Confirmed slices: `slice-01-registry-deploy-config-and-ledger-view`, `slice-02-smoke-deploy-identity`, `slice-03-script-deploy-version-proposal-rollback`, `slice-04-ci-deploy-and-reconcile`, `slice-05-agent-deploy-skill-distribution-and-install-smoke`
-- Eligible tests: 2346
+- Confirmed slices: `slice-01-registry-gate-fields-and-approval-view`, `slice-02-approve-command-and-approval-gate`, `slice-03-promotion-gate-force-promote-rollback-agent`, `slice-04-ai-bypass-closure-and-install-smoke`
+- Eligible tests: 2376
 - Pending tests: 0
 - Final: true
 

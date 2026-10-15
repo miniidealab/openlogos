@@ -164,7 +164,7 @@ environments:
 - `secrets` **只写环境变量名，不得写值**；方案中出现的真实密钥一律不进登记表。
 - `deployment_gates.<module>.environments` 中的每一项必须能按 id 或别名解析到登记表中的环境。
 - 只登记部署方案确实涉及的环境，不臆造；部署方案没有环境划分时不产出登记表（登记表是 opt-in）。
-- 登记表属于 `guard.exempt` 内置默认，修改不需立案。
+- 登记表属于 `guard.exempt` 内置默认，修改不需立案；但只要任一环境配置了 `promote_from` 或 `require_approval`，它就成为门禁策略来源，AI 对它的修改须经宿主弹窗由用户批准，无人值守模式下被阻断（来源变更 environment-promotion-approval，决策 C11）。
 
 **选择执行方式**：
 
@@ -183,7 +183,14 @@ environments:
 
 **CI 工作流要求**（ci 方式）：工作流部署的必须是自身检出的提交，并以固定名称上传 artifact `openlogos-deploy-result`，其中 `result.json` 为 `{"deployed_ref": "<40 位 commit>"}`，值取自部署所用 `actions/checkout` 步骤的 `commit` 输出（provider: script 由 `status_script` 在 `completed` 时输出 `deployed_ref`）。没有回报时 OpenLogos 记录部署版本为未知，该次部署不能作为回滚目标、smoke 不能得到已验证事实。
 
-**自验证（设计阶段，不做真实部署）**：对每个配置了 `deploy` 的环境依次运行 `openlogos env check` 与 `openlogos deploy --env <id> --ref <当前提交> --dry-run`（只读，校验脚本在目标版本中存在且可执行、参数占位符合法、声明的密钥齐全、`gh` 可用且已登录），shell 脚本另做 `bash -n` 语法检查；任一失败先修正再交付。**设计阶段不得执行真实部署**。
+**晋级与审批门（可选，来源变更 environment-promotion-approval，见 `spec/environments.md` §12）**：
+
+- `promote_from: <上游环境 id>`：部署某个 commit 到该环境前，要求上游环境已对该 commit 以 smoke 验证通过（`verified=true`）。只填登记表中已有环境的 `id`（不填别名），不得指向自身或成环；只在配置了 `deploy` 的环境上合法。
+- `require_approval: true`：部署前必须有人执行 `openlogos approve --env <id> --ref <版本>`，一次审批只放行该版本的一次成功部署。
+- 对 `tier: prod` 的环境，在部署方案的「九、门禁结论」中**提示**用户可选配置这两个字段，并说明其效果（`--auto` 全自动运行遇到它们会停下等人）；**不自动开启**，由用户决定是否写入登记表。门禁一旦写入，之后对登记表的修改须经用户确认，建议在用户确认方案后一次性写好。
+- 设计阶段不得执行 `openlogos approve` 或带 `--force-promote` 的部署；这两类动作只能由人执行。
+
+**自验证（设计阶段，不做真实部署）**：对每个配置了 `deploy` 的环境依次运行 `openlogos env check` 与 `openlogos deploy --env <id> --ref <当前提交> --dry-run`（只读；配置了门禁的环境 dry-run 会如实报告 `DEPLOY_PROMOTION_UNVERIFIED` / `DEPLOY_APPROVAL_REQUIRED`，这是预期结果，记入方案而不是去满足它；校验脚本在目标版本中存在且可执行、参数占位符合法、声明的密钥齐全、`gh` 可用且已登录），shell 脚本另做 `bash -n` 语法检查；任一失败先修正再交付。**设计阶段不得执行真实部署**。
 
 ## 输出规范
 

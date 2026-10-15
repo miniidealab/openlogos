@@ -946,7 +946,7 @@ sequenceDiagram
     participant P as guard-post-check 引擎
     participant CLI as openlogos CLI
 
-    AI->>H: Step 41: Bash「openlogos exempt add src/」
+    AI->>H: Step 41: Bash「openlogos exempt add src/」（或 openlogos approve …、带 --force-promote 的 openlogos deploy …）
     H->>G: Step 42: PreToolUse stdin（含 permission_mode）
     G->>G: Step 43: 识别受限命令（独立调用形态，允许 cd 前缀；复合形态直接 exit 2）
     alt permission_mode 为 default 或 acceptEdits
@@ -964,15 +964,26 @@ sequenceDiagram
     end
     AI->>P: Step 49: 伪造的授权文件、伪造的 hook 输入（如自造 PostToolUse 负载直接调用引擎）
     P-->>AI: Step 50: 不产生任何放行效果（guard 不读取任何授权文件，引擎无签发子命令）
+    AI->>H: Step 50a: Edit / Write logos/environments.yaml，或 Bash 写入 / 删除 / 移动它（environment-promotion-approval）
+    H->>G: PreToolUse stdin（含 permission_mode）
+    G->>G: Step 50b: 登记表已配置门禁（文本含 promote_from / require_approval）？
+    alt 已配置门禁且为 Edit / Write / MultiEdit，permission_mode 为 default 或 acceptEdits
+        G-->>H: Step 50c: permissionDecision=ask（「该修改会改变部署门禁配置」）
+        H->>U: 弹出审批；批准则修改，拒绝则零写入
+    else 已配置门禁的其他情形（其他模式、字段缺失、非交互、Bash 写入 / rm / mv）
+        G-->>AI: Step 50d: exit 2，提示由用户自行编辑该文件或在默认权限模式下重试
+    else 未配置门禁
+        G->>G: Step 50e: 按 guard.exempt（内置默认）判定，行为不变
+    end
 ```
 
 ### 时序图三步骤说明
 
-41. **AI** 发起受限命令：`openlogos exempt add|remove`、`openlogos ignore add|remove`（`list` 不受限）。受限范围不随提案状态变化——有活跃提案时同样适用。
+41. **AI** 发起受限命令：`openlogos exempt add|remove`、`openlogos ignore add|remove`（`list` 不受限），以及部署审批类命令 `openlogos approve …` 与带 `--force-promote` 的 `openlogos deploy …`（来源变更 environment-promotion-approval，决策 C05；不带 `--force-promote` 的 `openlogos deploy` 不受限）。受限范围不随提案状态变化——有活跃提案时同样适用。
 42. **宿主**以 PreToolUse 交给 guard-check，hook 输入含 `permission_mode`。
 43. **guard-check** 识别受限命令：必须是独立调用形态（切段规则同 C10，只允许 `cd` 前缀）；复合形态（如 `openlogos exempt add src/ && node x.js`）一律 exit 2。
 44. **guard-check** 按 `permission_mode` 处理：
-    - `default` 或 `acceptEdits` → stdout 输出 `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"该命令会改变 guard 的保护范围（<命令原文>），需要您确认后执行"}}`，exit 0。
+    - `default` 或 `acceptEdits` → stdout 输出 `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"该命令会改变 guard 的保护范围（<命令原文>），需要您确认后执行"}}`，exit 0。部署审批类命令的 reason 按类别改写为「该命令会写入部署审批（<命令原文>）」或「该命令会越过晋级检查（<命令原文>）」，其余不变。
     - 其他值（`bypassPermissions`、`dontAsk`、`auto`、`plan`）、字段缺失、未知值或非交互运行 → exit 2，reason：「当前权限模式（<mode>）下宿主不会弹出确认，无法证明由用户批准。请让用户在终端用 `! <命令原文>` 自行执行，或切换到默认权限模式后重试；不要用对话中的口头同意替代。」依据是宿主官方 hooks 文档：`ask` 在 `bypassPermissions` / `dontAsk` 下静默放行，在非交互模式下按 `defer` 处理；实施时以真实宿主再核实。
 45. **宿主**就这一次实际工具调用弹出审批，展示命令原文。
 46. **用户**批准则执行；拒绝则命令不执行，`logos.config.json` 与 `.gitignore` 零写入。
@@ -980,6 +991,11 @@ sequenceDiagram
 48. **引擎**在结束事件中识别独立 openlogos 调用（C13），不报告变化；存在未关闭记录时，只把它改动的路径在所有未关闭记录中的基线更新为调用后内容。`openlogos sync` 重渲染托管区块与 `.gitattributes` 走同一路径，不受限、不需要审批；`openlogos sync && node modify-source.js` 等复合调用不享受豁免。
 49. **伪造尝试**：AI 在运行时目录写入任何「授权」文件，或自造 hook 负载直接调用引擎。
 50. **结果**：不产生放行效果。审批只来自宿主对本次调用的原生审批；guard 不读取授权文件，引擎没有签发子命令。`--auto` / 无人值守通常运行在 `bypassPermissions` / `auto` / 非交互模式下，受限命令因此被阻断，不另设机制；宿主 driver 不得替用户批准。
+50a. **AI** 以 Edit / Write / MultiEdit 修改 `logos/environments.yaml`，或以 Bash 写入（重定向、`tee`、`sed -i` 等可识别写目标的形态）、删除、移动它（来源变更 environment-promotion-approval，决策 C11）。
+50b. **guard-check** 读取该文件当前内容，按文本保守识别是否已配置门禁：出现 `promote_from` 或 `require_approval` 字段名，或出现反斜杠字符（可能以 YAML 转义写出字段名）即视为已配置（误判只会多拦）；登记表加载器要求门禁字段以普通键名书写，CLI 认定的门禁因此必被识别（review delta-r1 F2）。已配置时该文件是门禁策略来源，不适用内置默认豁免或 `guard.exempt`，也不以活跃提案作为放行理由。
+50c. **guard-check**（已配置门禁、Edit / Write / MultiEdit、`permission_mode` 为 `default` 或 `acceptEdits`）→ 返回 `permissionDecision: ask`，reason「该修改会改变部署门禁配置（logos/environments.yaml），需要您确认后执行」；用户批准则修改，拒绝则零写入。
+50d. **guard-check**（已配置门禁的其他情形：其他模式、字段缺失、未知值、非交互运行，以及 Bash 写入 / 删除 / 移动）→ exit 2，reason 提示由用户自行编辑该文件，或切换到默认权限模式后重试；不得以对话中的口头同意替代。`--auto` / 无人值守运行因此不能「先关掉门再部署」。
+50e. **guard-check**（未识别为已配置门禁：既无两个字段名也无反斜杠字符）→ 按 `guard.exempt`（含内置默认）判定，行为与引入前一致；从无门到加门的那一次修改按此放行。
 
 ### Cursor afterShellExecution 路径
 

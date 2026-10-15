@@ -2051,10 +2051,89 @@
               "type": "null"
             }
           ]
+        },
+        "promote_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "条目写有 promote_from 或 require_approval 时输出（spec/environments.md §7.1，environment-promotion-approval）：登记表中该环境的 promote_from，未配置为 null。"
+        },
+        "require_approval": {
+          "type": "boolean",
+          "description": "条目写有 promote_from 或 require_approval 时输出：登记表中该环境的 require_approval，未配置为 false。"
+        },
+        "open_approvals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/openApproval"
+          },
+          "description": "条目写有 promote_from 或 require_approval 时输出：该环境未使用的审批（spec/environments.md §5.4），按记录顺序。"
+        },
+        "promotion": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "from",
+                "candidate_ref"
+              ],
+              "properties": {
+                "from": {
+                  "type": "string"
+                },
+                "candidate_ref": {
+                  "$ref": "#/$defs/commitOrNull"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "条目写有 promote_from 或 require_approval 时输出：配置了 promote_from 时为 {from, candidate_ref}（上游最近一条 verified=true smoke 记录的 ref），否则为 null。"
         }
       },
       "additionalProperties": false,
-      "description": "环境视图 EnvView（spec/environments.md §7.1；environment-registry 与 environment-deploy）。部署执行未启用时不出现 previous_ref、deploy_mode、deploy_in_progress，last_deploy 不出现扩展子字段。"
+      "description": "环境视图 EnvView（spec/environments.md §7.1；environment-registry、environment-deploy 与 environment-promotion-approval）。部署执行未启用时不出现 previous_ref、deploy_mode、deploy_in_progress，last_deploy 不出现扩展子字段；条目未写 promote_from / require_approval 时不出现 promote_from、require_approval、open_approvals、promotion。"
+    },
+    "openApproval": {
+      "type": "object",
+      "required": [
+        "approval_id",
+        "ref",
+        "approver",
+        "note",
+        "recorded_at"
+      ],
+      "properties": {
+        "approval_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "approver": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recorded_at": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "未使用的审批（spec/environments.md §7.1，environment-promotion-approval）。"
     },
     "commitOrNull": {
       "type": [

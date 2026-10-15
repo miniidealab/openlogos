@@ -23,7 +23,9 @@ const ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 const SECRET_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const COMMIT_RE = /^[0-9a-f]{40}$/;
 const TOP_FIELDS = new Set(['schema_version', 'environments']);
-const ENV_FIELDS = new Set(['id', 'name', 'tier', 'aliases', 'description', 'health', 'version', 'secrets', 'deploy']);
+const ENV_FIELDS = new Set(['id', 'name', 'tier', 'aliases', 'description', 'health', 'version', 'secrets', 'deploy', 'promote_from', 'require_approval']);
+/** 晋级与审批门禁字段（spec/environments.md §12.1，environment-promotion-approval）。 */
+const GATE_FIELDS = ['promote_from', 'require_approval'] as const;
 
 // ───────────────────────────── deploy 配置（spec/environments.md §11.2） ─────────────────────────────
 
@@ -177,6 +179,16 @@ export interface EnvironmentDef {
   secrets: string[];
   /** 部署执行配置（environment-deploy）；未配置时不出现该属性，既有结构不变。 */
   deploy?: DeployConfig;
+  /**
+   * 晋级与审批门禁（environment-promotion-approval，§12.1）：条目写有 promote_from 或 require_approval
+   * （含 require_approval: false）时才出现 gate 属性，未写时既有结构不变。
+   */
+  gate?: { promote_from: string | null; require_approval: boolean };
+}
+
+/** 受门环境（spec/environments.md §12.1）：配置了 promote_from，或 require_approval 为 true。 */
+export function isGatedEnvironment(env: EnvironmentDef): boolean {
+  return env.gate !== undefined && (env.gate.promote_from !== null || env.gate.require_approval);
 }
 
 /** 登记表校验问题：code 为稳定错误码，params 供文案插值，environment / field / value 供机器定位。 */
@@ -209,8 +221,10 @@ export function loadEnvironmentRegistry(root: string): RegistryLoad {
   const file = join(root, ENV_REGISTRY_REL);
   if (!existsSync(file)) return { state: 'absent' };
   let doc: unknown;
+  let text: string;
   try {
-    doc = parseYaml(readFileSync(file, 'utf-8'));
+    text = readFileSync(file, 'utf-8');
+    doc = parseYaml(text);
   } catch (error) {
     return { state: 'unloadable', error: { code: 'ENV_REGISTRY_INVALID', reason: `yaml: ${(error as Error).message.split('\n')[0]}` } };
   }
@@ -251,6 +265,7 @@ export function loadEnvironmentRegistry(root: string): RegistryLoad {
     const secrets = raw.secrets ?? [];
     if (!Array.isArray(secrets) || secrets.some(s => typeof s !== 'string' || !SECRET_RE.test(s))) bad('secrets', 'secrets must be environment variable names (^[A-Za-z_][A-Za-z0-9_]*$)');
     const deploy = raw.deploy === undefined || raw.deploy === null ? null : validateDeployConfig(raw.deploy, label, errors, warnings);
+    const gate = validateGateFields(raw, text, raw.deploy !== undefined && raw.deploy !== null, bad);
     if (errors.length !== before) return;
     environments.push({
       id: raw.id as string,
@@ -262,8 +277,10 @@ export function loadEnvironmentRegistry(root: string): RegistryLoad {
       version: typeof raw.version === 'string' ? raw.version : null,
       secrets: secrets as string[],
       ...(deploy ? { deploy } : {}),
+      ...(gate ? { gate } : {}),
     });
   });
+  validateGateReferences(environments, errors);
 
   // id 与 alias 不区分大小写全局唯一
   const seen = new Map<string, string>();
@@ -279,6 +296,60 @@ export function loadEnvironmentRegistry(root: string): RegistryLoad {
     }
   }
   return { state: 'loaded', environments, errors, warnings };
+}
+
+/**
+ * 门禁字段校验（spec/environments.md §12.1）：类型、只在配置了 deploy 的环境上合法、须以普通键名书写
+ * （解析出门禁字段而登记表原文不含字段名字面量即非法，review delta-r1 F2）。条目未写两个字段时返回 null。
+ */
+function validateGateFields(
+  raw: Record<string, unknown>, text: string, deployConfigured: boolean, bad: (field: string, reason: string) => void,
+): EnvironmentDef['gate'] | null {
+  const present = GATE_FIELDS.filter(field => has(raw, field));
+  if (present.length === 0) return null;
+  for (const field of present) {
+    if (!text.includes(field)) bad(field, `${field} must be written as a plain key; escaped or continued key spellings are rejected`);
+    if (!deployConfigured) bad(field, `${field} is only allowed on environments that configure deploy`);
+  }
+  if (has(raw, 'promote_from') && (typeof raw.promote_from !== 'string' || raw.promote_from.trim() === '')) {
+    bad('promote_from', 'promote_from must be the id of another registered environment');
+  }
+  if (has(raw, 'require_approval') && typeof raw.require_approval !== 'boolean') bad('require_approval', 'require_approval must be a boolean');
+  return {
+    promote_from: typeof raw.promote_from === 'string' ? raw.promote_from : null,
+    require_approval: raw.require_approval === true,
+  };
+}
+
+/** promote_from 引用校验（§12.1）：必须等于另一个环境的 id（不接受 alias）、不得指向自身、不得成环（环上每个环境各报一条）。 */
+function validateGateReferences(environments: EnvironmentDef[], errors: RegistryIssue[]): void {
+  const byId = new Map(environments.map(e => [e.id, e]));
+  const bad = (env: EnvironmentDef, reason: string) => errors.push({
+    code: 'ENV_FIELD_INVALID', environment: env.id, field: 'promote_from', value: env.gate?.promote_from ?? undefined, reason,
+  });
+  for (const env of environments) {
+    const from = env.gate?.promote_from ?? null;
+    if (from === null) continue;
+    if (from === env.id) { bad(env, 'promote_from must not point to the environment itself'); continue; }
+    if (!byId.has(from)) {
+      const aliasOwner = environments.find(e => e.aliases.some(a => a.toLowerCase() === from.toLowerCase()) || e.id.toLowerCase() === from.toLowerCase());
+      bad(env, aliasOwner
+        ? `promote_from must be an environment id, not an alias or differently-cased id (did you mean ${aliasOwner.id}?)`
+        : `promote_from references unregistered environment "${from}"`);
+      continue;
+    }
+    // 沿 promote_from 前进：回到出发环境即成环；遇到已访问的其他环境则停止（出发环境不在该环上）
+    const visited = new Set([env.id]);
+    let cursor = byId.get(from);
+    while (cursor) {
+      const next = cursor.gate?.promote_from ?? null;
+      if (next === null) break;
+      if (next === env.id) { bad(env, 'promote_from chain forms a cycle'); break; }
+      if (visited.has(next) || next === cursor.id) break;
+      visited.add(cursor.id);
+      cursor = byId.get(next);
+    }
+  }
 }
 
 export type EnvResolution = { ok: true; id: string } | { ok: false; available: string[] };
@@ -331,6 +402,10 @@ export interface DeployLedgerRecord {
   failure_reason?: (typeof DEPLOY_FAILURE_REASONS)[number] | null;
   log_path?: string | null;
   reconciled?: boolean;
+  /** 受门环境的 deploy 记录另含（environment-promotion-approval，§5.2）；未配置门的环境不含。 */
+  approval_id?: string | null;
+  promoted_from?: string | null;
+  promotion_override_reason?: string | null;
 }
 
 export interface SmokeLedgerRecord {
@@ -350,7 +425,22 @@ export interface SmokeLedgerRecord {
   verified: boolean;
 }
 
-export type LedgerRecord = DeployLedgerRecord | SmokeLedgerRecord;
+/** approval 记录（spec/environments.md §5.2，environment-promotion-approval 决策 C07）。 */
+export interface ApprovalLedgerRecord {
+  kind: 'approval';
+  environment: string;
+  slug: string | null;
+  recorded_at: string;
+  observed_head: string | null;
+  observed_dirty: boolean | null;
+  approval_id: string;
+  ref: string;
+  ref_input: string;
+  approver: string | null;
+  note: string | null;
+}
+
+export type LedgerRecord = DeployLedgerRecord | SmokeLedgerRecord | ApprovalLedgerRecord;
 
 /** verified 判据（spec/environments.md §5.3）：五个条件同时满足才为 true。 */
 export function computeVerified(r: {
@@ -392,13 +482,21 @@ function validDeployExtension(o: Record<string, unknown>): boolean {
 export function validateLedgerRecord(value: unknown): LedgerRecord | null {
   if (!isRecord(value)) return null;
   const o = value;
-  if (o.kind !== 'deploy' && o.kind !== 'smoke') return null;
+  if (o.kind !== 'deploy' && o.kind !== 'smoke' && o.kind !== 'approval') return null;
   if (!isNonEmptyString(o.environment) || !(o.slug === null || isNonEmptyString(o.slug)) || typeof o.recorded_at !== 'string') return null;
   if (!has(o, 'observed_head') || !isRefOrNull(o.observed_head)) return null;
   if (!has(o, 'observed_dirty') || !isBoolOrNull(o.observed_dirty)) return null;
+  if (o.kind === 'approval') {
+    // environment-promotion-approval：ref 必须是 40 位 commit（不可为 null）
+    if (!isNonEmptyString(o.approval_id) || typeof o.ref !== 'string' || !COMMIT_RE.test(o.ref)) return null;
+    if (typeof o.ref_input !== 'string' || !has(o, 'approver') || !isStringOrNull(o.approver) || !has(o, 'note') || !isStringOrNull(o.note)) return null;
+    return o as unknown as ApprovalLedgerRecord;
+  }
   if (!has(o, 'ref') || !isRefOrNull(o.ref)) return null;
   if (o.kind === 'deploy') {
     if (!isNonEmptyString(o.deploy_id)) return null;
+    // 受门环境的可选字段（§5.4）：出现时为字符串或 null
+    if (!['approval_id', 'promoted_from', 'promotion_override_reason'].every(k => optional(o, k, isStringOrNull))) return null;
     if (has(o, 'channel')) {
       // openlogos deploy 写出的扩展记录（environment-deploy）
       if (!(DEPLOY_RESULTS as readonly unknown[]).includes(o.result)) return null;
@@ -432,6 +530,12 @@ export interface EnvLedgerState {
   /** 在当前成功记录之前的成功记录中：最近一个非 null ref（a1）与最近一个不等于 a1 的非 null ref（a2）。 */
   priorRef1: string | null;
   priorRef2: string | null;
+  /** 未使用的审批（§5.4），按记录顺序；使用为单向事实，一经使用即移出。 */
+  openApprovals: ApprovalLedgerRecord[];
+  /** 该环境 verified=true 的 smoke 记录的 ref 集合（下游晋级检查的依据，§12.3）。 */
+  verifiedRefs: Set<string>;
+  /** 晋级候选：最近一条 verified=true smoke 记录的 ref。 */
+  candidateRef: string | null;
 }
 
 export interface LedgerSnapshot {
@@ -501,16 +605,32 @@ export function readDeploymentLedger(root: string): LedgerSnapshot {
     if (!record) { snapshot.corruptLines += 1; return; }
     let state = snapshot.byEnvironment.get(record.environment);
     if (!state) {
-      state = { lastDeploy: null, lastSmoke: null, history: [], currentRef: null, hasDone: false, priorRef1: null, priorRef2: null };
+      state = {
+        lastDeploy: null, lastSmoke: null, history: [], currentRef: null, hasDone: false, priorRef1: null, priorRef2: null,
+        openApprovals: [], verifiedRefs: new Set(), candidateRef: null,
+      };
       snapshot.byEnvironment.set(record.environment, state);
     }
     if (record.kind === 'deploy') {
       // 同一 deploy_id 的多条记录按行序以最后一条为准：last_deploy 恒为最后一行；只有 done 推进当前 / 上一版本
       state.lastDeploy = record;
-      if (record.result === 'done') advanceDone(state, record.ref);
+      if (record.result === 'done') {
+        advanceDone(state, record.ref);
+        // 审批使用推导（§5.4、§12.4）：其后出现同环境、ref_requested 等于审批 ref 的 done 记录即已使用；
+        // 单向事实，不按同一 deploy_id 取最后一条，之后的 unknown / abandoned 不撤销（review delta-r1 F1）
+        const used = record.ref_requested;
+        if (used !== undefined && state.openApprovals.length > 0) state.openApprovals = state.openApprovals.filter(a => a.ref !== used);
+      }
       if (record.channel !== undefined) snapshot.hasDeployExecutionRecords = true;
-    } else {
+    } else if (record.kind === 'smoke') {
       state.lastSmoke = record;
+      if (record.verified && record.ref !== null) {
+        state.verifiedRefs.add(record.ref);
+        state.candidateRef = record.ref;
+      }
+    } else {
+      // approval 记录进入历史，不进入 last_deploy / last_smoke，不影响 current_ref / previous_ref
+      state.openApprovals.push(record);
     }
     state.history.unshift(record);
     if (state.history.length > ENV_HISTORY_LIMIT) state.history.length = ENV_HISTORY_LIMIT;
@@ -579,6 +699,28 @@ export interface EnvView {
   deploy_in_progress?: DeployInProgressView | null;
   last_deploy: DeployRecordView | null;
   last_smoke: SmokeRecordView | null;
+  /** 以下四个字段只在该环境登记表条目写有 promote_from 或 require_approval 时输出（§7.1，决策 C08）。 */
+  promote_from?: string | null;
+  require_approval?: boolean;
+  open_approvals?: ApprovalView[];
+  promotion?: { from: string; candidate_ref: string | null } | null;
+}
+
+/** 未使用审批的视图项（spec/environments.md §7.1）。 */
+export interface ApprovalView {
+  approval_id: string;
+  ref: string;
+  approver: string | null;
+  note: string | null;
+  recorded_at: string;
+}
+
+/** env show 历史中的 approval 记录（§5.2 字段）。 */
+export interface ApprovalRecordView extends ApprovalView {
+  slug: string | null;
+  ref_input: string;
+  observed_head: string | null;
+  observed_dirty: boolean | null;
 }
 
 /** 视图投影选项：部署执行已启用时输出部署执行字段；root 用于读取运行态目录的占用。 */
@@ -610,7 +752,17 @@ function projectDeployHistory(r: DeployLedgerRecord, deployEnabled: boolean): De
     ref_input: r.ref_input ?? null, rollback: r.rollback ?? false, rollback_from: r.rollback_from ?? null,
     duration_ms: r.duration_ms ?? null, ci_run_id: r.ci_run_id ?? null, ci_run_url: r.ci_run_url ?? null,
     ci_reported_ref: r.ci_reported_ref ?? null, log_path: r.log_path ?? null, reconciled: r.reconciled ?? false,
+    ...gateRecordFields(r),
   };
+}
+
+/** 受门环境的 deploy 记录可带审批与晋级字段（environment-promotion-approval）；未配置门的记录不含、输出不变。 */
+function gateRecordFields(r: DeployLedgerRecord): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  for (const k of ['approval_id', 'promoted_from', 'promotion_override_reason'] as const) {
+    if (r[k] !== undefined) out[k] = r[k] ?? null;
+  }
+  return out;
 }
 
 export function projectSmokeRecord(r: SmokeLedgerRecord): SmokeRecordView {
@@ -621,10 +773,19 @@ export function projectSmokeRecord(r: SmokeLedgerRecord): SmokeRecordView {
   };
 }
 
-export function projectHistoryRecord(r: LedgerRecord, deployEnabled = false): ({ kind: 'deploy' } & DeployRecordView) | ({ kind: 'smoke' } & SmokeRecordView) {
-  return r.kind === 'deploy'
-    ? { kind: 'deploy', ...projectDeployHistory(r, deployEnabled) }
-    : { kind: 'smoke', ...projectSmokeRecord(r) };
+const projectApproval = (r: ApprovalLedgerRecord): ApprovalView => ({
+  approval_id: r.approval_id, ref: r.ref, approver: r.approver, note: r.note, recorded_at: r.recorded_at,
+});
+
+export function projectHistoryRecord(
+  r: LedgerRecord, deployEnabled = false,
+): ({ kind: 'deploy' } & DeployRecordView) | ({ kind: 'smoke' } & SmokeRecordView) | ({ kind: 'approval' } & ApprovalRecordView) {
+  if (r.kind === 'deploy') return { kind: 'deploy', ...projectDeployHistory(r, deployEnabled) };
+  if (r.kind === 'smoke') return { kind: 'smoke', ...projectSmokeRecord(r) };
+  return {
+    kind: 'approval', approval_id: r.approval_id, slug: r.slug, ref: r.ref, ref_input: r.ref_input, approver: r.approver, note: r.note,
+    observed_head: r.observed_head, observed_dirty: r.observed_dirty, recorded_at: r.recorded_at,
+  };
 }
 
 /**
@@ -694,13 +855,30 @@ export function buildEnvView(env: EnvironmentDef, ledger: LedgerSnapshot, option
     last_deploy: lastDeploy ? projectDeployRecord(lastDeploy, options.deployEnabled) : null,
     last_smoke: state?.lastSmoke ? projectSmokeRecord(state.lastSmoke) : null,
   };
-  if (!options.deployEnabled) return { ...base, ...tail };
+  const gate = gateViewFields(env, ledger);
+  if (!options.deployEnabled) return { ...base, ...tail, ...gate };
   return {
     ...base,
     previous_ref: previousRefOf(state),
     deploy_mode: env.deploy?.mode ?? null,
     deploy_in_progress: options.root ? readDeployInProgress(options.root, env.id) : null,
     ...tail,
+    ...gate,
+  };
+}
+
+/**
+ * 晋级与审批视图字段（spec/environments.md §7.1，决策 C08）：只在条目写有 promote_from 或 require_approval 时输出；
+ * promotion.candidate_ref 取上游环境最近一条 verified=true smoke 记录的 ref。
+ */
+function gateViewFields(env: EnvironmentDef, ledger: LedgerSnapshot): Pick<EnvView, 'promote_from' | 'require_approval' | 'open_approvals' | 'promotion'> {
+  if (!env.gate) return {};
+  const from = env.gate.promote_from;
+  return {
+    promote_from: from,
+    require_approval: env.gate.require_approval,
+    open_approvals: (ledger.byEnvironment.get(env.id)?.openApprovals ?? []).map(projectApproval),
+    promotion: from === null ? null : { from, candidate_ref: ledger.byEnvironment.get(from)?.candidateRef ?? null },
   };
 }
 

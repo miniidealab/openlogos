@@ -264,3 +264,46 @@ flowchart LR
 ### 元数据 apply
 
 merge 时把 S41、S42 登记进 `logos/logos-project.yaml` 的 `scenarios`（`module: core`，`feature: F05` 验收与部署门禁）——S41 在 environment-registry 合并时漏登记，本次补登——并将 `scenario_counter.next_id` 从 41 推进到 43；把 `core-S42-environment-deploy.md`、`core-S42-test-cases.md` 纳入 `resource_index`。
+
+## S43 场景登记与依赖关系（environment-promotion-approval）
+
+### 场景地图增量
+
+| 编号 | 场景名称 | 主要实现 | 测试规格 | 状态 |
+|---|---|---|---|---|
+| S43 | 环境晋级与部署审批 | `commands/approve.ts` / `commands/deploy.ts`（并扩展 `environments.ts`、`deploy-done.ts`、`env.ts`、`status.ts`、`init.ts`、`plugin/bin/guard-check`、`plugin-cursor/hooks/runtime.cjs`） | `core-S43-test-cases.md` | 进行中 |
+
+### 依赖关系
+
+```mermaid
+flowchart LR
+    S41["S41 环境登记与查询（登记表、账本、EnvView）"] --> S43["S43 环境晋级与部署审批"]
+    S42["S42 按环境执行部署与回滚（前置链与环境锁）"] --> S43
+    S19["S19 smoke verified 记录"] -->|晋级依据| S43
+    S43 -->|approve 写入| LED["本机部署账本"]
+    S43 -->|受门环境拒绝| S21["S21 deploy-done"]
+    S09["S09 guard 宿主原生审批（C14）"] -->|受限命令与策略来源保护| S43
+    EXE["deployment-executor"] --> S43
+```
+
+### 依赖说明
+
+1. S43 依赖 S41 的登记表校验与账本读取：两个字段由 S41 的校验实现一并校验，`approval` 记录与审批使用推导在同一次账本扫描中完成，EnvView 新字段由同一视图投影输出。
+2. S43 的两项检查插入 S42 的前置链（版本解析之后、密钥检查之前），并在 S42 的环境锁内复核；deploy 记录与 agent 未决记录新增三个可选字段。
+3. 晋级判断只读取 S19 写出的 smoke 记录中 `verified=true` 的条目，不新增验证机制。
+4. S21 的 `deploy-done --env` 对配置了门的环境拒绝；未配置门的环境行为不变。
+5. S09 的 guard 宿主原生审批（C14）扩展受限命令清单，并把已配置门禁的登记表纳入策略来源保护。
+6. 未配置两个字段的项目，S41、S42、S21、S19、S11 的既有行为不变。
+
+### 场景索引增量
+
+- [S43：环境晋级与部署审批](./core-S43-environment-promotion-approval.md)
+- `core-S41-environment-registry.md`：新增「晋级与审批字段（environment-promotion-approval）」一节；对应测试 UT-S41-16～UT-S41-19、ST-S41-05。
+- `core-S42-environment-deploy.md`：前置检查顺序加入晋级与审批、取锁后复核与 deploy 记录新字段。
+- `core-S21-deploy-done-marker.md`：新增「受门环境拒绝（environment-promotion-approval）」一节。
+- `core-S09-change-management.md`：「时序图三：保护范围变更的宿主原生审批（C14）」扩展受限命令与已配置门禁的登记表分支；对应测试 UT-S09-461～UT-S09-466、ST-S09-205。
+- 对应测试：`logos/resources/test/core-S43-test-cases.md`。
+
+### 元数据 apply
+
+merge 时把 S41、S42、S43 登记进 `logos/logos-project.yaml` 的 `scenarios`（`module: core`，`feature: F05` 验收与部署门禁；S41、S42 此前漏登记，本次补登），将 `scenario_counter.next_id` 推进到 44、`decision_counter.next_id` 推进到 15；把 `core-S43-environment-promotion-approval.md`、`core-S43-test-cases.md` 纳入 `resource_index`。

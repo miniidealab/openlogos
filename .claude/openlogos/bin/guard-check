@@ -1128,7 +1128,9 @@ ps_git_target_check() {
 
 # ── 保护范围变更受限命令（guard-versioned-content-scope C14，spec/pretooluse-guard.md
 #    「保护范围变更的宿主原生审批（C14）」）──────────────────────────────────────────────
-# 受限命令：openlogos exempt add|remove、openlogos ignore add|remove（list 不受限）。任何 lifecycle、任何提案
+# 受限命令：openlogos exempt add|remove、openlogos ignore add|remove（list 不受限）；部署审批类命令
+# （environment-promotion-approval，决策 C05）：openlogos approve（任何参数形态，含 --help）与带 --force-promote 的
+# openlogos deploy（不带 --force-promote 的 deploy 不受限）。任何 lifecycle、任何提案
 # 状态、git 判据与非 git 回落两种模式下都先于安全白名单与其他判定识别：
 #   独立调用（只允许 `cd <目录> &&` 前缀段）→ 按 hook 输入 permission_mode：default / acceptEdits 输出
 #     permissionDecision: ask（exit 0，由宿主对这一次调用弹出原生审批）；其他值、字段缺失、未知值 → exit 2；
@@ -1153,7 +1155,8 @@ scope_block() {
   exit 2
 }
 
-# classify_scope_command <command> — 输出 none | standalone | compound。
+# classify_scope_command <command> — 输出 none | standalone:<类别> | compound:<类别>，类别为 scope（exempt / ignore）、
+# approve（openlogos approve）或 force（带 --force-promote 的 openlogos deploy），取第一处受限命令的类别。
 # node 主路径：引号感知切分（单 / 双引号内的字面量不参与识别；双引号内的 $( ) 与反引号按代码处理）；
 # node 不可用时退化为纯 bash 正则：文本中出现受限命令字样即按复合形态处理（只会多拦）。
 classify_scope_command() {
@@ -1193,29 +1196,45 @@ for (let i = 0; i < cmd.length; i++) {
   word = (word ?? '\'''\'') + c;
 }
 flush();
-const isRestricted = (ws) => {
+const kindOf = (ws, depth = 0) => {
   for (let i = 0; i < ws.length; i++) {
     const w = ws[i];
+    // shell 解释器 / eval 的字符串实参（如 bash -c "openlogos approve …"）按其中的词再识别一次，命中即复合形态
+    if (depth < 2 && /^(.*[\\/])?(bash|sh|zsh|dash|ksh|eval)$/.test(w)) {
+      for (const x of ws.slice(i + 1)) {
+        const k = kindOf(x.split(/[\s;&|()`]+/).filter(Boolean), depth + 1);
+        if (k) return k;
+      }
+    }
     if (w !== '\''openlogos'\'' && !/[\\/]openlogos(\.(c?js|cmd|exe|ps1))?$/i.test(w)) continue;
     const rest = ws.slice(i + 1).filter(x => !x.startsWith('\''-'\''));
-    if ((rest[0] === '\''exempt'\'' || rest[0] === '\''ignore'\'') && (rest[1] === '\''add'\'' || rest[1] === '\''remove'\'')) return true;
+    if ((rest[0] === '\''exempt'\'' || rest[0] === '\''ignore'\'') && (rest[1] === '\''add'\'' || rest[1] === '\''remove'\'')) return '\''scope'\'';
+    if (rest[0] === '\''approve'\'') return '\''approve'\'';
+    if (rest[0] === '\''deploy'\'' && ws.slice(i + 1).some(x => x === '\''--force-promote'\'' || x.startsWith('\''--force-promote='\''))) return '\''force'\'';
   }
-  return false;
+  return null;
 };
+const isRestricted = (ws) => kindOf(ws) !== null;
 const nonEmpty = segs.map((ws, i) => ({ ws, i })).filter(s => s.ws.length > 0);
 const hits = nonEmpty.filter(s => isRestricted(s.ws));
 if (hits.length === 0) { process.stdout.write('\''none'\''); process.exit(0); }
+const kind = kindOf(hits[0].ws);
 const last = nonEmpty[nonEmpty.length - 1];
 const standalone = !forbidden && hits.length === 1 && hits[0] === last && last.ws[0] === '\''openlogos'\''
   && seps.every(s => s === '\''&&'\'') && segs.every(ws => ws.length > 0)
   && nonEmpty.slice(0, -1).every(s => s.ws[0] === '\''cd'\'' && s.ws.length <= 2);
-process.stdout.write(standalone ? '\''standalone'\'' : '\''compound'\'');' "$cmd" 2>/dev/null)" || out=""
+process.stdout.write((standalone ? '\''standalone:'\'' : '\''compound:'\'') + kind);' "$cmd" 2>/dev/null)" || out=""
   fi
   case "$out" in
-    none|standalone|compound) printf '%s' "$out"; return 0 ;;
+    none|standalone:scope|standalone:approve|standalone:force|compound:scope|compound:approve|compound:force) printf '%s' "$out"; return 0 ;;
   esac
   local re='openlogos[^;&|]*[[:space:]](exempt|ignore)[[:space:]]+[^;&|]*(add|remove)'
-  if [[ "$cmd" =~ $re ]]; then printf 'compound'; else printf 'none'; fi
+  local re_approve='openlogos[^;&|]*[[:space:]]approve([[:space:]]|$)'
+  local re_force='openlogos[^;&|]*[[:space:]]deploy[[:space:]][^;&|]*--force-promote'
+  if [[ "$cmd" =~ $re ]]; then printf 'compound:scope'
+  elif [[ "$cmd" =~ $re_approve ]]; then printf 'compound:approve'
+  elif [[ "$cmd" =~ $re_force ]]; then printf 'compound:force'
+  else printf 'none'; fi
 }
 
 scope_change_check() {
@@ -1223,7 +1242,7 @@ scope_change_check() {
     Bash|PowerShell) ;;
     *) return 0 ;;
   esac
-  local cmd kind mode mode_label
+  local cmd kind category mode mode_label ask_reason what
   cmd="$(json_field "$INPUT" "tool_input.command" 2>/dev/null || true)"
   cmd="${cmd#"${cmd%%[![:space:]]*}"}"
   cmd="${cmd%"${cmd##*[![:space:]]}"}"
@@ -1231,10 +1250,18 @@ scope_change_check() {
   # 快速路径：不含 openlogos 字样的命令与本检查无关
   [[ "$cmd" == *openlogos* ]] || return 0
   kind="$(classify_scope_command "$cmd")"
+  category="${kind#*:}"
   case "$kind" in
-    standalone) ;;
-    compound)
+    standalone:*) ;;
+    compound:scope)
       scope_block "⛔ 保护范围变更命令必须单独执行：一次调用只能包含一条 openlogos exempt / ignore 的 add / remove，只允许 \`cd <目录> &&\` 前缀，不能与其他命令组合。
+
+命令：${cmd}
+
+请拆成单独的调用后重试。"
+      ;;
+    compound:*)
+      scope_block "⛔ 部署审批类命令必须单独执行：一次调用只能包含一条 openlogos approve 或带 --force-promote 的 openlogos deploy，只允许 \`cd <目录> &&\` 前缀，不能与其他命令组合。
 
 命令：${cmd}
 
@@ -1242,20 +1269,103 @@ scope_change_check() {
       ;;
     *) return 0 ;;
   esac
+  # 按类别的 ask reason 与阻断说明（spec/pretooluse-guard.md「保护范围变更的宿主原生审批（C14）」）
+  case "$category" in
+    approve)
+      ask_reason="该命令会写入部署审批（${cmd}），需要您确认后执行"
+      what="⛔ 部署审批需要用户在宿主界面批准：该命令会写入部署审批（openlogos approve），审批只能由人产生。" ;;
+    force)
+      ask_reason="该命令会越过晋级检查（${cmd}），需要您确认后执行"
+      what="⛔ 越过晋级检查需要用户在宿主界面批准：该命令会以 --force-promote 越过晋级检查，只能由人决定。" ;;
+    *)
+      ask_reason="该命令会改变 guard 的保护范围（${cmd}），需要您确认后执行"
+      what="⛔ 保护范围变更需要用户在宿主界面批准：该命令会修改 guard 的保护范围（exempt / ignore 清单与 .gitignore 托管区块）。" ;;
+  esac
   mode="$(json_field "$INPUT" "permission_mode" 2>/dev/null || true)"
   case "$mode" in
     default|acceptEdits)
       printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":%s}}\n' \
-        "$(_json_str "该命令会改变 guard 的保护范围（${cmd}），需要您确认后执行")"
+        "$(_json_str "$ask_reason")"
       exit 0
       ;;
   esac
   if [ -z "$mode" ]; then mode_label="未知：hook 输入缺少 permission_mode 字段"; else mode_label="$mode"; fi
-  scope_block "⛔ 保护范围变更需要用户在宿主界面批准：该命令会修改 guard 的保护范围（exempt / ignore 清单与 .gitignore 托管区块）。
+  scope_block "${what}
 
 命令：${cmd}
 
 当前权限模式（${mode_label}）下宿主不会弹出确认，无法证明由用户批准。请让用户在终端用 \`! ${cmd}\` 自行执行，或切换到默认权限模式后重试；不要用对话中的口头同意替代。"
+}
+
+# ── 已配置门禁的环境登记表（environment-promotion-approval，决策 C11，D14；spec/pretooluse-guard.md
+#    「保护范围变更的宿主原生审批（C14）」中的「已配置门禁的环境登记表」）─────────────────────────────
+# logos/environments.yaml 内容出现 promote_from / require_approval 字段名或反斜杠字符即视为已配置门禁（不解析 YAML，
+# 误判只会多拦；加载器拒绝以非普通键名书写的门禁字段，CLI 认定的门禁必被识别）。已配置门禁时它是部署门禁策略来源：
+# 不适用内置默认与显式 guard.exempt，不以活跃提案放行，任何 lifecycle 下结论相同。
+#   Edit / Write / MultiEdit / NotebookEdit → default / acceptEdits 返回 ask，其他模式、字段缺失、未知值 exit 2；
+#   Bash / PowerShell 写入、移动、删除该文件 → 一律 exit 2。两道识别（任一命中即阻断，只会多拦）：
+#     ① 文本：命令中出现该文件且含写入信号；命令名允许带路径前缀与引号（/bin/cp、"/usr/bin/sed"，review code-r1 F1）；
+#     ② 引擎：Bash 经事后检查引擎 classify 解析出的可确定写入目标（与事后检查同一实现，含可执行文件名归一化）为该文件。
+GATED_REGISTRY_REL="logos/environments.yaml"
+# 写入信号：命令名（可带路径前缀与引号）或重定向
+GATED_WRITE_ERE='(^|[;&|(`[:space:]])["'"'"']?([^[:space:];&|(`"'"'"']*[/\\])?(rm|mv|cp|install|ln|rsync|touch|truncate|tee|sed|perl|awk|gawk|ed|ex|dd|chmod|chown|unlink|remove-item|set-content|add-content|out-file|new-item|copy-item|move-item|rename-item|clear-content|ri|del|erase|sc|ac|ni|rni|clc)["'"'"']?([[:space:]]|$)|>'
+
+registry_has_gates() {
+  [ -f "$GATED_REGISTRY_REL" ] || return 1
+  grep -qF -e promote_from -e require_approval -e '\' "$GATED_REGISTRY_REL" 2>/dev/null
+}
+
+gated_registry_shell_block() {
+  scope_block "⛔ 部署门禁配置受保护：${GATED_REGISTRY_REL} 已配置晋级 / 审批门禁（promote_from / require_approval），是部署门禁策略来源，不允许经 ${TOOL_NAME} 写入、移动或删除（不适用 guard.exempt，活跃提案也不能放行）。
+
+命令：$(printf '%s' "$1" | head -c 200)
+
+如需调整门禁，请由用户自行编辑该文件，或在默认权限模式下用编辑工具修改（将弹出确认）；不要用对话中的口头同意替代。"
+}
+
+gated_registry_check() {
+  local fp rel cmd mode mode_label
+  case "$TOOL_NAME" in
+    Edit|Write|MultiEdit|NotebookEdit)
+      fp="$(hook_target_path)"
+      [ -n "$fp" ] || return 0
+      rel="$(rel_of_cwd "$fp")"
+      [ "$rel" = "$GATED_REGISTRY_REL" ] || return 0
+      registry_has_gates || return 0
+      mode="$(json_field "$INPUT" "permission_mode" 2>/dev/null || true)"
+      case "$mode" in
+        default|acceptEdits)
+          printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":%s}}\n' \
+            "$(_json_str "该修改会改变部署门禁配置（${GATED_REGISTRY_REL}），需要您确认后执行")"
+          exit 0
+          ;;
+      esac
+      if [ -z "$mode" ]; then mode_label="未知：hook 输入缺少 permission_mode 字段"; else mode_label="$mode"; fi
+      scope_block "⛔ 部署门禁配置受保护：${GATED_REGISTRY_REL} 已配置晋级 / 审批门禁（promote_from / require_approval），是部署门禁策略来源，修改须由用户在宿主界面批准（不适用 guard.exempt，活跃提案也不能放行）。
+
+目标文件：${fp}
+
+当前权限模式（${mode_label}）下宿主不会弹出确认，无法证明由用户批准。请由用户自行编辑该文件，或切换到默认权限模式后重试；不要用对话中的口头同意替代。"
+      ;;
+    Bash|PowerShell)
+      cmd="$(json_field "$INPUT" "tool_input.command" 2>/dev/null || true)"
+      [ -n "$cmd" ] || return 0
+      registry_has_gates || return 0
+      # ① 文本识别
+      if printf '%s\n' "$cmd" | grep -qE 'environments\.yaml($|[^.A-Za-z0-9_-])' 2>/dev/null \
+        && printf '%s\n' "$cmd" | grep -qiE "$GATED_WRITE_ERE" 2>/dev/null; then
+        gated_registry_shell_block "$cmd"
+      fi
+      # ② 引擎写入目标解析（Bash）：可确定的写入目标为该文件
+      if [ "$TOOL_NAME" = "Bash" ] && engine_classify bash; then
+        local t
+        for t in ${SHELL_TARGETS[@]+"${SHELL_TARGETS[@]}"}; do
+          if [ "$(rel_of_cwd "$t")" = "$GATED_REGISTRY_REL" ]; then gated_registry_shell_block "$cmd"; fi
+        done
+      fi
+      ;;
+  esac
+  return 0
 }
 
 # runtime_dir_file_write_check — 文件工具写入 guard 自有状态时阻断（任何 lifecycle 与提案状态）
@@ -1812,6 +1922,8 @@ bash_fallback_verdict() {
 
 # 保护范围变更受限命令：先于 lifecycle、提案状态与安全白名单（C14）
 scope_change_check
+# 已配置门禁的环境登记表：同样先于 lifecycle、提案状态、白名单与 guard.exempt（C11）
+gated_registry_check
 
 if [ "$IS_LAUNCHED" -eq 0 ]; then
   runtime_dir_file_write_check

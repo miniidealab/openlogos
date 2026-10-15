@@ -11,6 +11,7 @@ import { verify } from './commands/verify.js';
 import { smoke } from './commands/smoke.js';
 import { deployDone } from './commands/deploy-done.js';
 import { deploy } from './commands/deploy.js';
+import { approve } from './commands/approve.js';
 import { launch } from './commands/launch.js';
 import { detect } from './commands/detect.js';
 import { indexCommand } from './commands/index-cmd.js';
@@ -76,6 +77,11 @@ Commands:
                        --rollback                   Redeploy the environment's previous_ref (version channel)
                        --channel <proposal|version> Override the default channel
                        --dry-run                    Run all checks and show the plan without executing or writing
+                       --force-promote "<reason>"   Bypass the promotion check with a recorded reason (human-only; guard-restricted for AI)
+  approve            Approve one commit for an environment that requires approval (human-only; guard-restricted for AI)
+                       --env <id|alias>             Target environment (required)
+                       --ref <git revision>         Commit to approve (required)
+                       --note <text>                Optional note
   baseline-seed      Commit reverse-engineered baseline seed state (brownfield-adopter)
                        begin  --module <id> --manifest <path>   Freeze logical plan + create staging
                        commit --module <id> --run-id <id>       Validate staged bytes + atomic commit
@@ -112,7 +118,7 @@ Options:
   --help, -h         Show this help message
   --version, -v      Show version number
   --fresh-sandbox    verify / smoke: rebuild the persistent sandbox workspace from scratch
-  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, deploy, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list, env list, env show, env check)
+  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, deploy, approve, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list, env list, env show, env check)
 
 Examples:
   openlogos init my-saas-project
@@ -147,7 +153,7 @@ const VALUE_OPTIONS = new Set([
   '--locale', '--ai-tool', '--aitool', '--module', '--interval', '--env',
   '--manifest', '--run-id', '--slug', '--lifecycle', '--format',
   '--base', '--head', '--prefix', '--ref',
-  '--channel', '--complete', '--result', '--abandon',
+  '--channel', '--complete', '--result', '--abandon', '--note', '--force-promote',
 ]);
 
 /** 剔除取值选项的值位 token，仅保留可参与全局选项判定的 token。 */
@@ -267,7 +273,24 @@ async function main() {
         result: valueOf('--result'),
         abandon: valueOf('--abandon'),
         reconcile: args.includes('--reconcile'),
+        forcePromote: valueOf('--force-promote'),
         missingValue,
+      });
+      break;
+    }
+    case 'approve': {
+      // --env / --ref 出现但缺值时按未传处理（ENV_REQUIRED / APPROVAL_REF_REQUIRED），--ref 缺值传空串按 ENV_REF_UNRESOLVED 拒绝
+      const valueAt = (flag: string): string | undefined => {
+        const i = args.indexOf(flag);
+        if (i === -1) return undefined;
+        const v = args[i + 1];
+        return v === undefined || v.startsWith('--') ? undefined : v;
+      };
+      const refIdx = args.indexOf('--ref');
+      await approve(format, {
+        env: valueAt('--env'),
+        ref: refIdx === -1 ? undefined : (args[refIdx + 1] ?? ''),
+        note: valueAt('--note'),
       });
       break;
     }

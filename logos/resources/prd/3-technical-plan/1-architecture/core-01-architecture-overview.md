@@ -2993,3 +2993,63 @@ flowchart TD
 - 规范：`spec/environments.md` §11；`spec/cli-json-output.md`「`openlogos deploy --format json`」。
 - 需求：「S42: 按环境执行部署与回滚」；功能规格：§2.94；决策：D13。
 - 场景：`core-S42-environment-deploy.md`；测试：`core-S42-test-cases.md`。
+
+## 五十五、环境晋级与审批门
+
+> 来源变更：environment-promotion-approval（决策 C01～C11，D14）。格式权威：`spec/environments.md` §12；功能规格：§2.95；场景：S43、S42、S41、S21、S09。
+
+### 55.1 目标与边界
+
+让登记表中预留的 `promote_from` 与 `require_approval` 真正生效：前者要求部署的版本已在上游环境以 smoke 验证过，后者要求有人对「这个环境 + 这个 commit」批准过。两道门都落在「五十三」的登记表与账本、「五十四」的部署前置链与环境锁之上，不新建审批服务、凭据文件或第二本账本；「人批过」的证明完全复用 guard 的宿主原生审批（C14）。不做多人会签、审批人白名单、审批撤销与过期、多级晋级传递校验、`next --auto` 直接产出部署命令，以及对 AI 直接运行部署脚本的拦截（威胁模型同 `spec/pretooluse-guard.md`「已知覆盖限制」）。
+
+### 55.2 组件
+
+| 组件 | 职责 | 读 / 写 |
+|---|---|---|
+| `cli/src/commands/approve.ts`（新增） | 解析 `--env` / `--ref` / `--note`，只接受配置了 `require_approval: true` 的环境；在账本锁内重扫账本查重，已有未使用审批时幂等返回，否则追加 `kind=approval` 记录 | 读登记表、账本；写账本 |
+| `cli/src/lib/environments.ts` | 两个字段的校验（只在配置了 `deploy` 的环境上合法、`promote_from` 只接受已登记 id、不得指向自身、不得成环）；`approval` 记录校验；在同一次流式扫描中推导每个环境的未使用审批、上游已验证 commit 集合与 `promotion.candidate_ref`；EnvView 新字段（只在配置了任一门的环境上输出） | 只读 |
+| `cli/src/commands/deploy.ts` | 前置链插入晋级与审批两项检查（版本解析之后、密钥检查之前）；`--force-promote` 参数与互斥；取得环境锁后重读账本复核；deploy 记录与 agent 未决记录携带 `approval_id`、`promoted_from`、`promotion_override_reason` | 读账本；写账本、运行态目录 |
+| `cli/src/commands/deploy-done.ts` | `--env` 指向配置了任一门的环境时以 `DEPLOY_DONE_GATED_ENV` 零写入拒绝 | 只读（拒绝路径） |
+| `cli/src/commands/env.ts`、`cli/src/commands/status.ts` | 视图新增 `promote_from`、`require_approval`、`open_approvals`、`promotion`；`env check` 报告字段与成环问题 | 只读 |
+| `plugin/bin/guard-check`、`plugin-cursor/hooks/runtime.cjs` | 受限命令清单新增 `openlogos approve` 与带 `--force-promote` 的 `openlogos deploy`；已配置门禁的登记表不适用豁免，其直接修改与删除走宿主原生审批 | 读登记表文本 |
+| `cli/src/commands/init.ts`、`skills/deployment-executor`、`skills/deployment-designer` | 生成的 AGENTS.md / CLAUDE.md 硬红线条目新增审批与晋级；executor 遇两个错误码停止报告；designer 说明两个字段的配置 | — |
+
+### 55.3 部署前置链中的位置与两段式判定
+
+```mermaid
+flowchart TD
+    A["配置 / 占用 / 通道 / 版本解析（既有）"] --> P{"晋级检查<br/>promote_from 已配置且非 --rollback？"}
+    P -->|上游无 verified=true 的该 commit| PE["DEPLOY_PROMOTION_UNVERIFIED<br/>零执行零写入"]
+    P -->|通过 / 未配置 / --force-promote 留痕| Q{"审批检查<br/>require_approval: true？"}
+    Q -->|无未使用审批| QE["DEPLOY_APPROVAL_REQUIRED<br/>给出 approve 命令原文"]
+    Q -->|有 / 未配置| S["密钥与脚本 / CI 检查（既有）"]
+    S --> DR{"--dry-run？"}
+    DR -->|是| PL["plan 给出 approval_id 与晋级依据，不取锁不写文件"]
+    DR -->|否| L["取得环境锁"]
+    L --> R{"锁内重读账本复核<br/>晋级仍成立且审批仍未使用？"}
+    R -->|否| RE["释放锁，以同样错误码零执行"]
+    R -->|是| X["执行 / 触发 / 登记未决记录"]
+    X --> W["deploy 记录写入 approval_id 等字段<br/>result=done 即视为使用该审批"]
+```
+
+- 锁外检查只用于提前报错；最终授权在环境锁内判定，与随后的执行、成功记录或未决占用处在同一环境互斥边界内（复用「五十四」的环境锁与「持锁后复核未决记录」做法），部署期间不持有全局账本锁。
+- `approve` 的查重与追加在同一个账本锁临界区内完成（复用 `deployment-ledger.ts` 的锁内回调），并发执行只写一条。
+- 审批的「已使用」不写独立记录，由账本中该环境 `ref_requested` 等于审批 commit、`result=done` 的 deploy 记录推导；使用是单向事实：曾出现过使用该审批的成功记录即永久已使用，同一 `deploy_id` 之后的 `--abandon` 或重复补记不撤销；ci 结果未知后经 `--reconcile` 补记成功时才使用审批（review delta-r1 F1）。
+- agent 方式在开始阶段的锁内完成复核并把审批身份写入未决记录；`--complete --result done` 写出的记录带上该 `approval_id`，从而使用审批。
+
+### 55.4 「人批过」的证明与策略来源保护
+
+- 审批与晋级越过只能由人经宿主原生审批产生（D14）：两条命令进入 guard 受限命令清单，Claude Code 在 `default` / `acceptEdits` 下返回 `permissionDecision: ask`，其他模式、字段缺失、非交互与复合形态一律阻断；Cursor 与其他宿主不能保证弹出审批的入口阻断。审批写入运行态目录下的账本，该目录对 AI 编辑工具恒阻断。
+- 已配置门禁的登记表是门禁策略来源：guard 按文本保守识别（出现 `promote_from` 或 `require_approval` 字段名，或出现反斜杠字符即视为已配置；登记表加载器要求门禁字段以普通键名书写，CLI 认定的门禁因此必被识别，review delta-r1 F2），不再对它适用内置默认豁免或 `guard.exempt`、不以活跃提案放行，直接修改与删除同样走宿主原生审批。guard 不解析 YAML、不区分修改是否削弱门禁；从无门到加门的那一次修改仍按既有豁免放行。
+- `deploy-done --env` 对配置了门的环境拒绝，封堵「部署被拒后手工部署再落标」的绕道。
+
+### 55.5 `--auto` 与授权语义
+
+- `--auto` 的 standing 授权不覆盖审批、晋级越过与门禁配置修改：无人值守运行通常处于 `bypassPermissions` / `auto` / 非交互模式，相关调用被 guard 阻断，部署停在「等待审批」或「晋级未满足」，人批准后宿主重新驱动即可继续。这是继 `loop-exhausted` 之后第二条任何模式都不自动放行的硬停点，写入 `spec/change-management.md`、deployment-executor 与生成的 AGENTS.md / CLAUDE.md。
+- 不新增 flow 节点、门或 marker；宿主 driver 不得代替用户批准宿主审批。
+
+### 55.6 兼容性与不变量
+
+- 未配置两个字段的项目（含没有登记表、有登记表但无门、已启用部署执行但无门）所有命令的输出、写入与行为逐字不变；EnvView 新字段只在配置了任一门的环境上输出。
+- 账本只新增 `approval` 记录类型与 deploy 记录的三个可选字段，旧记录原样有效；0.16.4 及更早的读取方会把审批记录计为坏行并跳过。
+- 一次审批只放行一次成功发布；failed / unknown 不使用审批；对其他 commit 的审批不能放行。

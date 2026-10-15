@@ -96,30 +96,36 @@ export function withLedgerLock<T>(root: string, fn: () => T, opts: LedgerLockOpt
  * 正常返回即本次记录已完整写入（释放锁失败不改变这一结论，见 withLedgerLock）。
  */
 export function appendLedgerLine(root: string, line: string, opts: LedgerLockOptions = {}): void {
+  withLedgerLock(root, () => appendLedgerLineLocked(root, line, opts), opts);
+}
+
+/**
+ * appendLedgerLine 的临界区部分：调用方必须已持有账本锁（withLedgerLock）。供需要在同一临界区内
+ * 「重新扫描账本 → 查重 → 追加」的写入方使用（openlogos approve，environment-promotion-approval §12.2）。
+ */
+export function appendLedgerLineLocked(root: string, line: string, opts: Pick<LedgerLockOptions, 'io'> = {}): void {
   const ledgerPath = join(root, DEPLOY_LEDGER_REL);
   const io = { ...defaultLedgerFileIo, ...opts.io };
-  withLedgerLock(root, () => {
-    // 账本路径被目录等占据时 readFileSync 抛 EISDIR，此时尚未写入任何文件
-    const current = existsSync(ledgerPath) ? readFileSync(ledgerPath) : null;
-    if (current !== null && current.length > 0 && current[current.length - 1] !== 0x0a) {
-      throw new Error(`deployment ledger does not end with a newline (${DEPLOY_LEDGER_REL}); add the missing trailing newline and retry, nothing was written`);
-    }
-    let mode: number | null = null;
-    if (current !== null) {
-      accessSync(ledgerPath, constants.W_OK);
-      mode = statSync(ledgerPath).mode & 0o7777;
-    }
-    const tmpPath = `${ledgerPath}.${process.pid}.append.tmp`;
-    try {
-      io.writeFile(tmpPath, Buffer.concat([current ?? Buffer.alloc(0), Buffer.from(line)]));
-      if (mode !== null) chmodSync(tmpPath, mode);
-      io.rename(tmpPath, ledgerPath);
-    } catch (error) {
-      // 账本未被替换；临时文件残留只影响运行态目录的整洁，不影响账本内容
-      try { io.remove(tmpPath); } catch { /* 见上 */ }
-      throw error;
-    }
-  }, opts);
+  // 账本路径被目录等占据时 readFileSync 抛 EISDIR，此时尚未写入任何文件
+  const current = existsSync(ledgerPath) ? readFileSync(ledgerPath) : null;
+  if (current !== null && current.length > 0 && current[current.length - 1] !== 0x0a) {
+    throw new Error(`deployment ledger does not end with a newline (${DEPLOY_LEDGER_REL}); add the missing trailing newline and retry, nothing was written`);
+  }
+  let mode: number | null = null;
+  if (current !== null) {
+    accessSync(ledgerPath, constants.W_OK);
+    mode = statSync(ledgerPath).mode & 0o7777;
+  }
+  const tmpPath = `${ledgerPath}.${process.pid}.append.tmp`;
+  try {
+    io.writeFile(tmpPath, Buffer.concat([current ?? Buffer.alloc(0), Buffer.from(line)]));
+    if (mode !== null) chmodSync(tmpPath, mode);
+    io.rename(tmpPath, ledgerPath);
+  } catch (error) {
+    // 账本未被替换；临时文件残留只影响运行态目录的整洁，不影响账本内容
+    try { io.remove(tmpPath); } catch { /* 见上 */ }
+    throw error;
+  }
 }
 
 /**

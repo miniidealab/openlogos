@@ -10,7 +10,7 @@
 | UT-S41-01 | 合法登记表解析 | 登记表含 test、prod 两项，字段齐全（含 aliases、health、version、secrets） | 加载登记表 | 返回两项环境，字段值与文件一致；无 error、无 warning |
 | UT-S41-02 | 字段非法逐条点名 | 分别构造：id 含大写或下划线、缺 name、tier 为 `qa`、health 为 `ftp://…`、secrets 含 `MY-TOKEN`、`schema_version: 2` | 加载并执行 `env check` 的校验逻辑 | 每种情形报 `ENV_FIELD_INVALID`（`schema_version` 报 `ENV_REGISTRY_INVALID`），点名环境与字段；加载结论为非法 |
 | UT-S41-03 | id / alias 不区分大小写冲突 | ① 两项 id 相同；② 一项 alias 为 `Prod` 与另一项 id `prod` 相同；③ 两项 alias 都含 `测试` | 加载登记表 | 三种情形均报 `ENV_DUPLICATE_ID_OR_ALIAS` 并点名冲突值 |
-| UT-S41-04 | 未知字段只警告 | 顶层含 `owner`，环境项含 `promote_from` | 加载登记表 | 加载成功；warning 列表含两条 `ENV_UNKNOWN_FIELD`；不计入 error |
+| UT-S41-04 | 未知字段只警告 | 顶层含 `owner`，环境项含 `owner_team`（`promote_from` / `require_approval` 自 environment-promotion-approval 起为受校验字段，见 UT-S41-16） | 加载登记表 | 加载成功；warning 列表含两条 `ENV_UNKNOWN_FIELD`；不计入 error |
 | UT-S41-05 | 环境解析顺序与失败 | 登记表 test（aliases `[测试, QA]`）、prod | 依次解析 `TEST`、`qa`、`测试`、`staging` | 前三者解析为 `test`；`staging` 报 `ENV_UNKNOWN`，消息列出 `test`、`prod` |
 | UT-S41-06 | 账本完整流式扫描与按环境聚合 | 账本第 1、2 行为 prod 的 deploy、smoke；之后追加 1001 条 test 记录；再追加 25 条 prod 之外的记录 | 读取账本并投影 | prod 的 `last_deploy`、`last_smoke` 为第 1、2 行；test 的 `last_*` 为其最后的记录；每个环境历史最多 20 条且为新到旧；不存在全局行数窗口 |
 | UT-S41-07 | 账本非法行整行跳过且不覆盖有效状态 | 账本依次为：prod 的合法 deploy（R1）与合法 smoke；随后 prod 的非法行——非 JSON、JSON 数组、缺 `kind`、`kind: rollback`、`{"kind":"deploy","environment":"prod"}`（缺字段）、deploy 行 `ref` 为数字、deploy 行 `ref_source=explicit` 而 `ref=null`、smoke 行 `verified` 为字符串、smoke 行 `result=pass` 等条件满足 `verified=true` 却写 `verified=false`、smoke 行缺 `fresh_results`；末尾一行含未知额外字段 `note` 的合法 test deploy | 读取账本并投影 | `corrupt_lines=10`；prod 的 `last_deploy` 仍为 R1 那行、`current_ref` 为 R1 且类型为字符串，`last_smoke` 仍为那条合法 smoke；prod 历史不含任何非法行；test 的含额外字段的行被接受；不抛出 |
@@ -46,7 +46,7 @@
 
 ## 五、部署配置与部署记录扩展测试（environment-deploy）
 
-> 覆盖场景 `core-S41-environment-registry.md`「部署配置与部署记录扩展（environment-deploy）」、EX-41.11、EX-41.12，`spec/environments.md` §2.2、§5.2、§5.4、§7.1、§11.2，决策 C06、C08、D13。既有 UT-S41-01～UT-S41-11、ST-S41-01～ST-S41-03 不变（UT-S41-04 的 `promote_from` 仍为未知字段，UT-S41-07 列举的非法行仍为非法）。测试实现必须写入 OpenLogos reporter，`scenario_id="S41"`；账本记录以直接写入的方式构造，全部在一次性临时项目中执行。
+> 覆盖场景 `core-S41-environment-registry.md`「部署配置与部署记录扩展（environment-deploy）」、EX-41.11、EX-41.12，`spec/environments.md` §2.2、§5.2、§5.4、§7.1、§11.2，决策 C06、C08、D13。既有 UT-S41-01～UT-S41-11、ST-S41-01～ST-S41-03 不变（UT-S41-07 列举的非法行仍为非法；UT-S41-04 的未知字段样例自 environment-promotion-approval 起改为 `owner_team`）。测试实现必须写入 OpenLogos reporter，`scenario_id="S41"`；账本记录以直接写入的方式构造，全部在一次性临时项目中执行。
 
 ### 单元测试（UT）
 
@@ -69,3 +69,30 @@
 - 扩展记录校验、同一 `deploy_id` 取最后一条：UT-S41-13。
 - `current_ref` / `previous_ref`：UT-S41-14、ST-S41-04。
 - 视图新增字段与 status schema：UT-S41-15、ST-S41-04。
+
+## 六、晋级与审批字段测试（environment-promotion-approval）
+
+> 覆盖场景 `core-S41-environment-registry.md`「晋级与审批字段（environment-promotion-approval）」、EX-41.13～EX-41.16，`spec/environments.md` §2.2、§5.2、§5.4、§7.1、§12，决策 C06～C08、C11。既有 UT-S41-01～UT-S41-15、ST-S41-01～ST-S41-04 除 UT-S41-04 的未知字段样例外不变。测试实现必须写入 OpenLogos reporter，`scenario_id="S41"`；账本记录以直接写入的方式构造，全部在一次性临时项目中执行。guard 对已配置门禁的登记表的判定见 `core-S09-test-cases.md` UT-S09-464、UT-S09-465。
+
+### 单元测试（UT）
+
+| ID | 描述 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|---------|----------|---------|
+| UT-S41-16 | `promote_from` / `require_approval` 校验 | 登记表含 test、staging、prod，staging 与 prod 配置 `deploy`。分别构造：① prod `promote_from: staging`、`require_approval: true`；② prod `promote_from: stage`（未登记）；③ prod `promote_from: 生产`（alias 而非 id）；④ prod `promote_from: prod`；⑤ staging `promote_from: prod` 且 prod `promote_from: staging`（成环）；⑥ test（未配置 `deploy`）写 `require_approval: true`；⑦ prod `require_approval: "yes"`；⑧ prod `promote_from: 3`；⑨ prod 以合法 YAML 转义键写 `"require_\u0061pproval": true`（原文不含字段名字面量）；⑩ prod 以单引号键写 `'promote_from': staging`（原文含字面量） | 加载登记表并执行 `env check` 的校验逻辑 | ①⑩ 无 error、无 `ENV_UNKNOWN_FIELD`；②～⑨ 各报 `ENV_FIELD_INVALID`（`field` 为 `promote_from` 或 `require_approval`，⑤ 对环上两个环境各报一条，⑨ 的原因说明门禁字段须以普通键名书写），登记表判为非法 |
+| UT-S41-17 | `approval` 记录的校验与读取 | 账本含：① 合法 `kind=approval`（`approval_id`、40 位 `ref`、`ref_input`、`approver`、`note: null`）；② `ref` 为 7 位短哈希；③ 缺 `approval_id`；④ `approver` 为数字；⑤ 额外未知字段 `reviewer`（其余合法） | 读取账本并投影 | ① ⑤ 被接受（⑤ 的未知字段保留兼容）；②③④ 计入 `corrupt_lines`，不影响其他记录；审批记录不进入 `last_deploy` / `last_smoke`，进入 `env show` 历史 |
+| UT-S41-18 | 审批使用推导 | prod 配置 `require_approval: true`；账本依次：对 X 的审批 A1；`ref_requested=X` 的 deploy `result=failed`；`ref_requested=X` 的 deploy `result=unknown`（`deploy_id=D1`）；对 Y 的审批 A2；与 D1 同一 `deploy_id` 的 `result=done`、`reconciled=true`；对 X 的审批 A3。另一序列（成功使用后放弃）：对 X 的审批 B1；`deploy_id=D2`、`ref_requested=X`、`result=done`；同一 D2 的 `result=unknown`、`failure_reason=abandoned` | 读取并投影 `open_approvals` | failed、unknown 之后 A1 仍未使用；D1 补记为 done 后 A1 视为已使用；对 Y 的审批 A2 不因 X 的部署被使用；最终 `open_approvals` 为 A2、A3（按记录顺序），每项含 `approval_id`、`ref`、`approver`、`note`、`recorded_at`；另一序列中 B1 仍为已使用（不因 D2 之后的 abandoned 记录重新有效），`open_approvals` 为空 |
+| UT-S41-19 | EnvView 新字段只在配置了门的环境上输出 | prod 配置 `promote_from: staging`、`require_approval: true`，staging 只配置 `deploy`；账本中 staging 有对 X `verified=true` 与对 Y `verified=false` 的 smoke 记录（Y 更晚），prod 有一份未使用审批 | `env list --format json`、`env show prod --format json`、`status --format json` | prod 视图含 `promote_from=staging`、`require_approval=true`、`open_approvals`（一项）与 `promotion={from: staging, candidate_ref: X}`（只认 `verified=true`）；staging 视图不含这四个字段；三条命令同一环境字段一致；`status` 输出通过 `spec/schema/status.schema.json` 校验 |
+
+### 场景测试（ST）
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S41-05 | 未配置门禁零回归与 0.16.4 读取兼容 | 晋级与审批字段；EX-41.15 | 真实 CLI；三种夹具：没有登记表、有登记表但无门、已启用部署执行但无门；另一夹具账本含审批记录 | ① 三种夹具分别执行 `env list` / `env show` / `status` / `deploy-done` / `smoke --format json`；② 以账本读取函数在「只认 0.16.4 字段集」的兼容夹具下读取含审批记录的账本 | ① 输出、退出码与账本字节与引入本提案前的基线逐字一致（不出现 `promote_from`、`require_approval`、`open_approvals`、`promotion`）；② 审批记录计入 `corrupt_lines` 并跳过，不抛出，其余记录照常生效 |
+
+### 覆盖度校验（environment-promotion-approval 增量）
+
+- 两个字段校验（不存在 / alias / 自身 / 成环 / 未配置 deploy / 类型 / 转义键写法）：UT-S41-16。
+- `approval` 记录校验：UT-S41-17。
+- 审批使用推导（failed / unknown 不使用、reconcile 补记成功后使用、成功使用后 abandon 不撤销、不同 commit 不使用）：UT-S41-18。
+- EnvView 新字段与 status schema：UT-S41-19。
+- 未配置门禁零回归与旧读取方兼容：ST-S41-05。

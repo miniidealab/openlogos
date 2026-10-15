@@ -211,3 +211,48 @@ sequenceDiagram
 - 需求：S21 验收条件（environment-registry 新增项）。
 - 功能规格：§2.11、§2.93.2、§2.93.3、§2.93.5；规范：`spec/environments.md` §3～§5。
 - 测试：UT-S21-12～UT-S21-19、ST-S21-05。
+
+## 受门环境拒绝（environment-promotion-approval）
+
+> 来源变更：environment-promotion-approval（决策 C08，D14）。权威定义见 `spec/environments.md` §12.6、`spec/cli-json-output.md`「`openlogos deploy-done --format json`」。本节修订「环境校验、版本声明与部署账本（environment-registry）」中 `--env` 解析之后的步骤，其余步骤不变。
+
+### 规则
+
+- `deploy-done --env <label>` 解析出的目标环境在登记表中配置了 `promote_from` 或 `require_approval`（任一）时，以 `DEPLOY_DONE_GATED_ENV`（退出码 1）拒绝，提示改用 `openlogos deploy --env <id>`。
+- 判定位置：登记表加载、校验与 `--env` 解析（`ENV_REGISTRY_INVALID` / `ENV_REQUIRED` / `ENV_UNKNOWN`）之后，`--ref` 解析与任何写入之前；拒绝时零写入——不勾选 `[deploy]`、不清理 smoke 标记、不写 `DEPLOY_DONE`、不写账本。
+- 未传 `--env`、无登记表，或目标环境未配置任一门时，`deploy-done` 的行为、输出与写入逐字不变。
+- 理由：`deploy-done` 是「部署已经在别处发生之后落标」的路径；对受门环境放行，部署被晋级或审批拦下后按惯性「手工部署 + deploy-done」即可绕过两道门。提案通道下 `openlogos deploy` 成功时调用的 deploy-done 写入函数不经过本命令的前置，不受此规则影响。
+
+### 时序
+
+```mermaid
+sequenceDiagram
+    participant A as AI / 用户
+    participant CLI as openlogos deploy-done
+    participant REG as 登记表
+
+    A->>CLI: deploy-done --env prod [--ref X]
+    CLI->>REG: 加载、校验并解析 --env
+    alt prod 配置了 promote_from 或 require_approval
+        CLI-->>A: DEPLOY_DONE_GATED_ENV（零写入，提示改用 openlogos deploy）
+    else 未配置门
+        CLI->>CLI: 既有流程（--ref 解析、勾选、账本、DEPLOY_DONE）
+    end
+```
+
+### 异常与边界
+
+#### EX-21.13：目标环境配置了晋级或审批门
+- **触发条件**：`deploy-done --env prod`，登记表中 prod 配置了 `promote_from` 或 `require_approval: true`。
+- **期望响应**：`DEPLOY_DONE_GATED_ENV`，`message` 提示改用 `openlogos deploy --env prod`；JSON 下为通用错误 envelope（`command: "deploy-done"`）。
+- **副作用**：零写入。
+
+#### EX-21.14：门禁字段为 `require_approval: false`
+- **触发条件**：prod 只写了 `require_approval: false`，未配置 `promote_from`。
+- **期望响应**：视为未配置门，`deploy-done` 行为不变。
+- **副作用**：按既有流程写入。
+
+### 追溯
+
+- 场景：S43（`core-S43-environment-promotion-approval.md`）；功能规格：§2.95.4；决策：D14。
+- 测试：`core-S43-test-cases.md` UT-S43-11。

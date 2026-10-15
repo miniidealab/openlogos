@@ -23,7 +23,7 @@ OpenLogos CLI 的 `status`、`next`、`verify`、`smoke`、`detect`、`deploy-do
 
 ```jsonc
 {
-  "command": "<command-name>",   // "status" | "next" | "verify" | "smoke" | "detect" | "deploy-done" | "deploy" | "module list" | "flow show" | "watch"
+  "command": "<command-name>",   // "status" | "next" | "verify" | "smoke" | "detect" | "deploy-done" | "deploy" | "approve" | "module list" | "flow show" | "watch"
   "version": "<cli-version>",
   "timestamp": "<ISO-8601>",
   "data": { ... }
@@ -1275,6 +1275,8 @@ openlogos smoke --env production --format json
 > `openlogos impact` 的操作错误（`IMPACT_*`）在 `--format json` 下走 stderr error envelope、默认文本下走 stderr `Error [<code>]: <message>`；**判定完成（含 fail-closed `lifecycle_only: false`）不是错误**，走 stdout success envelope、exit 0（见 §3.16）。
 >
 > `openlogos deploy`（来源变更 environment-deploy）的错误码与 `error.details` 形态见「`openlogos deploy --format json`（environment-deploy）」，完整列表与触发条件见 `spec/environments.md` §8；smoke 新增的 `SMOKE_DEPLOY_SUPERSEDED` 见「smoke / env / status 部署字段增量（environment-deploy）」。
+>
+> `openlogos approve`、`deploy` 的晋级与审批错误码（`DEPLOY_PROMOTION_UNVERIFIED`、`DEPLOY_APPROVAL_REQUIRED`）与 `deploy-done` 的 `DEPLOY_DONE_GATED_ENV`（来源变更 environment-promotion-approval）见「`openlogos approve --format json`（environment-promotion-approval）」与「deploy / deploy-done / env / status 晋级与审批增量（environment-promotion-approval）」，完整列表与触发条件见 `spec/environments.md` §8、§12。
 
 ### 6.2 overlay 派生错误信封
 
@@ -3200,3 +3202,105 @@ openlogos deploy --env <id|alias> --reconcile --format json
 - `env show` 的 `history[]` 中 deploy 记录带全部扩展字段（`spec/environments.md` §5.2）。
 - `env check` 的 `errors[]` 新增 `deploy` 子字段的 `ENV_FIELD_INVALID` 条目（`field` 形如 `deploy.script`）；配置了 `deploy` 的环境额外报告 `secrets` 存在性与 ci 方式的 `gh` 可用性（只报是否满足，不读取值）。
 - `spec/schema/status.schema.json` 覆盖 `environments`、`environment_ledger`、`environment_registry_error` 及本节新增字段（schema 文件在实现中直接修改，不经 delta）。
+
+## `openlogos approve --format json`（environment-promotion-approval）
+
+> 来源变更：environment-promotion-approval（决策 C02、C05、C07）。行为与判据的权威定义见 `spec/environments.md` §12.2；本节只定义 JSON 形态。信封沿用 §1.2，`command` 为 `"approve"`；错误沿用 §6 通用错误 envelope。
+
+### approve 用法
+
+```bash
+openlogos approve --env <id|alias> --ref <revision> [--note <文字>] --format json
+```
+
+### approve 成功输出（stdout，退出码 0）
+
+```jsonc
+{
+  "command": "approve",
+  "version": "<cli-version>",
+  "timestamp": "<ISO-8601>",
+  "data": {
+    "environment": "prod",                 // 解析后的 id
+    "approval_id": "3b0e…",               // 新写入或既有的未使用审批
+    "created": true,                       // false：已有该环境该 commit 的未使用审批，幂等返回、未写新行
+    "ref": "<40 位 commit>",
+    "ref_input": "v1.0.4",
+    "approver": "Alice <alice@example.com>", // 只作展示，可为 null
+    "note": "发版窗口",                     // 可为 null
+    "recorded_at": "<ISO-8601>"            // created=false 时为既有审批的写入时间
+  }
+}
+```
+
+### approve 失败输出（stderr，退出码 1）
+
+- 通用错误 envelope，不带 `details`，错误码：`PROJECT_NOT_INITIALIZED`、`ENV_REGISTRY_NOT_FOUND`、`ENV_REGISTRY_INVALID`、`ENV_REQUIRED`、`ENV_UNKNOWN`、`APPROVAL_NOT_REQUIRED`、`APPROVAL_REF_REQUIRED`、`ENV_REF_UNRESOLVED`；账本写入失败（含账本锁等待超时）为 `APPROVAL_WRITE_FAILED`，账本保持调用前字节。
+- 文本模式：成功时打印环境、commit、`approval_id` 与是否新写入；错误打印 `Error: [<code>] <message>`。
+- AI 宿主内调用受 guard 宿主原生审批约束（`spec/pretooluse-guard.md`「保护范围变更的宿主原生审批（C14）」），被阻断时命令不执行，不产生本节输出。
+
+## deploy / deploy-done / env / status 晋级与审批增量（environment-promotion-approval）
+
+> 来源变更：environment-promotion-approval（决策 C01、C06～C09）。以下字段与错误码只在目标环境的登记表条目写有 `promote_from` 或 `require_approval` 时出现（`spec/environments.md` §12.1、§7.1）；未写这两个字段的项目输出与引入前逐字一致，既有字段语义不变。
+
+### deploy 参数与错误码（environment-promotion-approval）
+
+- 新增参数 `--force-promote "<理由>"`（`openlogos deploy` 用法见「`openlogos deploy --format json`（environment-deploy）」）。理由为空、目标环境未配置 `promote_from`、与 `--rollback` 或 `--complete` / `--abandon` / `--reconcile` 同用时为 `DEPLOY_ARGS_CONFLICT`。
+- 前置拒绝（零执行、零写入）新增两个带 `error.details` 的错误码：
+
+```jsonc
+"error": {
+  "code": "DEPLOY_PROMOTION_UNVERIFIED",
+  "message": "…",
+  "details": {
+    "environment": "prod",
+    "promote_from": "staging",
+    "requested": "<40 位 commit>",
+    "upstream_current_ref": "<40 位 commit> | null",
+    "upstream_candidate_ref": "<40 位 commit> | null"   // 上游最近一条 verified=true smoke 记录的 ref
+  }
+}
+```
+
+```jsonc
+"error": {
+  "code": "DEPLOY_APPROVAL_REQUIRED",
+  "message": "…",
+  "details": {
+    "environment": "prod",
+    "requested": "<40 位 commit>",
+    "approve_command": "openlogos approve --env prod --ref <40 位 commit>"
+  }
+}
+```
+
+- 取得环境锁后复核发现审批已被其他部署使用时，同样以 `DEPLOY_APPROVAL_REQUIRED` 结束（零执行），`details` 形态相同。
+
+### deploy 成功输出新增字段（environment-promotion-approval）
+
+- 目标环境为受门环境时，`data` 新增：`approval_id`（字符串或 null）、`promoted_from`（字符串或 null）、`promotion_override_reason`（字符串或 null），取值与本次账本记录一致；`status=awaiting-agent` 时取值与未决记录一致。
+- `status=dry-run` 时 `plan` 新增 `approval_id`（将使用的审批或 null）与 `promotion`：通过晋级检查时为 `{"from": "<上游 id>", "verified_ref": "<40 位 commit>"}`，越过时为 `{"override_reason": "<理由>"}`，未配置 `promote_from` 或 `--rollback` 时为 null。
+
+### deploy-done 错误码（environment-promotion-approval）
+
+- `deploy-done --env` 的目标环境为受门环境时以通用错误 envelope（`command: "deploy-done"`）输出 `DEPLOY_DONE_GATED_ENV`，退出码 1，零写入；`message` 提示改用 `openlogos deploy --env <id>`。不带 `details`。
+
+### env 与 status 晋级与审批视图字段（environment-promotion-approval）
+
+- EnvView（`env list` 的 `environments[]`、`env show` 的顶层视图字段、`status` 的 `environments[]`）在该环境登记表条目写有 `promote_from` 或 `require_approval` 时新增四个字段，定义见 `spec/environments.md` §7.1：
+
+```jsonc
+{
+  "id": "prod", "name": "生产环境", "tier": "prod",
+  "promote_from": "staging",               // string | null
+  "require_approval": true,                // boolean
+  "open_approvals": [                      // 未使用的审批
+    { "approval_id": "3b0e…", "ref": "<40 位 commit>", "approver": "Alice <alice@example.com>", "note": null, "recorded_at": "…" }
+  ],
+  "promotion": { "from": "staging", "candidate_ref": "<40 位 commit>" }   // 未配置 promote_from 时为 null
+}
+```
+
+- `env show` 的 `history[]` 可含 `kind: "approval"` 的记录（字段见 `spec/environments.md` §5.2）；deploy 记录可带 `approval_id`、`promoted_from`、`promotion_override_reason`。
+- `env check` 的 `errors[]` 新增 `promote_from` / `require_approval` 的 `ENV_FIELD_INVALID` 条目（`field` 为字段名）。
+- `spec/schema/status.schema.json` 覆盖上述新增字段（可选字段，不提升 `contract.version` 的 major）。

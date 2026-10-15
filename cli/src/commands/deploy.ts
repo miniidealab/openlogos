@@ -16,7 +16,7 @@ import { makeEnvelope, makeErrorEnvelope, type OutputFormat } from '../lib/json-
 import { detectProposalStepViaFlow, type CmdGateEval } from '../lib/flow-derive.js';
 import { FlowError } from '../lib/flow.js';
 import {
-  DEPLOY_LOCKS_REL, DEPLOY_PENDING_REL, ENV_REGISTRY_REL, loadEnvironmentRegistry, pidAlive, previousRefOf,
+  DEPLOY_LOCKS_REL, DEPLOY_PENDING_REL, ENV_REGISTRY_REL, isGatedEnvironment, loadEnvironmentRegistry, pidAlive, previousRefOf,
   readDeploymentLedger, resolveEnvironment,
   type DeployConfig, type DeployLedgerRecord, type DeployMode, type EnvironmentDef,
 } from '../lib/environments.js';
@@ -45,6 +45,8 @@ export interface DeployCliOptions {
   result?: string;
   abandon?: string;
   reconcile?: boolean;
+  /** `--force-promote "<理由>"`：留痕越过晋级检查（environment-promotion-approval，§12.3）。 */
+  forcePromote?: string;
   /** 出现但缺值的参数名（如 `--env` 在末尾），按 DEPLOY_ARGS_CONFLICT 拒绝。 */
   missingValue?: string[];
 }
@@ -366,6 +368,11 @@ function checkArgs(opts: DeployCliOptions, locale: Locale): void {
     conflict('deploy.args.channelInvalid', { channel: opts.channel });
   }
   if (opts.rollback && opts.channel === 'proposal') conflict('deploy.args.rollbackProposal');
+  if (opts.forcePromote !== undefined) {
+    if (pendingOps > 0) conflict('deploy.args.forcePromoteWithPending');
+    if (opts.rollback) conflict('deploy.args.forcePromoteWithRollback');
+    if (opts.forcePromote.trim() === '') conflict('deploy.args.forcePromoteEmpty');
+  }
 }
 
 function loadTarget(root: string, envInput: string | undefined, locale: Locale): { env: EnvironmentDef; all: EnvironmentDef[] } {
@@ -382,6 +389,59 @@ function loadTarget(root: string, envInput: string | undefined, locale: Locale):
   const resolved = resolveEnvironment(reg.environments, envInput);
   if (!resolved.ok) fail(locale, 'ENV_UNKNOWN', 'deploy.error.envUnknown', { input: envInput, available });
   return { env: reg.environments.find(e => e.id === resolved.id)!, all: reg.environments };
+}
+
+/**
+ * 受门环境的审批与晋级字段（spec/environments.md §5.2、§12；environment-promotion-approval，决策 C07）：
+ * 只在目标环境为受门环境时写入 deploy 记录、未决记录与 JSON 输出，取值可为 null；未配置门的环境不出现。
+ */
+interface GateFields {
+  approval_id: string | null;
+  promoted_from: string | null;
+  promotion_override_reason: string | null;
+}
+
+/** 该环境、该 commit 最早的一份未使用审批（§12.4）；ledger 缺省时重读账本。 */
+function openApprovalFor(root: string, envId: string, requested: string, ledger = readDeploymentLedger(root)): string | null {
+  return ledger.byEnvironment.get(envId)?.openApprovals.find(a => a.ref === requested)?.approval_id ?? null;
+}
+
+/**
+ * 晋级检查（§12.3）：上游环境（promote_from 所指）存在 verified=true 且 ref 等于请求 commit 的 smoke 记录。
+ * 不要求该 commit 是上游当前版本，只校验直接上游。不满足时 DEPLOY_PROMOTION_UNVERIFIED。
+ */
+function checkPromotion(
+  locale: Locale, envId: string, from: string, requested: string, ledger: ReturnType<typeof readDeploymentLedger>,
+): void {
+  const upstream = ledger.byEnvironment.get(from);
+  if (upstream?.verifiedRefs.has(requested)) return;
+  fail(locale, 'DEPLOY_PROMOTION_UNVERIFIED', 'deploy.error.promotionUnverified', { environment: envId, from, requested }, {
+    environment: envId, promote_from: from, requested,
+    upstream_current_ref: upstream?.hasDone ? upstream.currentRef : null,
+    upstream_candidate_ref: upstream?.candidateRef ?? null,
+  });
+}
+
+function approvalRequired(locale: Locale, envId: string, requested: string): never {
+  const command = `openlogos approve --env ${envId} --ref ${requested}`;
+  fail(locale, 'DEPLOY_APPROVAL_REQUIRED', 'deploy.error.approvalRequired', { environment: envId, requested, command }, {
+    environment: envId, requested, approve_command: command,
+  });
+}
+
+/**
+ * 取得环境锁后、执行 / 触发 / 登记未决记录之前的复核（§12.5）：重读账本依次重新执行晋级检查（锁外检查已执行时）
+ * 与审批检查。原审批已被其他部署使用时改选该 commit 的另一份未使用审批，没有则以 DEPLOY_APPROVAL_REQUIRED
+ * 零执行结束；晋级同理（调用方的 finally 释放环境锁）。
+ */
+function recheckGate(root: string, locale: Locale, env: EnvironmentDef, requested: string, gate: GateFields | undefined): void {
+  if (!gate) return;
+  const ledger = readDeploymentLedger(root);
+  if (gate.promoted_from !== null) checkPromotion(locale, env.id, gate.promoted_from, requested, ledger);
+  if (env.gate?.require_approval !== true) return;
+  const approvalId = openApprovalFor(root, env.id, requested, ledger);
+  if (approvalId === null) approvalRequired(locale, env.id, requested);
+  gate.approval_id = approvalId;
 }
 
 /** 默认通道：活跃提案处于 ready-to-deploy 时为提案通道，否则为版本通道（§11.5）。 */
@@ -469,6 +529,8 @@ interface DeployIdentity {
   /** 本次部署前的 current_ref（报告中的回滚点）。 */
   previousRef: string | null;
   observed: { head: string | null; dirty: boolean | null };
+  /** 受门环境的审批与晋级字段；未配置门的环境为 undefined（记录与输出不含这三个字段）。 */
+  gate?: GateFields;
 }
 
 interface FinishContext {
@@ -511,6 +573,10 @@ interface PendingRecord {
   plan_section: string | null;
   executed: string;
   previous_ref: string | null;
+  /** 受门环境（environment-promotion-approval）：--complete / --reconcile / --abandon 写出的记录携带这些字段。 */
+  approval_id?: string | null;
+  promoted_from?: string | null;
+  promotion_override_reason?: string | null;
 }
 
 const pendingFile = (root: string, envId: string) => join(root, DEPLOY_PENDING_REL, `${envId}.json`);
@@ -549,7 +615,16 @@ function readPending(root: string, envId: string): PendingRecord | null {
     workflow: str(o.workflow), dispatch_ref: str(o.dispatch_ref), status_script: str(o.status_script),
     plan_section: str(o.plan_section),
     executed: str(o.executed) ?? '-', previous_ref: str(o.previous_ref),
+    ...(GATE_KEYS.some(k => k in o) ? Object.fromEntries(GATE_KEYS.map(k => [k, str(o[k])])) : {}),
   };
+}
+
+const GATE_KEYS = ['approval_id', 'promoted_from', 'promotion_override_reason'] as const;
+
+/** 未决记录携带的受门字段（读取时三者任一出现即视为受门环境的未决记录）。 */
+function pendingGate(p: PendingRecord): GateFields | undefined {
+  if (!GATE_KEYS.some(k => k in p)) return undefined;
+  return { approval_id: p.approval_id ?? null, promoted_from: p.promoted_from ?? null, promotion_override_reason: p.promotion_override_reason ?? null };
 }
 
 function gitTop(root: string, locale: Locale): string {
@@ -587,6 +662,10 @@ async function runDeploy(root: string, locale: Locale, format: OutputFormat, opt
   }
   checkArgs(opts, locale);
   const { env } = loadTarget(root, opts.env, locale);
+  // --force-promote 只对配置了 promote_from 的环境有意义（§12.3）
+  if (opts.forcePromote !== undefined && (env.gate?.promote_from ?? null) === null) {
+    fail(locale, 'DEPLOY_ARGS_CONFLICT', 'deploy.error.argsConflict', { detail: t(locale, 'deploy.args.forcePromoteNotConfigured', { environment: env.id }) });
+  }
 
   // 未决记录操作（§11.1）：先分流，不做占用检查、不判定通道、不接受新 --ref、不检查脚本与密钥
   if (opts.complete !== undefined || opts.abandon !== undefined || opts.reconcile) {
@@ -633,6 +712,25 @@ async function runDeploy(root: string, locale: Locale, format: OutputFormat, opt
     requested = commit;
   }
 
+  // 晋级检查与审批检查（§12.3～§12.5）：版本解析之后、密钥与脚本 / CI 检查之前依次执行。锁外检查只用于提前报错。
+  // --rollback 不做晋级检查但仍做审批检查；--force-promote 留痕越过晋级检查
+  let gate: GateFields | undefined;
+  if (isGatedEnvironment(env)) {
+    gate = { approval_id: null, promoted_from: null, promotion_override_reason: null };
+    const from = env.gate!.promote_from;
+    if (from !== null && !opts.rollback) {
+      if (opts.forcePromote !== undefined) {
+        gate.promotion_override_reason = opts.forcePromote;
+      } else {
+        checkPromotion(locale, env.id, from, requested, ledger);
+        gate.promoted_from = from;
+      }
+    }
+    if (env.gate!.require_approval) {
+      gate.approval_id = openApprovalFor(root, env.id, requested, ledger) ?? approvalRequired(locale, env.id, requested);
+    }
+  }
+
   const missing = env.secrets.filter(name => process.env[name] === undefined);
   if (missing.length > 0) {
     fail(locale, 'DEPLOY_SECRETS_MISSING', 'deploy.error.secretsMissing', { environment: env.id, names: missing.join(', ') }, { missing });
@@ -677,6 +775,16 @@ async function runDeploy(root: string, locale: Locale, format: OutputFormat, opt
         workflow: config.workflow, dispatch_ref: dispatchRef,
         inputs: config.provider === 'github-actions' ? expandInputs(config.inputs, vars) : null, timeout_sec: config.timeout_sec,
       };
+    if (gate) {
+      // 受门环境：plan 给出将使用的审批与晋级依据（§12.5）；dry-run 不取锁、不复核、不使用审批
+      data.plan = {
+        ...data.plan,
+        approval_id: gate.approval_id,
+        promotion: gate.promoted_from !== null
+          ? { from: gate.promoted_from, verified_ref: requested }
+          : gate.promotion_override_reason !== null ? { override_reason: gate.promotion_override_reason } : null,
+      };
+    }
     output(format, locale, data);
     return;
   }
@@ -689,18 +797,20 @@ async function runDeploy(root: string, locale: Locale, format: OutputFormat, opt
     hooks.beforeAcquire?.();
     const lockPath = acquireLock(root, env.id, deployId, 'agent', startedAt, locale);
     try {
+      recheckGate(root, locale, env, requested, gate);
       writePending(root, {
         deploy_id: deployId, environment: env.id, mode: 'agent', provider: null, channel, slug: channel === 'proposal' ? active!.slug : null,
         ref_input: refInput, ref_requested: requested, rollback: opts.rollback === true, rollback_from: rollbackFrom,
         started_at: startedAt, pid: process.pid, run_id: null, run_url: null, log_path: null,
         workflow: null, dispatch_ref: null, status_script: null, plan_section: config.plan_section,
         executed: executedText(config, null), previous_ref: currentRef,
+        ...gate,
       });
     } finally {
       releaseLock(lockPath);
     }
     const data = baseData(env.id, deployId, channel, 'agent', refInput, requested, opts.rollback === true, rollbackFrom);
-    Object.assign(data, { status: 'awaiting-agent', plan: agentPlan(root, config) });
+    Object.assign(data, { status: 'awaiting-agent', plan: agentPlan(root, config), ...gate });
     output(format, locale, data);
     return;
   }
@@ -714,10 +824,11 @@ async function runDeploy(root: string, locale: Locale, format: OutputFormat, opt
   const identity: DeployIdentity = {
     envId: env.id, deployId, channel, mode: config.mode, slug: channel === 'proposal' ? active!.slug : null,
     refInput, requested, rollback: opts.rollback === true, rollbackFrom, logRel,
-    executed: executedText(config, dispatchRef), previousRef: currentRef, observed,
+    executed: executedText(config, dispatchRef), previousRef: currentRef, observed, gate,
   };
   // 本地锁覆盖执行与记录全程（§11.8），结论写完后释放；ci 结果未知时由未决记录继续占用
   try {
+    recheckGate(root, locale, env, requested, gate);
     const exec: ExecuteInput = {
       root, repoRoot, env, config, requested, deployId, channel, logPath: join(root, logRel), echo: format !== 'json', warnings, locale,
     };
@@ -733,6 +844,7 @@ async function runDeploy(root: string, locale: Locale, format: OutputFormat, opt
         started_at: startedAt, pid: process.pid, run_id: null, run_url: null, log_path: logRel,
         workflow: config.workflow, dispatch_ref: dispatchRef, status_script: config.status_script, plan_section: null,
         executed: identity.executed, previous_ref: currentRef,
+        ...gate,
       };
       outcome = await executeCi(exec, pending, dispatchRef);
     }
@@ -790,6 +902,7 @@ function buildRecord(id: DeployIdentity, o: Outcome, reconciled: boolean): Deplo
     failure_reason: o.failureReason,
     log_path: id.logRel,
     reconciled,
+    ...id.gate,
   };
 }
 
@@ -817,7 +930,7 @@ function finish(ctx: FinishContext, id: DeployIdentity, o: Outcome): void {
   const data = baseData(id.envId, id.deployId, id.channel, id.mode, id.refInput, id.requested, id.rollback, id.rollbackFrom);
   Object.assign(data, {
     status: ctx.successStatus, ref: o.ref, ref_source: o.refSource, duration_ms: o.durationMs, log_path: id.logRel,
-    output_tail: o.outputTail, ci: o.ci, warnings,
+    output_tail: o.outputTail, ci: o.ci, warnings, ...id.gate,
   });
 
   const active = id.channel === 'proposal' ? ctx.active : null;
@@ -1156,6 +1269,7 @@ async function runPendingOperationLocked(
     envId: env.id, deployId: pending.deploy_id, channel: pending.channel, mode: pending.mode, slug: pending.slug,
     refInput: pending.ref_input, requested: pending.ref_requested, rollback: pending.rollback, rollbackFrom: pending.rollback_from,
     logRel: pending.log_path, executed: pending.executed, previousRef: pending.previous_ref, observed: observeWorkspace(root),
+    gate: pendingGate(pending),
   };
   const ci = (conclusion: string | null): CiInfo | null => (pending.mode === 'ci'
     ? { provider: pending.provider ?? 'github-actions', run_id: pending.run_id, run_url: pending.run_url, conclusion, reported_ref: null }
@@ -1183,7 +1297,7 @@ async function runPendingOperationLocked(
     }
     removePending(pendingPath, pending.deploy_id);
     const data = baseData(env.id, pending.deploy_id, pending.channel, pending.mode, pending.ref_input, pending.ref_requested, pending.rollback, pending.rollback_from);
-    Object.assign(data, { status: 'abandoned', log_path: pending.log_path, ledger_written: true, ci: ci(null) });
+    Object.assign(data, { status: 'abandoned', log_path: pending.log_path, ledger_written: true, ci: ci(null), ...identity.gate });
     output(format, locale, data);
     return;
   }
@@ -1400,6 +1514,10 @@ function output(format: OutputFormat, locale: Locale, data: DeployData): void {
     console.log(`  ${t(locale, 'deploy.text.ref', { ref: data.ref ?? t(locale, 'deploy.report.unconfirmed') })}`);
   }
   if (data.rollback) console.log(`  ${t(locale, 'deploy.text.rollback', { from: data.rollback_from ?? '-' })}`);
+  const gate = data as DeployData & Partial<GateFields>;
+  if (gate.promoted_from) console.log(`  ${t(locale, 'deploy.text.promotedFrom', { from: gate.promoted_from })}`);
+  if (gate.promotion_override_reason) console.log(`  ${t(locale, 'deploy.text.promotionOverride', { reason: gate.promotion_override_reason })}`);
+  if (gate.approval_id) console.log(`  ${t(locale, 'deploy.text.approval', { id: gate.approval_id })}`);
   if (data.plan) {
     if (data.plan.plan_path !== undefined) {
       console.log(`  ${t(locale, 'deploy.text.planAgent', { path: String(data.plan.plan_path), section: String(data.plan.plan_section ?? '-') })}`);

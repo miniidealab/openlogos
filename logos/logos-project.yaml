@@ -641,6 +641,12 @@ resource_index:
     desc: environment-deploy 创建的 scenario 基线
   - path: logos/resources/test/core-S42-test-cases.md
     desc: environment-deploy 创建的 test 基线
+  - path: logos/resources/decisions/core-D14-deploy-approval-human-only.md
+    desc: environment-promotion-approval 创建的 decision 基线
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S43-environment-promotion-approval.md
+    desc: environment-promotion-approval 创建的 scenario 基线
+  - path: logos/resources/test/core-S43-test-cases.md
+    desc: environment-promotion-approval 创建的 test 基线
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号
   - "存量项目接入统一写入 bootstrap: adopted，读取时兼容历史 skipped"

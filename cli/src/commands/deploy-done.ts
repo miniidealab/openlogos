@@ -15,7 +15,7 @@ import {
   type ModuleInfo,
 } from './status.js';
 import { VERIFY_PASS_MARKER } from '../lib/proposal-markers.js';
-import { DEPLOY_LEDGER_REL, ENV_REGISTRY_REL, loadEnvironmentRegistry, resolveEnvironment } from '../lib/environments.js';
+import { DEPLOY_LEDGER_REL, ENV_REGISTRY_REL, isGatedEnvironment, loadEnvironmentRegistry, resolveEnvironment } from '../lib/environments.js';
 import type { DeployLedgerRecord } from '../lib/environments.js';
 import { appendLedgerLine, removeOwnLedgerLine } from '../lib/deployment-ledger.js';
 
@@ -156,6 +156,11 @@ function resolveDeployTarget(
       fail(format, locale, 'ENV_UNKNOWN', 'deployDone.error.envUnknown', { input: environment, available });
     }
     resolvedEnv = resolved.id;
+    // 受门环境（environment-promotion-approval，spec/environments.md §12.6）：--env 解析之后、--ref 解析与任何写入之前拒绝，
+    // 不能以 deploy-done 绕过晋级与审批门；改用 openlogos deploy
+    if (isGatedEnvironment(reg.environments.find(e => e.id === resolved.id)!)) {
+      fail(format, locale, 'DEPLOY_DONE_GATED_ENV', 'deployDone.error.gatedEnv', { environment: resolved.id });
+    }
   }
 
   if (refInput === undefined) {

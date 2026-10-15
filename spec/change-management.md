@@ -140,13 +140,14 @@ Delta 文件的目录结构映射主文档目录：
 
 ## 变更工作流
 
-> **核心原则（两档模式）**：`openlogos merge`、`openlogos verify`、部署执行、`openlogos smoke`、`openlogos archive` 和 `git push` 在**半自动 / 手动模式（无 `--auto`）**下是人类确认点——AI 可提醒、解释、准备命令；未经用户明确授权不得执行，不得在"顺手完成流程""按流程走完"等隐式场景中自动触发；用户以明确请求或 slash command 授权时可代为执行。在**全自动 / 无人值守模式（`openlogos next --auto`）**下，用户选择 `--auto` 即构成对该提案全链路的 **standing run-scoped 授权**：上述确认点中**代码已绿之后的盖章 / 发布动作**——`verify`、部署执行、`smoke`、`archive`、`git push`——以及可跳 flow 门（含 merge 的 `spec-exit`）**自动放行执行**，每次放行向 `GATE_AUTO_PASSED` 追加审计行。
+> **核心原则（两档模式）**：`openlogos merge`、`openlogos verify`、部署执行、`openlogos smoke`、`openlogos archive` 和 `git push` 在**半自动 / 手动模式（无 `--auto`）**下是人类确认点——AI 可提醒、解释、准备命令；未经用户明确授权不得执行，不得在"顺手完成流程""按流程走完"等隐式场景中自动触发；用户以明确请求或 slash command 授权时可代为执行。在**全自动 / 无人值守模式（`openlogos next --auto`）**下，用户选择 `--auto` 即构成对该提案全链路的 **standing run-scoped 授权**：上述确认点中**代码已绿之后的盖章 / 发布动作**——`verify`、部署执行、`smoke`、`archive`、`git push`——以及可跳 flow 门（含 merge 的 `spec-exit`）**自动放行执行**，每次放行向 `GATE_AUTO_PASSED` 追加审计行。standing 授权**不覆盖**部署审批（`openlogos approve`）、晋级越过（`--force-promote`）与已配置门禁的环境登记表的修改，这三类动作只能由人经宿主原生审批产生（来源变更 environment-promotion-approval，D14，见下第 3 条）。
 >
 > **无人值守模型（统一）**：launched flow 中的人类停顿点按性质分三类，`--auto` 区别对待：
 >
 > 1. **可跳 flow 门**（`plan` 出口 `plan-exit` 批准方案、`spec` 出口 `spec-exit` 审 delta + 授权合并、`slice` 出口 `slice-exit` 切片待批准、`deliver` 入口 `deliver-entry` 部署执行，均 `skippable:true`）：`--auto` 自动放行（既有行为不变）；放行依据是**本次 `--auto` 响应的 `gate_auto_passed=true`**（live 决策），每次放行写 `GATE_AUTO_PASSED`（append-only 审计、历史审计行不构成对后续动作的授权）。
 > 2. **代码已绿后的盖章 / 发布红线步骤**（`verify`、`smoke`、`archive`、`git push`——非 skip-gate flow 门，由 CLI / 宿主 driver 驱动）：`--auto` 下由 **standing run-scoped 授权**自动执行（选择 `--auto` 即授权至 `archive`），每次执行写 `GATE_AUTO_PASSED` 审计行。其中 `git push` **无需任何 marker / guard 改动**——PreToolUse guard 的 Bash 命令安全白名单本就放行 `git push`（`^git push` 在 guard-check 的安全模式内），guard 从不拦截 `git push`；唯一约束是生成的指令文本（AGENTS.md/CLAUDE.md）：全自动下指令文本授权 AI 自动 push，半自动 / 手动下指令文本要求人工确认。
 > 3. **硬红线（任何模式、含 `--auto` 都绝不自动放行）**：`gate:implement:loop-exhausted`（达迭代上限仍未过测试的未收敛 / 未绿代码）。其默认 `skippable:false`、即使 `--auto` 也照常阻塞、仅 overlay `set-loop` 的 `set.exhausted_gate.skippable:true` 可单点 opt-in 放行——这套逻辑**完整保留、一字不改**。放行未收敛代码与「全自动发布的是已验证成果」的前提直接相悖，故 `loop-exhausted` 是该前提的守门人，永不纳入全自动放行。
+>    另一条硬红线（来源变更 environment-promotion-approval，决策 C03，D14）：**目标环境要求审批（`require_approval: true`）而该版本未获审批，或晋级检查（`promote_from`）未通过**。`openlogos deploy` 以 `DEPLOY_APPROVAL_REQUIRED` / `DEPLOY_PROMOTION_UNVERIFIED` 零执行结束，部署停在「等待审批」或「晋级未满足」；`--auto` 不放行，AI 在任何模式下都不得自行执行 `openlogos approve`、不得加 `--force-promote`、不得换环境或版本、不得改用手工部署或 `deploy-done`（`deploy-done --env` 对受门环境以 `DEPLOY_DONE_GATED_ENV` 拒绝），也不得修改已配置门禁的登记表来关闭门禁（guard 以宿主原生审批或阻断处理，见 `spec/pretooluse-guard.md`）。人批准（审批写入账本）后宿主重新驱动即可继续，不新增恢复机制、flow 节点、门或 marker。未配置这两道门的环境不受本条影响。
 >
 > **默认 / 手动模式（无 `--auto`）行为完全不变**：merge / verify / 部署执行 / smoke / archive / git push 全部停在对应人类确认点等明确授权（部署目标可能是测试环境而非生产，故 deliver 门纳入可跳门）。**R2 安全闸保留**：仍卡在未完成 overlay 节点时，任何放行（含可跳门）都不触发。
 >

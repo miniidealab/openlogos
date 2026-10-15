@@ -1,6 +1,6 @@
 {
   "schema": "openlogos/asset-manifest@1",
-  "version": "0.16.4",
+  "version": "0.16.5",
   "planContractVersion": "1.4.0",
   "skills": [
     {
@@ -29,11 +29,11 @@
     },
     {
       "path": "skills/deployment-designer/SKILL.md",
-      "sha256": "93e55db484d233b6492eae6dcffabcacd36633c1b79920c8ecfa4c154f123336"
+      "sha256": "cd6fd7b981c8abba15d170e00c90f25ed6a132b0994effb637d9b87e288773c7"
     },
     {
       "path": "skills/deployment-executor/SKILL.md",
-      "sha256": "d74c317ac2ff083d32674b69cf87a6ba85d57ffaf549fae1e3d30e5f114ab875"
+      "sha256": "adb96c7b89fe41695f5a280aecf92075b7869effdabb803753271238804d2be1"
     },
     {
       "path": "skills/test-writer/SKILL.md",
@@ -47,7 +47,7 @@
   "templates": [
     {
       "path": "dist/i18n.js",
-      "sha256": "98b6bf73024ead715412177716199e89eaf760b9994d0cb5646a3e542c423236"
+      "sha256": "6c61e21d3bd894b1ff60c2a693843ee9c38d1ec771a9ba1bfa1efc0e63868a00"
     }
   ],
   "schemas": [
@@ -61,7 +61,7 @@
     },
     {
       "path": "spec/schema/status.schema.json",
-      "sha256": "93337aec73c7897b4ad9ad6c8016072c93e196c6e93ae86323f5b76771fcadfe"
+      "sha256": "ee6b152060f4aafa12bd6f24cb38ad506fe838572357b3d75cfc1744abe05ec0"
     },
     {
       "path": "spec/schema/merge-transaction.schema.json",
@@ -71,11 +71,11 @@
   "plugins": [
     {
       "path": "claude-plugin-template/.claude-plugin/plugin.json",
-      "sha256": "cea12306db15d9e720a3284cd469a96e891c34213860ddb952d839e78d7ae63f"
+      "sha256": "f17fb5f936098d3e956d40e36208aded2e893d9c70daea3d15780be4b6203d74"
     },
     {
       "path": "claude-plugin-template/bin/guard-check",
-      "sha256": "a3e7c28865df2d220567f5ba577591fd63f2d4ed93aef9e3542e9fb66ff1f902"
+      "sha256": "1861d44c158e58225d621cdeda0ebffd8ebdc767ff0ab0b02108ad76cb53a7d4"
     },
     {
       "path": "claude-plugin-template/bin/guard-post-check.cjs",
@@ -99,11 +99,11 @@
     },
     {
       "path": "claude-plugin-template/skills/deployment-designer/SKILL.md",
-      "sha256": "908e80a7f1182ff7396281e115754a8276eed0d6eeca8d27f43c92a33f955c22"
+      "sha256": "8373e5789c8df3aebe32c5d6c9954bf5d023e5f4eff3e3ee121e6e62cdbd7920"
     },
     {
       "path": "claude-plugin-template/skills/deployment-executor/SKILL.md",
-      "sha256": "00f84523056218d956e5b78403c56256e428a5ee373bff71f36dec476129f5b8"
+      "sha256": "93f0af1771abd7b3c52541b4e56c3a849ce8e1ad0b07e823d4c772faf2291bdc"
     },
     {
       "path": "claude-plugin-template/skills/test-writer/SKILL.md",
@@ -114,5 +114,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "e3a870cfd8e2e1f5ff946a83bf1ab1fe9bed49fbb6c68e8f082348fbd58a4d9e"
+  "payloadHash": "5d7ec398a2051775bbc525de242e267d8e2a0e78a7f407c389bdcf9231087993"
 }

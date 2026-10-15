@@ -101,3 +101,48 @@
 
 - 让部署执行未启用时 smoke 在无活跃提案下也写账本 → 账本由 2 行变 3 行，UT-S42-16 变红。
 - 让环境视图在未启用时也输出 `previous_ref` / `deploy_mode` → `env list` / `status` 输出不一致，UT-S42-16 变红。
+
+---
+
+# `s41-gate-zero-regression-baseline.json`（environment-promotion-approval）
+
+**晋级与审批门禁引入之前**（提交 `3596593`，0.16.4）的实测输出，用于 ST-S41-05 的零回归与旧读取方兼容举证：
+未配置门禁的三种项目（① 无登记表；② 有登记表但无门、未配置 `deploy`；③ 已启用部署执行但无门）上，
+`deploy-done`、`smoke`（有 / 无活跃提案）、`status`、`env list`、`env show` 的 JSON 输出、退出码、账本字节与
+提案目录文件；以及 ④ 账本含 `kind=approval` 记录时 0.16.4 读取方的 `status` / `env list` / `env show` 输出
+（审批记录计入 `corrupt_lines` 并跳过、不抛出，其余记录照常生效）。
+
+## 生成方式（可追溯，一次性）
+
+1. `git archive 3596593 cli spec skills plugin` 导出变更前源码到一次性目录，`cli/node_modules` 以符号链接复用；
+2. 在该目录 `cli/` 下执行 `npx tsc` 得到**变更前** `dist`；
+3. 执行 `node cli/test/golden/s41-gate-zero-regression-fixture.mjs <变更前 dist/index.js> cli/test/golden/s41-gate-zero-regression-baseline.json`。
+
+`s41-gate-zero-regression-fixture.mjs` 是夹具与规范化规则的唯一定义点，规范化规则同 `s42-zero-regression-fixture.mjs`
+（耗时字段规范化为字符串 `"<N>"`，保持输出可解析为 JSON）。
+
+## 反证（确认断言会失败）
+
+- 让未写门禁字段的环境也输出 `promote_from` / `require_approval` / `open_approvals` / `promotion` → ①～③ 的
+  `env list` / `env show` / `status` 输出不一致，ST-S41-05 变红。
+- 让 0.16.4 读取方接受审批记录（基线 ④ 的 `corrupt_lines` 不为 2）→ ST-S41-05 ② 断言变红。
+
+---
+
+# `s43-gate-zero-regression-baseline.json`（environment-promotion-approval 切片 2）
+
+**审批门引入之前**（提交 `3596593`，0.16.4）的实测输出，用于 UT-S43-14 的零回归举证：未配置门禁的三种项目
+（① 无登记表；② 有登记表但无门、未配置 `deploy`；③ 已启用部署执行但无门）上，`deploy`（版本通道
+`--env prod --ref HEAD --channel version`）、`deploy-done`、`smoke`（有 / 无活跃提案）、`status`、`env list`、
+`env show` 的 JSON 输出、退出码、账本字节与提案目录文件。
+
+## 生成方式（可追溯，一次性）
+
+与 `s41-gate-zero-regression-baseline.json` 相同的变更前 `dist`（`git archive 3596593 cli spec skills plugin` 后
+`npx tsc`），执行 `node cli/test/golden/s43-gate-zero-regression-fixture.mjs <变更前 dist/index.js> cli/test/golden/s43-gate-zero-regression-baseline.json`。
+`s43-gate-zero-regression-fixture.mjs` 是夹具与规范化规则的唯一定义点（规范化规则同 s41 夹具）。
+
+## 反证（确认断言会失败）
+
+- 让未配置门的环境的 deploy 记录或输出也带 `approval_id` / `promoted_from` / `promotion_override_reason` →
+  ③ 的 `deploy` 输出与账本字节不一致，UT-S43-14 变红。

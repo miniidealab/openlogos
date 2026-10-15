@@ -562,11 +562,15 @@ function decideShellLegacy(root, trimmed, platform) {
 }
 
 // ── 保护范围变更受限命令（spec/pretooluse-guard.md「保护范围变更的宿主原生审批（C14）」）──────────────
-// openlogos exempt add|remove、openlogos ignore add|remove（list 不受限）：任何 lifecycle、任何提案状态、两种模式下
+// openlogos exempt add|remove、openlogos ignore add|remove（list 不受限）；部署审批类命令（environment-promotion-approval，
+// 决策 C05）：openlogos approve（任何参数形态）与带 --force-promote 的 openlogos deploy。任何 lifecycle、任何提案状态、两种模式下
 // 都先于其他判定识别。独立形态（只允许 `cd <目录> &&` 前缀段）→ permission ask（实测不能保证弹出审批时 deny）；
 // 复合形态一律 deny。与 plugin/bin/guard-check classify_scope_command 同一引号感知切分。
 
-/** 返回 'none' | 'standalone' | 'compound'。 */
+/**
+ * 返回 { kind: 'none' | 'standalone' | 'compound', category }，category 为第一处受限命令的类别：
+ * scope（exempt / ignore）、approve（openlogos approve）或 force（带 --force-promote 的 openlogos deploy）。
+ */
 function classifyScopeCommand(cmd) {
   const segs = [[]];
   const seps = [];
@@ -611,24 +615,56 @@ function classifyScopeCommand(cmd) {
     word = (word ?? '') + c;
   }
   flush();
-  const isRestricted = (ws) => {
+  const kindOf = (ws, depth = 0) => {
     for (let i = 0; i < ws.length; i += 1) {
       const w = ws[i];
+      // shell 解释器 / eval 的字符串实参（如 bash -c "openlogos approve …"）按其中的词再识别一次，命中即复合形态
+      if (depth < 2 && /^(.*[\\/])?(bash|sh|zsh|dash|ksh|eval)$/.test(w)) {
+        for (const x of ws.slice(i + 1)) {
+          const k = kindOf(x.split(/[\s;&|()`]+/).filter(Boolean), depth + 1);
+          if (k) return k;
+        }
+      }
       if (w !== 'openlogos' && !/[\\/]openlogos(\.(c?js|cmd|exe|ps1))?$/i.test(w)) continue;
       const rest = ws.slice(i + 1).filter(x => !x.startsWith('-'));
-      if ((rest[0] === 'exempt' || rest[0] === 'ignore') && (rest[1] === 'add' || rest[1] === 'remove')) return true;
+      if ((rest[0] === 'exempt' || rest[0] === 'ignore') && (rest[1] === 'add' || rest[1] === 'remove')) return 'scope';
+      if (rest[0] === 'approve') return 'approve';
+      if (rest[0] === 'deploy' && ws.slice(i + 1).some(x => x === '--force-promote' || x.startsWith('--force-promote='))) return 'force';
     }
-    return false;
+    return null;
   };
   const nonEmpty = segs.filter(ws => ws.length > 0);
-  const hits = nonEmpty.filter(isRestricted);
-  if (hits.length === 0) return 'none';
+  const hits = nonEmpty.filter(ws => kindOf(ws) !== null);
+  if (hits.length === 0) return { kind: 'none', category: null };
+  const category = kindOf(hits[0]);
   const last = nonEmpty[nonEmpty.length - 1];
   const standalone = !forbidden && hits.length === 1 && hits[0] === last && last[0] === 'openlogos'
     && seps.every(sep => sep === '&&') && segs.every(ws => ws.length > 0)
     && nonEmpty.slice(0, -1).every(ws => ws[0] === 'cd' && ws.length <= 2);
-  return standalone ? 'standalone' : 'compound';
+  return { kind: standalone ? 'standalone' : 'compound', category };
 }
+
+/** 受限命令按类别的说明（与 guard-check 同口径）。 */
+const SCOPE_CATEGORY_TEXT = {
+  scope: {
+    compound: '保护范围变更命令必须单独执行：一次调用只能包含一条 openlogos exempt / ignore 的 add / remove',
+    deny: '保护范围变更需要用户在宿主界面批准：该命令会修改 guard 的保护范围（exempt / ignore 清单与 .gitignore 托管区块）。',
+    user: '该命令会改变 OpenLogos guard 的保护范围（exempt / ignore 清单与 .gitignore 托管区块），需要您确认后执行',
+    agent: '该命令修改 guard 保护范围',
+  },
+  approve: {
+    compound: '部署审批类命令必须单独执行：一次调用只能包含一条 openlogos approve 或带 --force-promote 的 openlogos deploy',
+    deny: '部署审批需要用户在宿主界面批准：该命令会写入部署审批（openlogos approve），审批只能由人产生。',
+    user: '该命令会写入部署审批，需要您确认后执行',
+    agent: '该命令写入部署审批',
+  },
+  force: {
+    compound: '部署审批类命令必须单独执行：一次调用只能包含一条 openlogos approve 或带 --force-promote 的 openlogos deploy',
+    deny: '越过晋级检查需要用户在宿主界面批准：该命令会以 --force-promote 越过晋级检查，只能由人决定。',
+    user: '该命令会越过晋级检查，需要您确认后执行',
+    agent: '该命令越过晋级检查',
+  },
+};
 
 /** 受限命令的审批结论取值：实测结论注入只能收紧为 deny。 */
 function cursorAskPolicy(override) {
@@ -639,24 +675,69 @@ function cursorAskPolicy(override) {
 /** 受限命令判定；不是受限命令返回 null。 */
 function scopeChangeVerdict(trimmed, askPolicy) {
   if (!trimmed.includes('openlogos')) return null;
-  const kind = classifyScopeCommand(trimmed);
+  const { kind, category } = classifyScopeCommand(trimmed);
   if (kind === 'none') return null;
+  const text = SCOPE_CATEGORY_TEXT[category] ?? SCOPE_CATEGORY_TEXT.scope;
   if (kind === 'compound') {
     return {
       decision: 'deny',
-      reason: `⛔ 保护范围变更命令必须单独执行：一次调用只能包含一条 openlogos exempt / ignore 的 add / remove，只允许 \`cd <目录> &&\` 前缀，不能与其他命令组合。\n\n命令：${trimmed}\n\n请拆成单独的调用后重试。`,
+      reason: `⛔ ${text.compound}，只允许 \`cd <目录> &&\` 前缀，不能与其他命令组合。\n\n命令：${trimmed}\n\n请拆成单独的调用后重试。`,
     };
   }
   if (cursorAskPolicy(askPolicy) === 'deny') {
     return {
       decision: 'deny',
-      reason: `⛔ 保护范围变更需要用户在宿主界面批准：该命令会修改 guard 的保护范围（exempt / ignore 清单与 .gitignore 托管区块）。\n\n命令：${trimmed}\n\n经真实宿主实测，当前 Cursor 运行模式不能保证对这一次调用弹出审批，无法证明由用户批准。请让用户在终端自行执行该命令；不要用对话中的口头同意替代。`,
+      reason: `⛔ ${text.deny}\n\n命令：${trimmed}\n\n经真实宿主实测，当前 Cursor 运行模式不能保证对这一次调用弹出审批，无法证明由用户批准。请让用户在终端自行执行该命令；不要用对话中的口头同意替代。`,
     };
   }
   return {
     decision: 'ask',
-    userMessage: `该命令会改变 OpenLogos guard 的保护范围（exempt / ignore 清单与 .gitignore 托管区块），需要您确认后执行：${trimmed}`,
-    agentMessage: `该命令修改 guard 保护范围，需用户在宿主审批中确认（${trimmed}）；不要用对话中的口头同意替代。`,
+    userMessage: `${text.user}：${trimmed}`,
+    agentMessage: `${text.agent}，需用户在宿主审批中确认（${trimmed}）；不要用对话中的口头同意替代。`,
+  };
+}
+
+// ── 已配置门禁的环境登记表（environment-promotion-approval，决策 C11；spec/pretooluse-guard.md
+//    「已配置门禁的环境登记表」）：内容出现 promote_from / require_approval 字段名或反斜杠字符即视为已配置门禁；
+//    beforeShellExecution 对可确定写入或删除该文件的命令 deny：① 文本含该文件且有写入信号（命令名可带路径前缀与引号，
+//    review code-r1 F1，只会多拦）；② 非 Windows 下经事后检查引擎 writeTargets 解析出的写入目标为该文件，
+//    不适用 guard.exempt、不以活跃提案放行。文件编辑为事后报告（Cursor 既有限制）。
+const GATED_REGISTRY_REL = 'logos/environments.yaml';
+
+function registryHasGates(root) {
+  try {
+    const text = fs.readFileSync(path.join(root, ...GATED_REGISTRY_REL.split('/')), 'utf8');
+    return text.includes('promote_from') || text.includes('require_approval') || text.includes('\\');
+  } catch {
+    return false;
+  }
+}
+
+const GATED_WRITE_RE = /(^|[;&|(`\s])["']?([^\s;&|(`"']*[/\\])?(rm|mv|cp|install|ln|rsync|touch|truncate|tee|sed|perl|awk|gawk|ed|ex|dd|chmod|chown|unlink|remove-item|set-content|add-content|out-file|new-item|copy-item|move-item|rename-item|clear-content|ri|del|erase|sc|ac|ni|rni|clc)["']?(\s|$)|>/i;
+
+/** 事后检查引擎解析出的可确定写入目标（绝对路径）；引擎缺失或解析失败返回 []。 */
+function engineWriteTargets(root, trimmed) {
+  try {
+    const enginePath = findEnginePath(root);
+    if (!enginePath) return [];
+    const engine = require(enginePath);
+    return typeof engine.writeTargets === 'function' ? engine.writeTargets(trimmed, root).map(t => t.path) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 可确定写入或删除已配置门禁登记表的 shell 命令判定；不相关返回 null。 */
+function gatedRegistryShellVerdict(root, trimmed, platform = process.platform) {
+  if (!registryHasGates(root)) return null;
+  const registry = path.resolve(root, ...GATED_REGISTRY_REL.split('/'));
+  const textHit = /environments\.yaml($|[^.A-Za-z0-9_-])/.test(trimmed) && GATED_WRITE_RE.test(trimmed);
+  const engineHit = !textHit && platform !== 'win32'
+    && engineWriteTargets(root, trimmed).some(p => path.resolve(root, p) === registry);
+  if (!textHit && !engineHit) return null;
+  return {
+    decision: 'deny',
+    reason: `⛔ 部署门禁配置受保护：${GATED_REGISTRY_REL} 已配置晋级 / 审批门禁（promote_from / require_approval），是部署门禁策略来源，不允许经 shell 写入、移动或删除（不适用 guard.exempt，活跃提案也不能放行）。\n\n命令：${trimmed.slice(0, 200)}\n\n如需调整门禁，请由用户自行编辑该文件；不要用对话中的口头同意替代。`,
   };
 }
 
@@ -899,6 +980,8 @@ function decideShell(root, command, platform = process.platform, opts = {}) {
   const trimmed = command.trim();
   const scope = scopeChangeVerdict(trimmed, opts.askPolicy);
   if (scope) return scope;
+  const gated = gatedRegistryShellVerdict(root, trimmed, platform);
+  if (gated) return gated;
   const launched = isLaunched(root);
   const guardMode = launched || trimmed.includes('.openlogos-runtime') ? detectGuardMode(root) : { git: false, why: 'initial' };
   const runtimeHit = runtimeShellHit(root, trimmed, platform, guardMode);

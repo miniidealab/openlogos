@@ -54,7 +54,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 
 ## 三、场景总览
 
-35 个场景（编号跳号、最高至 S42，`scenario_counter.next_id=43`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
+36 个场景（编号跳号、最高至 S43，`scenario_counter.next_id=44`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
 
 ### ① 初始化与存量接入
 把空目录或存量代码库低摩擦纳入 OpenLogos 治理（回应 P01/P02/P03/P04）。
@@ -93,6 +93,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 | S21 | 标记部署完成 | 外部部署已成功，需要推进提案状态 | P03/P05 | P0 |
 | S41 | 环境登记与查询 | 项目需要登记研发环境（测试 / 预发 / 生产等）、按环境标记部署与 smoke，或查询「某环境当前跑的是哪个版本」时 | P03/P05/P07 | P1 |
 | S42 | 按环境执行部署与回滚 | 需要把某个版本真正部署到登记过的环境（脚本、CI 或 AI 执行）、按版本发布或回滚时 | P01/P05/P07 | P1 |
+| S43 | 环境晋级与部署审批 | 需要让某个环境只接收已在上游环境验证过的版本，或要求有人批准后才能部署到该环境（含 `--auto` 下的硬停点）时 | P01/P05/P06 | P1 |
 
 ### ④ AI 资产、资源索引与元数据
 维护跨工具一致的 AI 指令资产、可发现的资源索引与结构化元数据（回应 P02/P03）。
@@ -3330,3 +3331,69 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 - 功能规格：§2.94；架构：「五十四、环境部署执行器」；决策：D13。
 - 场景：`core-S42-environment-deploy.md`；相关场景 S41、S21、S19、S11。
 - 测试：`core-S42-test-cases.md`，以及 `core-S41-test-cases.md`、`core-S19-test-cases.md` 中 environment-deploy 新增用例。
+
+## S43: 环境晋级与部署审批
+
+> 来源变更：environment-promotion-approval（决策 C01～C11，D14）。格式与判据的权威定义见 `spec/environments.md` §12。
+
+### 场景定义
+
+- **触发条件**：用户在登记表中为某个环境（通常是生产）配置晋级顺序 `promote_from` 或审批门禁 `require_approval`，随后有人或 AI 要把某个版本部署到该环境时；或用户需要批准某个版本发往该环境时。
+- **用户价值**：生产只接收已在上游环境（如预发）以 smoke 验证过的版本；要求审批的环境必须有人对「这个环境 + 这个 commit」点头才能部署；`--auto` 全自动运行遇到这两道门会停下等人，而不是自行越过。审批与越过都写入本机账本，可审计。
+- **优先级**：P1
+- **主路径**：deployment-designer 在登记表中为环境配置两道门；AI 或用户执行 `openlogos deploy --env prod --ref <版本>`；未满足时 CLI 以结构化错误给出原因与可直接执行的审批命令；用户执行 `openlogos approve --env prod --ref <版本>`（AI 调用时由宿主弹窗请用户批准，无人值守时阻断）；再次部署通过检查并使用该审批。
+
+### 验收条件
+
+#### 正常：登记表配置与校验
+- **GIVEN** 登记表中 prod 配置 `deploy`、`promote_from: staging`、`require_approval: true`
+- **WHEN** 执行 `openlogos env check`
+- **THEN** 通过；`promote_from` 指向不存在的环境、指向自身、各环境之间成环，或两个字段出现在未配置 `deploy` 的环境上，或以 YAML 转义等非普通键名写法书写时，`env check` 与 `deploy` 均以 `ENV_FIELD_INVALID` / `ENV_REGISTRY_INVALID` 拒绝
+
+#### 异常：晋级未验证
+- **GIVEN** staging 账本中没有 commit X 的 `verified=true` smoke 记录
+- **WHEN** 执行 `openlogos deploy --env prod --ref X`
+- **THEN** 以 `DEPLOY_PROMOTION_UNVERIFIED` 零执行、零写入结束，details 给出上游当前版本与候选版本；staging 对 X 有 `verified=true` 记录后（即使 staging 当前已部署更新的 commit Y），晋级检查通过
+
+#### 正常：留痕越过晋级
+- **WHEN** 用户执行 `openlogos deploy --env prod --ref X --force-promote "<理由>"`
+- **THEN** 越过晋级检查，本次 deploy 记录的 `promotion_override_reason` 等于该理由；理由为空、在未配置 `promote_from` 的环境上使用，或与 `--rollback` 同用时以 `DEPLOY_ARGS_CONFLICT` 拒绝
+
+#### 异常 / 正常：审批缺失与审批后部署
+- **GIVEN** prod 配置 `require_approval: true`，X 未获审批
+- **WHEN** 执行 `openlogos deploy --env prod --ref X`
+- **THEN** 以 `DEPLOY_APPROVAL_REQUIRED` 零执行、零写入结束，details 含可直接执行的 `openlogos approve --env prod --ref <X>`；执行该审批命令后账本新增一条 `approval` 记录（`ref` 为 X 的 40 位 commit），再次部署成功，deploy 记录的 `approval_id` 等于该审批
+
+#### 正常：审批的使用与幂等
+- **THEN** X 成功部署一次后 `env show prod` 的 `open_approvals` 不再含该审批，再次部署 X 重新要求审批；部署结果为 failed 或 unknown 时审批不被使用；审批一旦被成功部署使用即不可撤销，成功落账后因未决记录清理失败而对同一部署执行 `--abandon` 也不会让它重新有效；同一环境同一 commit 已有未使用审批时再次 `approve` 幂等返回既有 `approval_id`、不写新行；对其他 commit 的审批不能放行 X
+
+#### 异常：并发部署不能共用同一审批
+- **GIVEN** 账本只有 prod / X 的一份未使用审批 P
+- **WHEN** 部署 A 通过锁外检查后、取得环境锁之前，部署 B 取得环境锁、成功部署 X 并使用 P
+- **THEN** A 取得环境锁后在锁内重读账本，以 `DEPLOY_APPROVAL_REQUIRED` 零执行结束；账本中只有 B 的一条使用 P 的成功记录；两个并发的 `approve --env prod --ref X` 只写出一条 `approval` 记录
+
+#### 正常：回滚、dry-run 与 agent 方式
+- **THEN** `--rollback` 不做晋级检查、仍做审批检查；`--dry-run` 执行两项检查，失败时以同样错误码报告、通过时在 plan 中给出将使用的 `approval_id` 与晋级依据，且不写任何文件；agent 方式开始时完成两项检查，不满足时不登记未决记录，满足时未决记录携带 `approval_id` / `promoted_from` / `promotion_override_reason`，`--complete --result done` 写出的记录带上这些字段并使用该审批
+
+#### 异常：AI 不能自批、不能越过、不能改门
+- **GIVEN** AI 在 Claude Code 中运行
+- **WHEN** AI 调用 `openlogos approve …`、带 `--force-promote` 的 `openlogos deploy …`，或直接修改 / 删除已配置门禁的 `logos/environments.yaml`
+- **THEN** 在 `default` / `acceptEdits` 下由宿主弹窗请用户批准这一次调用；在 `bypassPermissions` / `dontAsk` / `auto` / `plan`、字段缺失、非交互运行或复合命令形态下一律阻断（即使存在活跃提案），提示用户在终端以 `! <命令原文>` 自行执行或自行编辑；未配置门禁的登记表与不带 `--force-promote` 的 deploy 判定不变
+
+#### 异常：`--auto` 硬停与绕道
+- **GIVEN** `openlogos next --auto` 全自动运行，部署目标环境要求审批而该版本未获审批，或晋级检查未通过
+- **THEN** 部署停在「等待审批」或「晋级未满足」，不自动放行；审批写入后宿主重新驱动即可继续；`deploy-done --env prod`（prod 配置了任一门）以 `DEPLOY_DONE_GATED_ENV` 零写入拒绝，不能以「手工部署 + 落标」绕过
+
+#### 正常：未配置门禁零回归
+- **GIVEN** 没有登记表、有登记表但无门、已启用部署执行但无门三种项目
+- **THEN** `env` / `status` / `deploy` / `deploy-done` / `smoke` 的输出、退出码与账本字节与引入前逐字一致；配置了门的环境 EnvView 输出 `promote_from`、`require_approval`、`open_approvals`、`promotion`，`status.schema.json` 覆盖这些字段
+
+#### 正常：指令与 skill
+- **THEN** 生成的 AGENTS.md / CLAUDE.md（中英）硬红线条目包含「目标环境要求审批而未获审批，或晋级检查未通过」；deployment-executor 遇 `DEPLOY_APPROVAL_REQUIRED` / `DEPLOY_PROMOTION_UNVERIFIED` 时停止并报告，任何模式下不得自批、不得 `--force-promote`、不得换环境或版本、不得改用手工部署或 `deploy-done`
+
+### 追溯
+
+- 规范：`spec/environments.md` §12、`spec/cli-json-output.md`「`openlogos approve --format json`」、`spec/pretooluse-guard.md`「保护范围变更的宿主原生审批（C14）」、`spec/change-management.md` 两档授权与硬红线。
+- 功能规格：§2.95；架构：「五十五、环境晋级与审批门」；决策：D14。
+- 场景：`core-S43-environment-promotion-approval.md`；相关场景 S41、S42、S21、S19、S09。
+- 测试：`core-S43-test-cases.md`，以及 `core-S41-test-cases.md`、`core-S09-test-cases.md` 中 environment-promotion-approval 新增用例。

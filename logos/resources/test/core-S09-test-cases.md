@@ -1514,3 +1514,42 @@
 - 根规范：`spec/pretooluse-guard.md`「Bash 模式表的 ERE 解释与跨平台同判（规范性）」规则 1～4 与「修复后的判定」表。
 - 规则 2（禁止空分支）与规则 3（`| tee ` 字面量）→ UT-S09-459；规则 4（跨平台同判）与「修复后的判定」表 → UT-S09-460。
 - 跨平台证据：UT-S09-460 须在 Linux（GNU grep）上执行通过。来源提案的完成标准要求同一提交在 docker `node:20` 干净克隆中 `npm test` 全绿，GitHub CI 的 `Lint & Test` job 同样在 Linux 上执行本用例。
+
+## S09 部署审批受限命令与门禁策略来源保护测试
+
+> 覆盖场景 S09「时序图三：保护范围变更的宿主原生审批（C14）」Step 41、44、50a～50e；根规范 `spec/pretooluse-guard.md`「保护范围变更的宿主原生审批（C14）」「guard.exempt 与内置默认」；来源变更 environment-promotion-approval（决策 C05、C11，D14）。
+>
+> **夹具口径**：
+> - 一次性项目（`mktemp -d`，git 工作树，launched）；`logos/environments.yaml` 分两种：**已配置门禁**（prod 含 `promote_from: staging` 与 `require_approval: true`）与**未配置门禁**（只有 `deploy`）；`guard.exempt` 缺省（使用内置默认）。另备一份显式 `guard.exempt` 含 `logos/environments.yaml` 的配置。
+> - 「存在活跃提案」以写入 `logos/.openlogos-guard` 构造。
+> - 以真实 `plugin/bin/guard-check` 为被测对象，向 stdin 喂 PreToolUse hook JSON（含 `permission_mode`），以退出码与 stdout 的 `hookSpecificOutput.permissionDecision` 判定；Cursor 用例以真实 `plugin-cursor/hooks/runtime.cjs` 的 `beforeShellExecution` 处理函数执行。
+> - 测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S09"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-461 | `openlogos approve` 为受限命令 | 已配置门禁夹具 | Bash `openlogos approve --env prod --ref v1` 与 `cd sub && openlogos approve --env prod --ref v1`，`permission_mode` 依次为 `default`、`acceptEdits`、`bypassPermissions`、`dontAsk`、`auto`、`plan`、缺失、`unknown-mode` | `default` / `acceptEdits`：exit 0，stdout `permissionDecision=ask`，reason 含「部署审批」与命令原文；其余：exit 2，reason 含「宿主不会弹出确认」与 `! <命令原文>` 提示；有无活跃提案结论相同 |
+| UT-S09-462 | `--force-promote` 只对 deploy 受限 | 同上 | ① `openlogos deploy --env prod --ref v1 --force-promote "r"`；② `openlogos deploy --env prod --ref v1`；③ `openlogos deploy --env prod --dry-run`；④ `openlogos approve --help`（只读帮助） | ① 同 UT-S09-461 的 `permission_mode` 处理，reason 含「越过晋级检查」；② ③ 判定与引入前一致（不受限）；④ 仍按受限命令处理（独立调用、需审批或阻断） |
+| UT-S09-463 | 复合形态一律阻断 | 同上，`permission_mode=default` | `openlogos approve --env prod --ref v1 && node x.js`、`echo y \| openlogos approve --env prod --ref v1`、`openlogos deploy --env prod --ref v1 --force-promote "r"; ls`、`bash -c "openlogos approve --env prod --ref v1"` | 全部 exit 2，reason 提示拆为单独调用；不返回 `ask` |
+| UT-S09-464 | 已配置门禁的登记表的 Edit / Write | 已配置门禁夹具；分别在无活跃提案与有活跃提案下 | Edit / Write / MultiEdit 目标 `logos/environments.yaml`，`permission_mode` 依次为 `default`、`acceptEdits`、`bypassPermissions`、`auto`、缺失；另以显式 `guard.exempt` 含该路径的配置重复；再以合法 YAML 转义键夹具（prod 写 `"require_\u0061pproval": true`，原文不含字段名字面量）重复 | `default` / `acceptEdits`：`permissionDecision=ask`，reason 含「部署门禁配置」；其余 exit 2；有活跃提案、显式 exempt、转义键夹具时结论相同（不适用豁免、不以活跃提案放行；转义键夹具因含反斜杠字符被识别为已配置门禁） |
+| UT-S09-465 | 已配置门禁的登记表的 Bash 写入与删除；未配置门禁不变 | 三种夹具：已配置门禁、未配置门禁、合法 YAML 转义键（同 UT-S09-464）；`permission_mode=default` | ① `sed -i '' 's/require_approval: true/require_approval: false/' logos/environments.yaml`；② `echo x > logos/environments.yaml`；③ `rm logos/environments.yaml`；④ `mv logos/environments.yaml /tmp/x`；⑤ 未配置门禁夹具下重复 ①～④ 与 Edit | 已配置门禁与转义键夹具：①～④ 均 exit 2，文件字节不变；未配置门禁：判定与引入前一致（按内置默认豁免放行） |
+| UT-S09-466 | Cursor `beforeShellExecution` 同一清单 | 已配置门禁夹具 | `openlogos approve …`、带 `--force-promote` 的 `openlogos deploy …`、不带 `--force-promote` 的 `openlogos deploy …`、`rm logos/environments.yaml` | 前两者返回既有 `CURSOR_ASK_POLICY` 结论（实测不能保证弹出审批时为 deny）；不带 `--force-promote` 的 deploy 结论不变；对已配置门禁的登记表的删除为 deny |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S09-205 | 无人值守下不能先关门再部署 | Step 41、44、50a～50d | 已配置门禁夹具，存在活跃提案；`permission_mode=bypassPermissions` | ① 以 guard-check 判定 Edit `logos/environments.yaml`（删去 prod 的 `require_approval` 与 `promote_from`）；② 判定 Bash `rm logos/environments.yaml`；③ 判定 Bash `openlogos deploy --env prod --ref v1 --force-promote "r"`；④ 判定 Bash `openlogos approve --env prod --ref v1`；⑤ 真实执行 `openlogos deploy --env prod --ref v1` | ①～④ 均 exit 2，登记表字节不变；⑤ 仍按两道门拒绝（`DEPLOY_PROMOTION_UNVERIFIED` 或 `DEPLOY_APPROVAL_REQUIRED`），部署脚本未运行 |
+
+### 追溯与覆盖
+
+- 受限命令清单扩展（C05）：UT-S09-461、UT-S09-462、UT-S09-463；Cursor：UT-S09-466。
+- 门禁策略来源保护（C11，含合法 YAML 转义键，review delta-r1 F2）：UT-S09-464、UT-S09-465、ST-S09-205。
+- 未配置门禁与不带 `--force-promote` 的 deploy 零回归：UT-S09-462 ②③、UT-S09-465 ⑤。
+
+### 自动化与证据要求
+
+- guard 用例以真实 `plugin/bin/guard-check` 与 sync 部署副本执行，不以函数级桩替代；Cursor 用例以真实 runtime 处理函数执行。
+- 「文件字节不变」以判定前后 SHA-256 比对取证；不访问真实宿主。
+- 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。

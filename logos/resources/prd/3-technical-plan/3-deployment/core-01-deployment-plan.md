@@ -4576,3 +4576,85 @@ ci 方式在矩阵中以替身 `gh`（本地脚本，按约定输出 dispatch �
 - 场景：S42、S41、S19「smoke 部署身份核对（environment-deploy）」、S21。
 - 测试：见「构建与 Tarball 冻结」第 1 条；安装态 smoke：SMOKE-core-254～SMOKE-core-257。
 - 来源提案：environment-deploy（决策 C01～C15，D13）。
+
+## OpenLogos 0.16.5 发布方案（环境晋级与审批，本地全局）
+
+### 部署目标与授权边界
+
+把晋级顺序（`promote_from`）、审批门禁（`require_approval` 与 `openlogos approve`）、`--force-promote` 留痕越过、`deploy-done` 对受门环境的拒绝、guard 受限命令与已配置门禁的登记表保护，以及配套改动的 deployment-designer / deployment-executor 两个 Skill（来源提案 `environment-promotion-approval`，功能规格 §2.95）装进本机全局安装态。RunLogos 的审批入口与「晋级到生产」按钮要调用 `openlogos approve` 与新的 `deploy` 前置检查，只有全局 `openlogos` 升级后才可用。
+
+- **目标环境**：本机 npm 全局 prefix（计划时为 `/opt/homebrew`，入口 `/opt/homebrew/bin/openlogos`，当前为本机全局 `0.16.4`）。
+- **授权来源**：提案待定决策 C10 的推荐方案（升版 0.16.5，安装到本机全局，并在本仓执行 `openlogos sync`）；全自动运行中以本次 `next --auto` 的 deliver-entry 门 `gate_auto_passed=true` 为执行依据。本仓没有登记表、也不配置门禁，部署本仓自身不受本提案的两道门影响。
+- **本仓 sync**：本次改动 guard 受限命令识别（`plugin/bin/guard-check`）与两个部署 Skill，本仓执行一次 `openlogos sync`，使本仓托管的 guard-check 与 Skill 副本与新装的全局包同源。
+- 本方案**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`；merge、verify、部署执行、smoke、archive 仍按项目执行门。**不改写其他仓库**（包括 runlogos），不在其项目根运行任何命令。
+- **版本号边界**：0.16.5 只作本机全局版本，不进入 npm registry；后续公开发布另立 release 提案。
+
+### 部署前置与冻结事实
+
+1. 本提案 delta 已 merge，`[code]` 切片实现完成，`openlogos verify` PASS。
+2. **版本事实复核**：读取 `cli/package.json` 当前版本（计划时为 `0.16.4`），候选为下一 patch `0.16.5`；执行 `npm view @miniidealab/openlogos@0.16.5 version`，应返回 E404。若实施前已有其他提案升版或 registry 已存在候选版本号，候选改为「当时版本与 registry 最高版本中较大者的下一 patch」，回滚版本改为「当前本机全局版本」，并在部署记录写明实际值。
+3. **冻结当前本机全局**：记录 `command -v openlogos`、入口 realpath、`npm prefix -g`、`openlogos --version`；实际值在部署前重新读取，不在测试或脚本中硬编码。
+4. **先有回滚制品，再动版本号**：
+   1. **来源**：在 `$(npm prefix -g)/lib/node_modules/@miniidealab/openlogos` 执行 `npm pack --ignore-scripts`，产出 `cli/rollback/miniidealab-openlogos-0.16.4.tgz`。**禁止**从当前工作树打包。
+   2. **内容身份**：解包后逐文件计算 SHA-256，与全局安装目录中同名文件比对，全部一致；另确认包内不含 `dist/commands/approve.js`（0.16.4 不含审批命令）。
+   3. **旧行为验证**：在一次性隔离 prefix 中试装该制品：`--version` 为 `0.16.4`；`openlogos approve --env x --ref HEAD` 报未知命令。
+   4. **记录**：来源安装路径、制品字节数与 SHA-256、内容比对结果与旧行为证据写入部署记录。任一项不满足即判发布前检查失败，不得进入升版。
+
+### 0.16.5 版本与制品身份
+
+执行 `node cli/scripts/bump-version.mjs 0.16.5`，由脚本一次更新全部版本载体（以脚本 `VERSION_CARRIERS` 为准）与 `cli/src/lib/local-release-candidate.ts` 的候选 / 回滚版本（→ `0.16.5` / `0.16.4`），并调用既有生成器重算 `cli/asset-manifest.json`。asset-manifest 的变化只能由生成器写出，**禁止手改**；预期新增 `dist/commands/approve.js`，`claude-plugin-template/bin/guard-check`、两个部署 Skill 与随包规范的 hash 变化。
+
+在 `CHANGELOG.md` 的 `## [Unreleased]` 之后新增 `## [0.16.5]` 条目，注明「本机全局发布（未发布到 npm）」，不改既有条目：Added（`openlogos approve`、`promote_from` / `require_approval` 生效、`--force-promote` 留痕越过、EnvView 新字段）、Changed（`--auto` 新增硬停点；`deploy-done --env` 对受门环境拒绝；guard 受限命令清单扩展、已配置门禁的登记表不再适用默认豁免）、升级提示（已写了两个字段的项目此前只得 `ENV_UNKNOWN_FIELD` 警告，升级后开始生效）。
+
+### 构建与 Tarball 冻结
+
+1. 升版后复跑 `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`，必须全绿，范围包括本提案 `core-S43-test-cases.md` 全部用例、`core-S41-test-cases.md` 中 UT-S41-16～UT-S41-19、ST-S41-05，`core-S09-test-cases.md` 中 UT-S09-461～UT-S09-466、ST-S09-205，以及 `UT-S19-46` / `UT-S19-49`；`npm run build` 通过。
+2. 执行真实 `npm pack`，产出 `cli/miniidealab-openlogos-0.16.5.tgz`，记录字节数与 SHA-256，并在部署记录中标为本次**唯一候选制品**。之后的隔离验证、全局安装与回滚演练都只用这个文件。
+3. 解包核对制品带有本次行为：`--version` 与包内 asset-manifest 为候选版本且自洽；包内存在 `dist/commands/approve.js`，`dist/index.js` 注册 `approve` 命令与 `--force-promote`；包内 `claude-plugin-template/bin/guard-check` 含新增受限命令与已配置门禁的登记表判定；两个部署 Skill 与源文件一致。
+
+### 隔离 Prefix 行为矩阵
+
+用 `mktemp -d` 建一次性 npm prefix，安装固定 tarball，从绝对入口执行。全部项目态都在一次性临时 git 项目内构造，**不得触碰本机全局 prefix、本仓活跃提案与用户其他仓库**；部署目标是临时目录中的「环境」（脚本把文件写入临时目录模拟发布），不触达任何真实服务。
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package / asset hash 全部来自固定 tarball，无 workspace link |
+| 登记表校验 | prod 配置 `promote_from: staging`、`require_approval: true` 时 `env check` 通过；指向不存在环境、自身或成环时 `ENV_FIELD_INVALID` |
+| 晋级拦截与留痕越过 | staging 未验证 X 时 `deploy --env prod --ref X` 报 `DEPLOY_PROMOTION_UNVERIFIED` 且零执行；staging smoke 验证 X 后晋级通过；`--force-promote "<理由>"` 越过时记录 `promotion_override_reason` |
+| 审批拦截、写入与使用 | 未审批时 `DEPLOY_APPROVAL_REQUIRED`（details 含 approve 命令）；`approve` 写入一条记录、重复执行幂等；审批后部署成功、记录 `approval_id`；成功一次后再次部署重新要求审批；部署失败不使用审批 |
+| 受门环境 `deploy-done` | `deploy-done --env prod` 报 `DEPLOY_DONE_GATED_ENV` 且零写入 |
+| 未配置门禁零回归 | 无登记表、有登记表但无门、已启用部署执行但无门三种夹具：`env` / `status` / `deploy` / `deploy-done` / `smoke` 的退出码与关键字段和 0.16.4 回滚制品上同一夹具的输出一致 |
+| 全局零触碰 | 矩阵执行前后 `command -v openlogos` 指向同一路径，`--version` 逐字一致 |
+| 回滚演练 | 在隔离 prefix 用 `cli/rollback/miniidealab-openlogos-0.16.4.tgz` 回装（SHA-256 与冻结记录一致），`--version` 回到 `0.16.4`，`openlogos approve` 报未知命令 |
+
+guard 的受限命令与已配置门禁的登记表判定在源码测试（`core-S09-test-cases.md` 新增用例）中以真实 guard-check 脚本与构造的 hook 输入验证；安装态由 SMOKE-core-258 核对包内 guard-check 与本仓托管副本同源。
+
+### 本机全局部署与本仓 sync
+
+隔离矩阵与回滚演练通过后，按以下顺序执行：
+
+1. 用**同一** tarball 执行 `npm install -g <绝对路径>/cli/miniidealab-openlogos-0.16.5.tgz` 覆盖本机全局，在新 shell 中复核 entry realpath、`--version`、package.json、asset-manifest 全部同源于候选版本。
+2. 在本仓项目根执行 `openlogos sync`，随后逐字节比对：本仓托管的 `.claude/openlogos/bin/guard-check` 与全局包内 `claude-plugin-template/bin/guard-check` 一致；`logos/skills/deployment-designer/SKILL.md`、`logos/skills/deployment-executor/SKILL.md` 与全局包内同名 Skill 一致；生成的 `CLAUDE.md` / `AGENTS.md` 含新增硬红线条目。sync 若再次向 `.claude/settings.json` 重复加入 SessionStart hook，按既有先例（提交 `bf61f6f`）还原。sync 产生的托管文件变化随部署记录一起由流程提交，不 push。
+3. 写部署记录 `logos/resources/verify/deployment-report.md`（追加一节）：部署身份（版本、tarball 路径与 SHA-256、入口 realpath）；回滚入口（`cli/rollback/miniidealab-openlogos-0.16.4.tgz` 的路径与 SHA-256）；源码回归证据与安装态证据分开写。
+4. 经 `openlogos deploy-done` 受控落标（本仓无登记表，不带 `--env`），再按流程进入 smoke（SMOKE-core-258～SMOKE-core-262）。
+
+### 失败处置与回滚边界
+
+1. 发布前检查、构建、隔离矩阵或回滚演练任一失败：不安装全局、不执行本仓 sync、不写 `DEPLOY_DONE`，输出失败点与修复建议；删除隔离 prefix 即可回滚隔离环境。
+2. 已全局安装后发现问题：用 `cli/rollback/miniidealab-openlogos-0.16.4.tgz` 执行 `npm install -g`（绝对路径）回装，新 shell 复核 `--version` 为 `0.16.4`；若已执行本仓 sync，用回装后的 0.16.4 再执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件。
+3. 本次无数据迁移。回装 0.16.4 后，账本中的 `approval` 记录会被旧版计为坏行并跳过，deploy 记录的三个新字段被忽略；登记表中的两个字段恢复为 `ENV_UNKNOWN_FIELD` 警告，门禁不再生效。
+4. 回滚不以手改 asset-manifest 作为修复手段，也不以放宽 verify / smoke 判定「让矩阵变绿」。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`。
+- 不改写其他仓库（包括 runlogos），不在其项目根运行任何命令（含 `openlogos sync`）。
+- 不在本仓配置 `logos/environments.yaml`、门禁或真实部署目标；本仓自身的发布仍按本方案执行。
+
+### 追溯
+
+- 功能规格：§2.95（环境晋级与部署审批）、§2.93、§2.94。
+- 根规范：`spec/environments.md` §12；`spec/cli-json-output.md`「`openlogos approve --format json`」；`spec/pretooluse-guard.md`「保护范围变更的宿主原生审批（C14）」；`spec/change-management.md`。
+- 场景：S43、S42、S41、S21、S09。
+- 测试：见「构建与 Tarball 冻结」第 1 条；安装态 smoke：SMOKE-core-258～SMOKE-core-262。
+- 来源提案：environment-promotion-approval（决策 C01～C11，D14）。

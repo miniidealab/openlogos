@@ -1,0 +1,2246 @@
+{
+  "no-registry": {
+    "steps": [
+      {
+        "args": "deploy-done --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "deploy-done",
+          "data": {
+            "slug": "ship-it",
+            "environment": null,
+            "marker_path": "logos/changes/ship-it/DEPLOY_DONE",
+            "deployment_report_path": "logos/resources/verify/deployment-report.md",
+            "deploy_tasks_checked": 1,
+            "deploy_tasks_total": 1,
+            "cleared_smoke_markers": [],
+            "next_step": "ready-to-smoke"
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "smoke --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "smoke",
+          "data": {
+            "environment": null,
+            "summary": {
+              "defined_count": 2,
+              "executed_count": 2,
+              "passed_count": 2,
+              "failed_count": 0,
+              "skipped_count": 0,
+              "uncovered_count": 0,
+              "coverage_pct": 100,
+              "pass_rate_pct": 100
+            },
+            "gate": {
+              "result": "PASS",
+              "reason": null
+            },
+            "changed_cases": [],
+            "diagnostics": [],
+            "runners": [],
+            "failed_cases": [],
+            "uncovered_cases": [],
+            "skipped_cases": [],
+            "sandbox": {
+              "mode": "off",
+              "root": "/private/tmp",
+              "isolated": false,
+              "workspace_write_denied": true,
+              "status": "skipped",
+              "diagnostics": [],
+              "suggestions": []
+            },
+            "report_path": "logos/resources/verify/smoke-report.md",
+            "result_path": "logos/resources/verify/smoke-results.jsonl"
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "status --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "status",
+          "data": {
+            "contract": {
+              "version": "1.3.0"
+            },
+            "phases": [
+              {
+                "key": "phase.1",
+                "label": "Phase 1 · Requirements (WHY)",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.2",
+                "label": "Phase 2 · Product Design (WHAT)",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-0",
+                "label": "Phase 3-0 · Architecture",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-1",
+                "label": "Phase 3-1 · Scenario Modeling",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-2-api",
+                "label": "Phase 3-2 · API Design",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-2-db",
+                "label": "Phase 3-2 · Database Design",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-3-deployment",
+                "label": "Phase 3-3 · Deployment Plan",
+                "done": false,
+                "skipped": false,
+                "files": []
+              },
+              {
+                "key": "phase.3-4a",
+                "label": "Phase 3-4a · Test Case Design (Unit + Scenario)",
+                "done": true,
+                "skipped": false,
+                "files": [
+                  "smoke/core-smoke-test-cases.md"
+                ]
+              },
+              {
+                "key": "phase.3-4b",
+                "label": "Phase 3-4b · API Orchestration Tests",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-5",
+                "label": "Phase 3-5 · Code Implementation",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-6",
+                "label": "Phase 3-6 · Test Acceptance (verify)",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-7-deploy",
+                "label": "Phase 3-7 · Deployment Execution",
+                "done": true,
+                "skipped": false,
+                "files": [
+                  "deployment-report.md"
+                ]
+              },
+              {
+                "key": "phase.3-8-smoke",
+                "label": "Phase 3-8 · Deployment Smoke Test",
+                "done": true,
+                "skipped": false,
+                "files": [
+                  "smoke-report.md"
+                ]
+              }
+            ],
+            "modules": [
+              {
+                "id": "core",
+                "name": "Core",
+                "lifecycle": "launched",
+                "bootstrap": "normal",
+                "current_phase": null,
+                "current_phase_label": null,
+                "phase_progress": null,
+                "active_change": {
+                  "slug": "ship-it",
+                  "proposal_step": "smoke-passed",
+                  "proposal_step_label": "smoke passed — explicitly request `openlogos archive` to close",
+                  "step_meta": {
+                    "phase": "post-implement",
+                    "kind": "residency"
+                  },
+                  "has_proposal": true,
+                  "has_tasks": true,
+                  "tasks_checked": 2,
+                  "tasks_total": 2,
+                  "delta_count": 0,
+                  "code_required": true,
+                  "facts": {
+                    "spec_complete": false,
+                    "slices_planned": true,
+                    "slices_approved": false,
+                    "code_required": true,
+                    "has_delta_tasks": false,
+                    "verify_pass": true
+                  },
+                  "deployment_required": true,
+                  "smoke_required": true,
+                  "deployment_reason": "发布",
+                  "deployment_decision_source": "proposal",
+                  "deployment_decision_conflict": false,
+                  "deployment_decision_conflict_reason": null,
+                  "deployment_progress": {
+                    "checked": 1,
+                    "total": 1,
+                    "percent": 100,
+                    "status": "done",
+                    "label": "1/1"
+                  },
+                  "deployment_document": {
+                    "path": "logos/changes/ship-it/tasks.md",
+                    "name": "tasks.md",
+                    "exists": true
+                  },
+                  "deploy_tasks": [
+                    {
+                      "checked": true,
+                      "text": "发布"
+                    }
+                  ],
+                  "plan_state": {
+                    "plan_ready": true,
+                    "plan_gate_pending": false,
+                    "plan_approved": true,
+                    "tasks_template_filled": true,
+                    "tasks_execution_done": 1,
+                    "tasks_execution_total": 1,
+                    "tasks_execution_scope": "deploy",
+                    "plan_package": {
+                      "schema": "openlogos/plan-package-evaluation@1",
+                      "contract_version": "1",
+                      "ready": true,
+                      "proposal": {
+                        "filled": true,
+                        "issues": []
+                      },
+                      "tasks": {
+                        "plan_filled": true,
+                        "code_required": true,
+                        "code_slices_filled": true,
+                        "issues": []
+                      },
+                      "issues": []
+                    },
+                    "completion_contract_version": "1",
+                    "completion_issues": [],
+                    "proposal_filled": true,
+                    "tasks_plan_filled": true,
+                    "tasks_code_required": true,
+                    "tasks_code_slices_filled": true,
+                    "managed_assets": {
+                      "status": "missing",
+                      "expected_hash": "<SHA256>",
+                      "actual_hash": null,
+                      "reason": "sync-required",
+                      "action": "运行 openlogos sync，并重开 Agent session。",
+                      "requires_session_restart": true
+                    },
+                    "diagnostic": "plan gate 已消费或前沿已离开 ready-to-delta，按当前执行前沿继续推进。"
+                  }
+                },
+                "suggestion": "Smoke passed — explicitly request: openlogos archive ship-it",
+                "slice_state": {
+                  "total": 1,
+                  "done": 1,
+                  "remaining": 0
+                }
+              }
+            ],
+            "product_type_confirmation": {
+              "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+              "level": "warning",
+              "missing_module_ids": [
+                "core"
+              ],
+              "next_action": {
+                "command": "openlogos module set-product-type",
+                "enum": [
+                  "web",
+                  "desktop",
+                  "mobile",
+                  "cli",
+                  "api",
+                  "library",
+                  "skills",
+                  "service"
+                ],
+                "gui_enum": [
+                  "web",
+                  "desktop",
+                  "mobile"
+                ],
+                "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）"
+              }
+            },
+            "active_proposals": [
+              {
+                "name": "ship-it",
+                "has_proposal": true,
+                "has_tasks": true,
+                "delta_count": 0
+              }
+            ],
+            "current_phase": "phase.3-3-deployment",
+            "suggestion": "Smoke passed — explicitly request: openlogos archive ship-it",
+            "all_done": false,
+            "lifecycle": "launched",
+            "locale": "en",
+            "source_roots": null,
+            "active_change": "ship-it",
+            "proposal_step": "smoke-passed",
+            "yaml_diagnostics": null
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "env list --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "env list",
+          "data": {
+            "registry_path": "logos/environments.yaml",
+            "registry_present": false,
+            "environments": [],
+            "ledger": {
+              "path": "logos/.openlogos-runtime/deployments.jsonl",
+              "corrupt_lines": 0
+            },
+            "warnings": []
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "env show prod --format json",
+        "exit": 1,
+        "stdout": null,
+        "stderr": {
+          "command": "env show",
+          "error": {
+            "code": "ENV_REGISTRY_NOT_FOUND",
+            "message": "Environment registry logos/environments.yaml not found; environment management is not enabled for this project."
+          }
+        }
+      },
+      {
+        "args": "smoke --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "smoke",
+          "data": {
+            "environment": null,
+            "summary": {
+              "defined_count": 2,
+              "executed_count": 2,
+              "passed_count": 2,
+              "failed_count": 0,
+              "skipped_count": 0,
+              "uncovered_count": 0,
+              "coverage_pct": 100,
+              "pass_rate_pct": 100
+            },
+            "gate": {
+              "result": "PASS",
+              "reason": null
+            },
+            "changed_cases": [],
+            "diagnostics": [],
+            "runners": [],
+            "failed_cases": [],
+            "uncovered_cases": [],
+            "skipped_cases": [],
+            "sandbox": {
+              "mode": "off",
+              "root": "/private/tmp",
+              "isolated": false,
+              "workspace_write_denied": true,
+              "status": "skipped",
+              "diagnostics": [],
+              "suggestions": []
+            },
+            "report_path": "logos/resources/verify/smoke-report.md",
+            "result_path": "logos/resources/verify/smoke-results.jsonl"
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "env list --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "env list",
+          "data": {
+            "registry_path": "logos/environments.yaml",
+            "registry_present": false,
+            "environments": [],
+            "ledger": {
+              "path": "logos/.openlogos-runtime/deployments.jsonl",
+              "corrupt_lines": 0
+            },
+            "warnings": []
+          }
+        },
+        "stderr": null
+      }
+    ],
+    "ledger": null,
+    "proposal_files": [
+      "DEPLOY_DONE",
+      "SMOKE_PASS",
+      "VERIFY_PASS",
+      "proposal.md",
+      "tasks.md"
+    ],
+    "deploy_done": "{\"deploy_id\":\"<UUID>\",\"environment\":null,\"ref\":null,\"ref_source\":\"unknown\",\"recorded_at\":\"<TIME>\"}\n",
+    "tasks": "# 实现任务\n\n## [code] 代码实现\n- [x] 改代码\n\n## [deploy] 部署任务\n- [x] 发布"
+  },
+  "registry-without-gates": {
+    "steps": [
+      {
+        "args": "deploy-done --env prod --ref HEAD --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "deploy-done",
+          "data": {
+            "slug": "ship-it",
+            "environment": "prod",
+            "marker_path": "logos/changes/ship-it/DEPLOY_DONE",
+            "deployment_report_path": "logos/resources/verify/deployment-report.md",
+            "deploy_tasks_checked": 1,
+            "deploy_tasks_total": 1,
+            "cleared_smoke_markers": [],
+            "next_step": "ready-to-smoke",
+            "deployment": {
+              "deploy_id": "<UUID>",
+              "environment": "prod",
+              "ref": "<COMMIT-1>",
+              "ref_source": "explicit",
+              "observed_head": "<COMMIT-1>",
+              "ledger_written": true
+            }
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "smoke --env prod --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "smoke",
+          "data": {
+            "environment": "prod",
+            "summary": {
+              "defined_count": 2,
+              "executed_count": 2,
+              "passed_count": 2,
+              "failed_count": 0,
+              "skipped_count": 0,
+              "uncovered_count": 0,
+              "coverage_pct": 100,
+              "pass_rate_pct": 100
+            },
+            "gate": {
+              "result": "PASS",
+              "reason": null
+            },
+            "changed_cases": [],
+            "diagnostics": [],
+            "runners": [],
+            "failed_cases": [],
+            "uncovered_cases": [],
+            "skipped_cases": [],
+            "sandbox": {
+              "mode": "off",
+              "root": "/private/tmp",
+              "isolated": false,
+              "workspace_write_denied": true,
+              "status": "skipped",
+              "diagnostics": [],
+              "suggestions": []
+            },
+            "report_path": "logos/resources/verify/smoke-report.md",
+            "result_path": "logos/resources/verify/smoke-results.jsonl",
+            "environment_evidence": {
+              "target": "prod",
+              "deploy_id": "<UUID>",
+              "ref": "<COMMIT-1>",
+              "deploy_env_confirmed": true,
+              "env_evidence": "declared",
+              "mismatched_case_ids": [],
+              "missing_case_ids": [],
+              "fresh_results": true,
+              "verified": true,
+              "ledger_written": true
+            }
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "status --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "status",
+          "data": {
+            "contract": {
+              "version": "1.3.0"
+            },
+            "phases": [
+              {
+                "key": "phase.1",
+                "label": "Phase 1 · Requirements (WHY)",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.2",
+                "label": "Phase 2 · Product Design (WHAT)",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-0",
+                "label": "Phase 3-0 · Architecture",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-1",
+                "label": "Phase 3-1 · Scenario Modeling",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-2-api",
+                "label": "Phase 3-2 · API Design",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-2-db",
+                "label": "Phase 3-2 · Database Design",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-3-deployment",
+                "label": "Phase 3-3 · Deployment Plan",
+                "done": false,
+                "skipped": false,
+                "files": []
+              },
+              {
+                "key": "phase.3-4a",
+                "label": "Phase 3-4a · Test Case Design (Unit + Scenario)",
+                "done": true,
+                "skipped": false,
+                "files": [
+                  "smoke/core-smoke-test-cases.md"
+                ]
+              },
+              {
+                "key": "phase.3-4b",
+                "label": "Phase 3-4b · API Orchestration Tests",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-5",
+                "label": "Phase 3-5 · Code Implementation",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-6",
+                "label": "Phase 3-6 · Test Acceptance (verify)",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-7-deploy",
+                "label": "Phase 3-7 · Deployment Execution",
+                "done": true,
+                "skipped": false,
+                "files": [
+                  "deployment-report.md"
+                ]
+              },
+              {
+                "key": "phase.3-8-smoke",
+                "label": "Phase 3-8 · Deployment Smoke Test",
+                "done": true,
+                "skipped": false,
+                "files": [
+                  "smoke-report.md"
+                ]
+              }
+            ],
+            "modules": [
+              {
+                "id": "core",
+                "name": "Core",
+                "lifecycle": "launched",
+                "bootstrap": "normal",
+                "current_phase": null,
+                "current_phase_label": null,
+                "phase_progress": null,
+                "active_change": {
+                  "slug": "ship-it",
+                  "proposal_step": "smoke-passed",
+                  "proposal_step_label": "smoke passed — explicitly request `openlogos archive` to close",
+                  "step_meta": {
+                    "phase": "post-implement",
+                    "kind": "residency"
+                  },
+                  "has_proposal": true,
+                  "has_tasks": true,
+                  "tasks_checked": 2,
+                  "tasks_total": 2,
+                  "delta_count": 0,
+                  "code_required": true,
+                  "facts": {
+                    "spec_complete": false,
+                    "slices_planned": true,
+                    "slices_approved": false,
+                    "code_required": true,
+                    "has_delta_tasks": false,
+                    "verify_pass": true
+                  },
+                  "deployment_required": true,
+                  "smoke_required": true,
+                  "deployment_reason": "发布",
+                  "deployment_decision_source": "proposal",
+                  "deployment_decision_conflict": false,
+                  "deployment_decision_conflict_reason": null,
+                  "deployment_progress": {
+                    "checked": 1,
+                    "total": 1,
+                    "percent": 100,
+                    "status": "done",
+                    "label": "1/1"
+                  },
+                  "deployment_document": {
+                    "path": "logos/changes/ship-it/tasks.md",
+                    "name": "tasks.md",
+                    "exists": true
+                  },
+                  "deploy_tasks": [
+                    {
+                      "checked": true,
+                      "text": "发布"
+                    }
+                  ],
+                  "plan_state": {
+                    "plan_ready": true,
+                    "plan_gate_pending": false,
+                    "plan_approved": true,
+                    "tasks_template_filled": true,
+                    "tasks_execution_done": 1,
+                    "tasks_execution_total": 1,
+                    "tasks_execution_scope": "deploy",
+                    "plan_package": {
+                      "schema": "openlogos/plan-package-evaluation@1",
+                      "contract_version": "1",
+                      "ready": true,
+                      "proposal": {
+                        "filled": true,
+                        "issues": []
+                      },
+                      "tasks": {
+                        "plan_filled": true,
+                        "code_required": true,
+                        "code_slices_filled": true,
+                        "issues": []
+                      },
+                      "issues": []
+                    },
+                    "completion_contract_version": "1",
+                    "completion_issues": [],
+                    "proposal_filled": true,
+                    "tasks_plan_filled": true,
+                    "tasks_code_required": true,
+                    "tasks_code_slices_filled": true,
+                    "managed_assets": {
+                      "status": "missing",
+                      "expected_hash": "<SHA256>",
+                      "actual_hash": null,
+                      "reason": "sync-required",
+                      "action": "运行 openlogos sync，并重开 Agent session。",
+                      "requires_session_restart": true
+                    },
+                    "diagnostic": "plan gate 已消费或前沿已离开 ready-to-delta，按当前执行前沿继续推进。"
+                  }
+                },
+                "suggestion": "Smoke passed — explicitly request: openlogos archive ship-it",
+                "slice_state": {
+                  "total": 1,
+                  "done": 1,
+                  "remaining": 0
+                }
+              }
+            ],
+            "product_type_confirmation": {
+              "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+              "level": "warning",
+              "missing_module_ids": [
+                "core"
+              ],
+              "next_action": {
+                "command": "openlogos module set-product-type",
+                "enum": [
+                  "web",
+                  "desktop",
+                  "mobile",
+                  "cli",
+                  "api",
+                  "library",
+                  "skills",
+                  "service"
+                ],
+                "gui_enum": [
+                  "web",
+                  "desktop",
+                  "mobile"
+                ],
+                "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）"
+              }
+            },
+            "active_proposals": [
+              {
+                "name": "ship-it",
+                "has_proposal": true,
+                "has_tasks": true,
+                "delta_count": 0
+              }
+            ],
+            "current_phase": "phase.3-3-deployment",
+            "suggestion": "Smoke passed — explicitly request: openlogos archive ship-it",
+            "all_done": false,
+            "lifecycle": "launched",
+            "locale": "en",
+            "source_roots": null,
+            "active_change": "ship-it",
+            "proposal_step": "smoke-passed",
+            "yaml_diagnostics": null,
+            "environments": [
+              {
+                "id": "test",
+                "name": "Test",
+                "tier": "test",
+                "current_ref": null,
+                "last_deploy": null,
+                "last_smoke": null
+              },
+              {
+                "id": "prod",
+                "name": "Production",
+                "tier": "prod",
+                "current_ref": "<COMMIT-1>",
+                "last_deploy": {
+                  "deploy_id": "<UUID>",
+                  "slug": "ship-it",
+                  "ref": "<COMMIT-1>",
+                  "ref_source": "explicit",
+                  "observed_head": "<COMMIT-1>",
+                  "observed_dirty": false,
+                  "recorded_at": "<TIME>"
+                },
+                "last_smoke": {
+                  "deploy_id": "<UUID>",
+                  "slug": "ship-it",
+                  "ref": "<COMMIT-1>",
+                  "result": "pass",
+                  "env_evidence": "declared",
+                  "fresh_results": true,
+                  "deploy_env_confirmed": true,
+                  "verified": true,
+                  "observed_head": "<COMMIT-1>",
+                  "recorded_at": "<TIME>"
+                }
+              }
+            ],
+            "environment_ledger": {
+              "path": "logos/.openlogos-runtime/deployments.jsonl",
+              "corrupt_lines": 0
+            }
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "env list --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "env list",
+          "data": {
+            "registry_path": "logos/environments.yaml",
+            "registry_present": true,
+            "environments": [
+              {
+                "id": "test",
+                "name": "Test",
+                "tier": "test",
+                "current_ref": null,
+                "last_deploy": null,
+                "last_smoke": null,
+                "aliases": [
+                  "测试"
+                ]
+              },
+              {
+                "id": "prod",
+                "name": "Production",
+                "tier": "prod",
+                "current_ref": "<COMMIT-1>",
+                "last_deploy": {
+                  "deploy_id": "<UUID>",
+                  "slug": "ship-it",
+                  "ref": "<COMMIT-1>",
+                  "ref_source": "explicit",
+                  "observed_head": "<COMMIT-1>",
+                  "observed_dirty": false,
+                  "recorded_at": "<TIME>"
+                },
+                "last_smoke": {
+                  "deploy_id": "<UUID>",
+                  "slug": "ship-it",
+                  "ref": "<COMMIT-1>",
+                  "result": "pass",
+                  "env_evidence": "declared",
+                  "fresh_results": true,
+                  "deploy_env_confirmed": true,
+                  "verified": true,
+                  "observed_head": "<COMMIT-1>",
+                  "recorded_at": "<TIME>"
+                },
+                "aliases": [
+                  "生产"
+                ]
+              }
+            ],
+            "ledger": {
+              "path": "logos/.openlogos-runtime/deployments.jsonl",
+              "corrupt_lines": 0
+            },
+            "warnings": []
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "env show prod --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "env show",
+          "data": {
+            "environment": {
+              "id": "prod",
+              "name": "Production",
+              "tier": "prod",
+              "aliases": [
+                "生产"
+              ],
+              "description": null,
+              "health": null,
+              "version": null,
+              "secrets": []
+            },
+            "current_ref": "<COMMIT-1>",
+            "last_deploy": {
+              "deploy_id": "<UUID>",
+              "slug": "ship-it",
+              "ref": "<COMMIT-1>",
+              "ref_source": "explicit",
+              "observed_head": "<COMMIT-1>",
+              "observed_dirty": false,
+              "recorded_at": "<TIME>"
+            },
+            "last_smoke": {
+              "deploy_id": "<UUID>",
+              "slug": "ship-it",
+              "ref": "<COMMIT-1>",
+              "result": "pass",
+              "env_evidence": "declared",
+              "fresh_results": true,
+              "deploy_env_confirmed": true,
+              "verified": true,
+              "observed_head": "<COMMIT-1>",
+              "recorded_at": "<TIME>"
+            },
+            "history": [
+              {
+                "kind": "smoke",
+                "deploy_id": "<UUID>",
+                "slug": "ship-it",
+                "ref": "<COMMIT-1>",
+                "result": "pass",
+                "env_evidence": "declared",
+                "fresh_results": true,
+                "deploy_env_confirmed": true,
+                "verified": true,
+                "observed_head": "<COMMIT-1>",
+                "recorded_at": "<TIME>"
+              },
+              {
+                "kind": "deploy",
+                "deploy_id": "<UUID>",
+                "slug": "ship-it",
+                "ref": "<COMMIT-1>",
+                "ref_source": "explicit",
+                "observed_head": "<COMMIT-1>",
+                "observed_dirty": false,
+                "recorded_at": "<TIME>"
+              }
+            ],
+            "ledger": {
+              "path": "logos/.openlogos-runtime/deployments.jsonl",
+              "corrupt_lines": 0
+            },
+            "warnings": []
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "smoke --env prod --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "smoke",
+          "data": {
+            "environment": "prod",
+            "summary": {
+              "defined_count": 2,
+              "executed_count": 2,
+              "passed_count": 2,
+              "failed_count": 0,
+              "skipped_count": 0,
+              "uncovered_count": 0,
+              "coverage_pct": 100,
+              "pass_rate_pct": 100
+            },
+            "gate": {
+              "result": "PASS",
+              "reason": null
+            },
+            "changed_cases": [],
+            "diagnostics": [],
+            "runners": [],
+            "failed_cases": [],
+            "uncovered_cases": [],
+            "skipped_cases": [],
+            "sandbox": {
+              "mode": "off",
+              "root": "/private/tmp",
+              "isolated": false,
+              "workspace_write_denied": true,
+              "status": "skipped",
+              "diagnostics": [],
+              "suggestions": []
+            },
+            "report_path": "logos/resources/verify/smoke-report.md",
+            "result_path": "logos/resources/verify/smoke-results.jsonl",
+            "environment_evidence": {
+              "target": "prod",
+              "deploy_id": null,
+              "ref": null,
+              "deploy_env_confirmed": false,
+              "env_evidence": "declared",
+              "mismatched_case_ids": [],
+              "missing_case_ids": [],
+              "fresh_results": true,
+              "verified": false,
+              "ledger_written": false
+            }
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "env list --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "env list",
+          "data": {
+            "registry_path": "logos/environments.yaml",
+            "registry_present": true,
+            "environments": [
+              {
+                "id": "test",
+                "name": "Test",
+                "tier": "test",
+                "current_ref": null,
+                "last_deploy": null,
+                "last_smoke": null,
+                "aliases": [
+                  "测试"
+                ]
+              },
+              {
+                "id": "prod",
+                "name": "Production",
+                "tier": "prod",
+                "current_ref": "<COMMIT-1>",
+                "last_deploy": {
+                  "deploy_id": "<UUID>",
+                  "slug": "ship-it",
+                  "ref": "<COMMIT-1>",
+                  "ref_source": "explicit",
+                  "observed_head": "<COMMIT-1>",
+                  "observed_dirty": false,
+                  "recorded_at": "<TIME>"
+                },
+                "last_smoke": {
+                  "deploy_id": "<UUID>",
+                  "slug": "ship-it",
+                  "ref": "<COMMIT-1>",
+                  "result": "pass",
+                  "env_evidence": "declared",
+                  "fresh_results": true,
+                  "deploy_env_confirmed": true,
+                  "verified": true,
+                  "observed_head": "<COMMIT-1>",
+                  "recorded_at": "<TIME>"
+                },
+                "aliases": [
+                  "生产"
+                ]
+              }
+            ],
+            "ledger": {
+              "path": "logos/.openlogos-runtime/deployments.jsonl",
+              "corrupt_lines": 0
+            },
+            "warnings": []
+          }
+        },
+        "stderr": null
+      }
+    ],
+    "ledger": "{\"kind\":\"deploy\",\"environment\":\"prod\",\"slug\":\"ship-it\",\"recorded_at\":\"<TIME>\",\"observed_head\":\"<COMMIT-1>\",\"observed_dirty\":false,\"deploy_id\":\"<UUID>\",\"ref\":\"<COMMIT-1>\",\"ref_source\":\"explicit\",\"result\":\"done\"}\n{\"kind\":\"smoke\",\"environment\":\"prod\",\"slug\":\"ship-it\",\"recorded_at\":\"<TIME>\",\"observed_head\":\"<COMMIT-1>\",\"observed_dirty\":true,\"deploy_id\":\"<UUID>\",\"ref\":\"<COMMIT-1>\",\"result\":\"pass\",\"env_evidence\":\"declared\",\"fresh_results\":true,\"deploy_env_confirmed\":true,\"verified\":true}\n",
+    "proposal_files": [
+      "DEPLOY_DONE",
+      "SMOKE_PASS",
+      "VERIFY_PASS",
+      "proposal.md",
+      "tasks.md"
+    ],
+    "deploy_done": "{\"deploy_id\":\"<UUID>\",\"environment\":\"prod\",\"ref\":\"<COMMIT-1>\",\"ref_source\":\"explicit\",\"recorded_at\":\"<TIME>\"}\n",
+    "tasks": "# 实现任务\n\n## [code] 代码实现\n- [x] 改代码\n\n## [deploy] 部署任务\n- [x] 发布"
+  },
+  "deploy-enabled-without-gates": {
+    "steps": [
+      {
+        "args": "deploy-done --env prod --ref HEAD --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "deploy-done",
+          "data": {
+            "slug": "ship-it",
+            "environment": "prod",
+            "marker_path": "logos/changes/ship-it/DEPLOY_DONE",
+            "deployment_report_path": "logos/resources/verify/deployment-report.md",
+            "deploy_tasks_checked": 1,
+            "deploy_tasks_total": 1,
+            "cleared_smoke_markers": [],
+            "next_step": "ready-to-smoke",
+            "deployment": {
+              "deploy_id": "<UUID>",
+              "environment": "prod",
+              "ref": "<COMMIT-1>",
+              "ref_source": "explicit",
+              "observed_head": "<COMMIT-1>",
+              "ledger_written": true
+            }
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "smoke --env prod --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "smoke",
+          "data": {
+            "environment": "prod",
+            "summary": {
+              "defined_count": 2,
+              "executed_count": 2,
+              "passed_count": 2,
+              "failed_count": 0,
+              "skipped_count": 0,
+              "uncovered_count": 0,
+              "coverage_pct": 100,
+              "pass_rate_pct": 100
+            },
+            "gate": {
+              "result": "PASS",
+              "reason": null
+            },
+            "changed_cases": [],
+            "diagnostics": [],
+            "runners": [],
+            "failed_cases": [],
+            "uncovered_cases": [],
+            "skipped_cases": [],
+            "sandbox": {
+              "mode": "off",
+              "root": "/private/tmp",
+              "isolated": false,
+              "workspace_write_denied": true,
+              "status": "skipped",
+              "diagnostics": [],
+              "suggestions": []
+            },
+            "report_path": "logos/resources/verify/smoke-report.md",
+            "result_path": "logos/resources/verify/smoke-results.jsonl",
+            "environment_evidence": {
+              "target": "prod",
+              "deploy_id": "<UUID>",
+              "ref": "<COMMIT-1>",
+              "deploy_env_confirmed": true,
+              "env_evidence": "declared",
+              "mismatched_case_ids": [],
+              "missing_case_ids": [],
+              "fresh_results": true,
+              "verified": true,
+              "ledger_written": true
+            }
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "status --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "status",
+          "data": {
+            "contract": {
+              "version": "1.3.0"
+            },
+            "phases": [
+              {
+                "key": "phase.1",
+                "label": "Phase 1 · Requirements (WHY)",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.2",
+                "label": "Phase 2 · Product Design (WHAT)",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-0",
+                "label": "Phase 3-0 · Architecture",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-1",
+                "label": "Phase 3-1 · Scenario Modeling",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-2-api",
+                "label": "Phase 3-2 · API Design",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-2-db",
+                "label": "Phase 3-2 · Database Design",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-3-deployment",
+                "label": "Phase 3-3 · Deployment Plan",
+                "done": false,
+                "skipped": false,
+                "files": []
+              },
+              {
+                "key": "phase.3-4a",
+                "label": "Phase 3-4a · Test Case Design (Unit + Scenario)",
+                "done": true,
+                "skipped": false,
+                "files": [
+                  "smoke/core-smoke-test-cases.md"
+                ]
+              },
+              {
+                "key": "phase.3-4b",
+                "label": "Phase 3-4b · API Orchestration Tests",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-5",
+                "label": "Phase 3-5 · Code Implementation",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-6",
+                "label": "Phase 3-6 · Test Acceptance (verify)",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-7-deploy",
+                "label": "Phase 3-7 · Deployment Execution",
+                "done": true,
+                "skipped": false,
+                "files": [
+                  "deployment-report.md"
+                ]
+              },
+              {
+                "key": "phase.3-8-smoke",
+                "label": "Phase 3-8 · Deployment Smoke Test",
+                "done": true,
+                "skipped": false,
+                "files": [
+                  "smoke-report.md"
+                ]
+              }
+            ],
+            "modules": [
+              {
+                "id": "core",
+                "name": "Core",
+                "lifecycle": "launched",
+                "bootstrap": "normal",
+                "current_phase": null,
+                "current_phase_label": null,
+                "phase_progress": null,
+                "active_change": {
+                  "slug": "ship-it",
+                  "proposal_step": "smoke-passed",
+                  "proposal_step_label": "smoke passed — explicitly request `openlogos archive` to close",
+                  "step_meta": {
+                    "phase": "post-implement",
+                    "kind": "residency"
+                  },
+                  "has_proposal": true,
+                  "has_tasks": true,
+                  "tasks_checked": 2,
+                  "tasks_total": 2,
+                  "delta_count": 0,
+                  "code_required": true,
+                  "facts": {
+                    "spec_complete": false,
+                    "slices_planned": true,
+                    "slices_approved": false,
+                    "code_required": true,
+                    "has_delta_tasks": false,
+                    "verify_pass": true
+                  },
+                  "deployment_required": true,
+                  "smoke_required": true,
+                  "deployment_reason": "发布",
+                  "deployment_decision_source": "proposal",
+                  "deployment_decision_conflict": false,
+                  "deployment_decision_conflict_reason": null,
+                  "deployment_progress": {
+                    "checked": 1,
+                    "total": 1,
+                    "percent": 100,
+                    "status": "done",
+                    "label": "1/1"
+                  },
+                  "deployment_document": {
+                    "path": "logos/changes/ship-it/tasks.md",
+                    "name": "tasks.md",
+                    "exists": true
+                  },
+                  "deploy_tasks": [
+                    {
+                      "checked": true,
+                      "text": "发布"
+                    }
+                  ],
+                  "plan_state": {
+                    "plan_ready": true,
+                    "plan_gate_pending": false,
+                    "plan_approved": true,
+                    "tasks_template_filled": true,
+                    "tasks_execution_done": 1,
+                    "tasks_execution_total": 1,
+                    "tasks_execution_scope": "deploy",
+                    "plan_package": {
+                      "schema": "openlogos/plan-package-evaluation@1",
+                      "contract_version": "1",
+                      "ready": true,
+                      "proposal": {
+                        "filled": true,
+                        "issues": []
+                      },
+                      "tasks": {
+                        "plan_filled": true,
+                        "code_required": true,
+                        "code_slices_filled": true,
+                        "issues": []
+                      },
+                      "issues": []
+                    },
+                    "completion_contract_version": "1",
+                    "completion_issues": [],
+                    "proposal_filled": true,
+                    "tasks_plan_filled": true,
+                    "tasks_code_required": true,
+                    "tasks_code_slices_filled": true,
+                    "managed_assets": {
+                      "status": "missing",
+                      "expected_hash": "<SHA256>",
+                      "actual_hash": null,
+                      "reason": "sync-required",
+                      "action": "运行 openlogos sync，并重开 Agent session。",
+                      "requires_session_restart": true
+                    },
+                    "diagnostic": "plan gate 已消费或前沿已离开 ready-to-delta，按当前执行前沿继续推进。"
+                  }
+                },
+                "suggestion": "Smoke passed — explicitly request: openlogos archive ship-it",
+                "slice_state": {
+                  "total": 1,
+                  "done": 1,
+                  "remaining": 0
+                }
+              }
+            ],
+            "product_type_confirmation": {
+              "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+              "level": "warning",
+              "missing_module_ids": [
+                "core"
+              ],
+              "next_action": {
+                "command": "openlogos module set-product-type",
+                "enum": [
+                  "web",
+                  "desktop",
+                  "mobile",
+                  "cli",
+                  "api",
+                  "library",
+                  "skills",
+                  "service"
+                ],
+                "gui_enum": [
+                  "web",
+                  "desktop",
+                  "mobile"
+                ],
+                "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）"
+              }
+            },
+            "active_proposals": [
+              {
+                "name": "ship-it",
+                "has_proposal": true,
+                "has_tasks": true,
+                "delta_count": 0
+              }
+            ],
+            "current_phase": "phase.3-3-deployment",
+            "suggestion": "Smoke passed — explicitly request: openlogos archive ship-it",
+            "all_done": false,
+            "lifecycle": "launched",
+            "locale": "en",
+            "source_roots": null,
+            "active_change": "ship-it",
+            "proposal_step": "smoke-passed",
+            "yaml_diagnostics": null,
+            "environments": [
+              {
+                "id": "staging",
+                "name": "Staging",
+                "tier": "staging",
+                "current_ref": null,
+                "previous_ref": null,
+                "deploy_mode": "script",
+                "deploy_in_progress": null,
+                "last_deploy": null,
+                "last_smoke": null
+              },
+              {
+                "id": "prod",
+                "name": "Production",
+                "tier": "prod",
+                "current_ref": "<COMMIT-1>",
+                "previous_ref": "<COMMIT-2>",
+                "deploy_mode": "script",
+                "deploy_in_progress": null,
+                "last_deploy": {
+                  "deploy_id": "<UUID>",
+                  "slug": "ship-it",
+                  "ref": "<COMMIT-1>",
+                  "ref_source": "explicit",
+                  "observed_head": "<COMMIT-1>",
+                  "observed_dirty": false,
+                  "recorded_at": "<TIME>",
+                  "result": "done",
+                  "channel": "proposal",
+                  "mode": null,
+                  "ref_requested": null,
+                  "failure_reason": null
+                },
+                "last_smoke": {
+                  "deploy_id": "<UUID>",
+                  "slug": "ship-it",
+                  "ref": "<COMMIT-1>",
+                  "result": "pass",
+                  "env_evidence": "declared",
+                  "fresh_results": true,
+                  "deploy_env_confirmed": true,
+                  "verified": true,
+                  "observed_head": "<COMMIT-1>",
+                  "recorded_at": "<TIME>"
+                }
+              }
+            ],
+            "environment_ledger": {
+              "path": "logos/.openlogos-runtime/deployments.jsonl",
+              "corrupt_lines": 0
+            }
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "env list --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "env list",
+          "data": {
+            "registry_path": "logos/environments.yaml",
+            "registry_present": true,
+            "environments": [
+              {
+                "id": "staging",
+                "name": "Staging",
+                "tier": "staging",
+                "current_ref": null,
+                "previous_ref": null,
+                "deploy_mode": "script",
+                "deploy_in_progress": null,
+                "last_deploy": null,
+                "last_smoke": null,
+                "aliases": []
+              },
+              {
+                "id": "prod",
+                "name": "Production",
+                "tier": "prod",
+                "current_ref": "<COMMIT-1>",
+                "previous_ref": "<COMMIT-2>",
+                "deploy_mode": "script",
+                "deploy_in_progress": null,
+                "last_deploy": {
+                  "deploy_id": "<UUID>",
+                  "slug": "ship-it",
+                  "ref": "<COMMIT-1>",
+                  "ref_source": "explicit",
+                  "observed_head": "<COMMIT-1>",
+                  "observed_dirty": false,
+                  "recorded_at": "<TIME>",
+                  "result": "done",
+                  "channel": "proposal",
+                  "mode": null,
+                  "ref_requested": null,
+                  "failure_reason": null
+                },
+                "last_smoke": {
+                  "deploy_id": "<UUID>",
+                  "slug": "ship-it",
+                  "ref": "<COMMIT-1>",
+                  "result": "pass",
+                  "env_evidence": "declared",
+                  "fresh_results": true,
+                  "deploy_env_confirmed": true,
+                  "verified": true,
+                  "observed_head": "<COMMIT-1>",
+                  "recorded_at": "<TIME>"
+                },
+                "aliases": [
+                  "生产"
+                ]
+              }
+            ],
+            "ledger": {
+              "path": "logos/.openlogos-runtime/deployments.jsonl",
+              "corrupt_lines": 0
+            },
+            "warnings": []
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "env show prod --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "env show",
+          "data": {
+            "environment": {
+              "id": "prod",
+              "name": "Production",
+              "tier": "prod",
+              "aliases": [
+                "生产"
+              ],
+              "description": null,
+              "health": null,
+              "version": null,
+              "secrets": []
+            },
+            "current_ref": "<COMMIT-1>",
+            "previous_ref": "<COMMIT-2>",
+            "deploy_mode": "script",
+            "deploy_in_progress": null,
+            "last_deploy": {
+              "deploy_id": "<UUID>",
+              "slug": "ship-it",
+              "ref": "<COMMIT-1>",
+              "ref_source": "explicit",
+              "observed_head": "<COMMIT-1>",
+              "observed_dirty": false,
+              "recorded_at": "<TIME>",
+              "result": "done",
+              "channel": "proposal",
+              "mode": null,
+              "ref_requested": null,
+              "failure_reason": null
+            },
+            "last_smoke": {
+              "deploy_id": "<UUID>",
+              "slug": "ship-it",
+              "ref": "<COMMIT-1>",
+              "result": "pass",
+              "env_evidence": "declared",
+              "fresh_results": true,
+              "deploy_env_confirmed": true,
+              "verified": true,
+              "observed_head": "<COMMIT-1>",
+              "recorded_at": "<TIME>"
+            },
+            "history": [
+              {
+                "kind": "smoke",
+                "deploy_id": "<UUID>",
+                "slug": "ship-it",
+                "ref": "<COMMIT-1>",
+                "result": "pass",
+                "env_evidence": "declared",
+                "fresh_results": true,
+                "deploy_env_confirmed": true,
+                "verified": true,
+                "observed_head": "<COMMIT-1>",
+                "recorded_at": "<TIME>"
+              },
+              {
+                "kind": "deploy",
+                "deploy_id": "<UUID>",
+                "slug": "ship-it",
+                "ref": "<COMMIT-1>",
+                "ref_source": "explicit",
+                "observed_head": "<COMMIT-1>",
+                "observed_dirty": false,
+                "recorded_at": "<TIME>",
+                "result": "done",
+                "channel": "proposal",
+                "mode": null,
+                "ref_requested": null,
+                "failure_reason": null,
+                "ref_input": null,
+                "rollback": false,
+                "rollback_from": null,
+                "duration_ms": null,
+                "ci_run_id": null,
+                "ci_run_url": null,
+                "ci_reported_ref": null,
+                "log_path": null,
+                "reconciled": false
+              },
+              {
+                "kind": "deploy",
+                "deploy_id": "d-exec-1",
+                "slug": null,
+                "ref": "<COMMIT-2>",
+                "ref_source": "explicit",
+                "observed_head": "<COMMIT-2>",
+                "observed_dirty": false,
+                "recorded_at": "<TIME>",
+                "result": "done",
+                "channel": "version",
+                "mode": "script",
+                "ref_requested": "<COMMIT-2>",
+                "failure_reason": null,
+                "ref_input": "v1",
+                "rollback": false,
+                "rollback_from": null,
+                "duration_ms": "<N>",
+                "ci_run_id": null,
+                "ci_run_url": null,
+                "ci_reported_ref": null,
+                "log_path": null,
+                "reconciled": false
+              }
+            ],
+            "ledger": {
+              "path": "logos/.openlogos-runtime/deployments.jsonl",
+              "corrupt_lines": 0
+            },
+            "warnings": []
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "smoke --env prod --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "smoke",
+          "data": {
+            "environment": "prod",
+            "summary": {
+              "defined_count": 2,
+              "executed_count": 2,
+              "passed_count": 2,
+              "failed_count": 0,
+              "skipped_count": 0,
+              "uncovered_count": 0,
+              "coverage_pct": 100,
+              "pass_rate_pct": 100
+            },
+            "gate": {
+              "result": "PASS",
+              "reason": null
+            },
+            "changed_cases": [],
+            "diagnostics": [],
+            "runners": [],
+            "failed_cases": [],
+            "uncovered_cases": [],
+            "skipped_cases": [],
+            "sandbox": {
+              "mode": "off",
+              "root": "/private/tmp",
+              "isolated": false,
+              "workspace_write_denied": true,
+              "status": "skipped",
+              "diagnostics": [],
+              "suggestions": []
+            },
+            "report_path": "logos/resources/verify/smoke-report.md",
+            "result_path": "logos/resources/verify/smoke-results.jsonl",
+            "environment_evidence": {
+              "target": "prod",
+              "deploy_id": "<UUID>",
+              "ref": "<COMMIT-1>",
+              "deploy_env_confirmed": true,
+              "env_evidence": "declared",
+              "mismatched_case_ids": [],
+              "missing_case_ids": [],
+              "fresh_results": true,
+              "verified": true,
+              "ledger_written": true
+            }
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "env list --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "env list",
+          "data": {
+            "registry_path": "logos/environments.yaml",
+            "registry_present": true,
+            "environments": [
+              {
+                "id": "staging",
+                "name": "Staging",
+                "tier": "staging",
+                "current_ref": null,
+                "previous_ref": null,
+                "deploy_mode": "script",
+                "deploy_in_progress": null,
+                "last_deploy": null,
+                "last_smoke": null,
+                "aliases": []
+              },
+              {
+                "id": "prod",
+                "name": "Production",
+                "tier": "prod",
+                "current_ref": "<COMMIT-1>",
+                "previous_ref": "<COMMIT-2>",
+                "deploy_mode": "script",
+                "deploy_in_progress": null,
+                "last_deploy": {
+                  "deploy_id": "<UUID>",
+                  "slug": "ship-it",
+                  "ref": "<COMMIT-1>",
+                  "ref_source": "explicit",
+                  "observed_head": "<COMMIT-1>",
+                  "observed_dirty": false,
+                  "recorded_at": "<TIME>",
+                  "result": "done",
+                  "channel": "proposal",
+                  "mode": null,
+                  "ref_requested": null,
+                  "failure_reason": null
+                },
+                "last_smoke": {
+                  "deploy_id": "<UUID>",
+                  "slug": null,
+                  "ref": "<COMMIT-1>",
+                  "result": "pass",
+                  "env_evidence": "declared",
+                  "fresh_results": true,
+                  "deploy_env_confirmed": true,
+                  "verified": true,
+                  "observed_head": "<COMMIT-1>",
+                  "recorded_at": "<TIME>"
+                },
+                "aliases": [
+                  "生产"
+                ]
+              }
+            ],
+            "ledger": {
+              "path": "logos/.openlogos-runtime/deployments.jsonl",
+              "corrupt_lines": 0
+            },
+            "warnings": []
+          }
+        },
+        "stderr": null
+      }
+    ],
+    "ledger": "{\"kind\":\"deploy\",\"environment\":\"prod\",\"slug\":null,\"recorded_at\":\"<TIME>\",\"observed_head\":\"<COMMIT-2>\",\"observed_dirty\":false,\"deploy_id\":\"d-exec-1\",\"ref\":\"<COMMIT-2>\",\"ref_source\":\"explicit\",\"result\":\"done\",\"channel\":\"version\",\"mode\":\"script\",\"ref_input\":\"v1\",\"ref_requested\":\"<COMMIT-2>\",\"rollback\":false,\"rollback_from\":null,\"duration_ms\":\"<N>\",\"ci_run_id\":null,\"ci_run_url\":null,\"ci_reported_ref\":null,\"failure_reason\":null,\"log_path\":null,\"reconciled\":false}\n{\"kind\":\"deploy\",\"environment\":\"prod\",\"slug\":\"ship-it\",\"recorded_at\":\"<TIME>\",\"observed_head\":\"<COMMIT-1>\",\"observed_dirty\":false,\"deploy_id\":\"<UUID>\",\"ref\":\"<COMMIT-1>\",\"ref_source\":\"explicit\",\"result\":\"done\"}\n{\"kind\":\"smoke\",\"environment\":\"prod\",\"slug\":\"ship-it\",\"recorded_at\":\"<TIME>\",\"observed_head\":\"<COMMIT-1>\",\"observed_dirty\":true,\"deploy_id\":\"<UUID>\",\"ref\":\"<COMMIT-1>\",\"result\":\"pass\",\"env_evidence\":\"declared\",\"fresh_results\":true,\"deploy_env_confirmed\":true,\"verified\":true}\n{\"kind\":\"smoke\",\"environment\":\"prod\",\"slug\":null,\"recorded_at\":\"<TIME>\",\"observed_head\":\"<COMMIT-1>\",\"observed_dirty\":true,\"deploy_id\":\"<UUID>\",\"ref\":\"<COMMIT-1>\",\"result\":\"pass\",\"env_evidence\":\"declared\",\"fresh_results\":true,\"deploy_env_confirmed\":true,\"verified\":true}\n",
+    "proposal_files": [
+      "DEPLOY_DONE",
+      "SMOKE_PASS",
+      "VERIFY_PASS",
+      "proposal.md",
+      "tasks.md"
+    ],
+    "deploy_done": "{\"deploy_id\":\"<UUID>\",\"environment\":\"prod\",\"ref\":\"<COMMIT-1>\",\"ref_source\":\"explicit\",\"recorded_at\":\"<TIME>\"}\n",
+    "tasks": "# 实现任务\n\n## [code] 代码实现\n- [x] 改代码\n\n## [deploy] 部署任务\n- [x] 发布"
+  },
+  "approval-ledger": {
+    "steps": [
+      {
+        "args": "status --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "status",
+          "data": {
+            "contract": {
+              "version": "1.3.0"
+            },
+            "phases": [
+              {
+                "key": "phase.1",
+                "label": "Phase 1 · Requirements (WHY)",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.2",
+                "label": "Phase 2 · Product Design (WHAT)",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-0",
+                "label": "Phase 3-0 · Architecture",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-1",
+                "label": "Phase 3-1 · Scenario Modeling",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-2-api",
+                "label": "Phase 3-2 · API Design",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-2-db",
+                "label": "Phase 3-2 · Database Design",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-3-deployment",
+                "label": "Phase 3-3 · Deployment Plan",
+                "done": false,
+                "skipped": false,
+                "files": []
+              },
+              {
+                "key": "phase.3-4a",
+                "label": "Phase 3-4a · Test Case Design (Unit + Scenario)",
+                "done": true,
+                "skipped": false,
+                "files": [
+                  "smoke/core-smoke-test-cases.md"
+                ]
+              },
+              {
+                "key": "phase.3-4b",
+                "label": "Phase 3-4b · API Orchestration Tests",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-5",
+                "label": "Phase 3-5 · Code Implementation",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-6",
+                "label": "Phase 3-6 · Test Acceptance (verify)",
+                "done": false,
+                "skipped": true,
+                "files": []
+              },
+              {
+                "key": "phase.3-7-deploy",
+                "label": "Phase 3-7 · Deployment Execution",
+                "done": true,
+                "skipped": false,
+                "files": [
+                  "deployment-report.md"
+                ]
+              },
+              {
+                "key": "phase.3-8-smoke",
+                "label": "Phase 3-8 · Deployment Smoke Test",
+                "done": false,
+                "skipped": false,
+                "files": []
+              }
+            ],
+            "modules": [
+              {
+                "id": "core",
+                "name": "Core",
+                "lifecycle": "launched",
+                "bootstrap": "normal",
+                "current_phase": null,
+                "current_phase_label": null,
+                "phase_progress": null,
+                "active_change": {
+                  "slug": "ship-it",
+                  "proposal_step": "ready-to-deploy",
+                  "proposal_step_label": "ready to deploy — deployment requires explicit human authorization",
+                  "step_meta": {
+                    "phase": "post-implement",
+                    "kind": "gate"
+                  },
+                  "has_proposal": true,
+                  "has_tasks": true,
+                  "tasks_checked": 1,
+                  "tasks_total": 2,
+                  "delta_count": 0,
+                  "code_required": true,
+                  "facts": {
+                    "spec_complete": false,
+                    "slices_planned": true,
+                    "slices_approved": false,
+                    "code_required": true,
+                    "has_delta_tasks": false,
+                    "verify_pass": true
+                  },
+                  "deployment_required": true,
+                  "smoke_required": true,
+                  "deployment_reason": "发布",
+                  "deployment_decision_source": "proposal",
+                  "deployment_decision_conflict": false,
+                  "deployment_decision_conflict_reason": null,
+                  "deployment_progress": {
+                    "checked": 0,
+                    "total": 1,
+                    "percent": 0,
+                    "status": "pending",
+                    "label": "0/1"
+                  },
+                  "deployment_document": {
+                    "path": "logos/changes/ship-it/tasks.md",
+                    "name": "tasks.md",
+                    "exists": true
+                  },
+                  "deploy_tasks": [
+                    {
+                      "checked": false,
+                      "text": "发布"
+                    }
+                  ],
+                  "plan_state": {
+                    "plan_ready": true,
+                    "plan_gate_pending": false,
+                    "plan_approved": true,
+                    "tasks_template_filled": true,
+                    "tasks_execution_done": 0,
+                    "tasks_execution_total": 1,
+                    "tasks_execution_scope": "deploy",
+                    "plan_package": {
+                      "schema": "openlogos/plan-package-evaluation@1",
+                      "contract_version": "1",
+                      "ready": true,
+                      "proposal": {
+                        "filled": true,
+                        "issues": []
+                      },
+                      "tasks": {
+                        "plan_filled": true,
+                        "code_required": true,
+                        "code_slices_filled": true,
+                        "issues": []
+                      },
+                      "issues": []
+                    },
+                    "completion_contract_version": "1",
+                    "completion_issues": [],
+                    "proposal_filled": true,
+                    "tasks_plan_filled": true,
+                    "tasks_code_required": true,
+                    "tasks_code_slices_filled": true,
+                    "managed_assets": {
+                      "status": "missing",
+                      "expected_hash": "<SHA256>",
+                      "actual_hash": null,
+                      "reason": "sync-required",
+                      "action": "运行 openlogos sync，并重开 Agent session。",
+                      "requires_session_restart": true
+                    },
+                    "diagnostic": "plan gate 已消费或前沿已离开 ready-to-delta，按当前执行前沿继续推进。"
+                  }
+                },
+                "suggestion": "Verification passed with deployment tasks. Deployment is a human confirmation point — explicitly authorize AI to deploy from the deployment plan",
+                "slice_state": {
+                  "total": 1,
+                  "done": 1,
+                  "remaining": 0
+                }
+              }
+            ],
+            "product_type_confirmation": {
+              "signal": "PRODUCT_TYPE_CONFIRMATION_REQUIRED",
+              "level": "warning",
+              "missing_module_ids": [
+                "core"
+              ],
+              "next_action": {
+                "command": "openlogos module set-product-type",
+                "enum": [
+                  "web",
+                  "desktop",
+                  "mobile",
+                  "cli",
+                  "api",
+                  "library",
+                  "skills",
+                  "service"
+                ],
+                "gui_enum": [
+                  "web",
+                  "desktop",
+                  "mobile"
+                ],
+                "hint": "为每个缺字段 launched 模块显式设置 product_type；缺字段前一律按非 GUI 处理（安全默认）"
+              }
+            },
+            "active_proposals": [
+              {
+                "name": "ship-it",
+                "has_proposal": true,
+                "has_tasks": true,
+                "delta_count": 0
+              }
+            ],
+            "current_phase": "phase.3-3-deployment",
+            "suggestion": "Verification passed with deployment tasks. Deployment is a human confirmation point — explicitly authorize AI to deploy from the deployment plan",
+            "all_done": false,
+            "lifecycle": "launched",
+            "locale": "en",
+            "source_roots": null,
+            "active_change": "ship-it",
+            "proposal_step": "ready-to-deploy",
+            "yaml_diagnostics": null,
+            "environments": [
+              {
+                "id": "staging",
+                "name": "Staging",
+                "tier": "staging",
+                "current_ref": null,
+                "previous_ref": null,
+                "deploy_mode": "script",
+                "deploy_in_progress": null,
+                "last_deploy": null,
+                "last_smoke": {
+                  "deploy_id": "d-stg-1",
+                  "slug": null,
+                  "ref": "<COMMIT-1>",
+                  "result": "pass",
+                  "env_evidence": "declared",
+                  "fresh_results": true,
+                  "deploy_env_confirmed": true,
+                  "verified": true,
+                  "observed_head": "<COMMIT-2>",
+                  "recorded_at": "<TIME>"
+                }
+              },
+              {
+                "id": "prod",
+                "name": "Production",
+                "tier": "prod",
+                "current_ref": "<COMMIT-2>",
+                "previous_ref": null,
+                "deploy_mode": "script",
+                "deploy_in_progress": null,
+                "last_deploy": {
+                  "deploy_id": "d-exec-1",
+                  "slug": null,
+                  "ref": "<COMMIT-2>",
+                  "ref_source": "explicit",
+                  "observed_head": "<COMMIT-2>",
+                  "observed_dirty": false,
+                  "recorded_at": "<TIME>",
+                  "result": "done",
+                  "channel": "version",
+                  "mode": "script",
+                  "ref_requested": "<COMMIT-2>",
+                  "failure_reason": null
+                },
+                "last_smoke": null
+              }
+            ],
+            "environment_ledger": {
+              "path": "logos/.openlogos-runtime/deployments.jsonl",
+              "corrupt_lines": 2
+            }
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "env list --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "env list",
+          "data": {
+            "registry_path": "logos/environments.yaml",
+            "registry_present": true,
+            "environments": [
+              {
+                "id": "staging",
+                "name": "Staging",
+                "tier": "staging",
+                "current_ref": null,
+                "previous_ref": null,
+                "deploy_mode": "script",
+                "deploy_in_progress": null,
+                "last_deploy": null,
+                "last_smoke": {
+                  "deploy_id": "d-stg-1",
+                  "slug": null,
+                  "ref": "<COMMIT-1>",
+                  "result": "pass",
+                  "env_evidence": "declared",
+                  "fresh_results": true,
+                  "deploy_env_confirmed": true,
+                  "verified": true,
+                  "observed_head": "<COMMIT-2>",
+                  "recorded_at": "<TIME>"
+                },
+                "aliases": []
+              },
+              {
+                "id": "prod",
+                "name": "Production",
+                "tier": "prod",
+                "current_ref": "<COMMIT-2>",
+                "previous_ref": null,
+                "deploy_mode": "script",
+                "deploy_in_progress": null,
+                "last_deploy": {
+                  "deploy_id": "d-exec-1",
+                  "slug": null,
+                  "ref": "<COMMIT-2>",
+                  "ref_source": "explicit",
+                  "observed_head": "<COMMIT-2>",
+                  "observed_dirty": false,
+                  "recorded_at": "<TIME>",
+                  "result": "done",
+                  "channel": "version",
+                  "mode": "script",
+                  "ref_requested": "<COMMIT-2>",
+                  "failure_reason": null
+                },
+                "last_smoke": null,
+                "aliases": [
+                  "生产"
+                ]
+              }
+            ],
+            "ledger": {
+              "path": "logos/.openlogos-runtime/deployments.jsonl",
+              "corrupt_lines": 2
+            },
+            "warnings": []
+          }
+        },
+        "stderr": null
+      },
+      {
+        "args": "env show prod --format json",
+        "exit": 0,
+        "stdout": {
+          "command": "env show",
+          "data": {
+            "environment": {
+              "id": "prod",
+              "name": "Production",
+              "tier": "prod",
+              "aliases": [
+                "生产"
+              ],
+              "description": null,
+              "health": null,
+              "version": null,
+              "secrets": []
+            },
+            "current_ref": "<COMMIT-2>",
+            "previous_ref": null,
+            "deploy_mode": "script",
+            "deploy_in_progress": null,
+            "last_deploy": {
+              "deploy_id": "d-exec-1",
+              "slug": null,
+              "ref": "<COMMIT-2>",
+              "ref_source": "explicit",
+              "observed_head": "<COMMIT-2>",
+              "observed_dirty": false,
+              "recorded_at": "<TIME>",
+              "result": "done",
+              "channel": "version",
+              "mode": "script",
+              "ref_requested": "<COMMIT-2>",
+              "failure_reason": null
+            },
+            "last_smoke": null,
+            "history": [
+              {
+                "kind": "deploy",
+                "deploy_id": "d-exec-1",
+                "slug": null,
+                "ref": "<COMMIT-2>",
+                "ref_source": "explicit",
+                "observed_head": "<COMMIT-2>",
+                "observed_dirty": false,
+                "recorded_at": "<TIME>",
+                "result": "done",
+                "channel": "version",
+                "mode": "script",
+                "ref_requested": "<COMMIT-2>",
+                "failure_reason": null,
+                "ref_input": "v1",
+                "rollback": false,
+                "rollback_from": null,
+                "duration_ms": "<N>",
+                "ci_run_id": null,
+                "ci_run_url": null,
+                "ci_reported_ref": null,
+                "log_path": null,
+                "reconciled": false
+              }
+            ],
+            "ledger": {
+              "path": "logos/.openlogos-runtime/deployments.jsonl",
+              "corrupt_lines": 2
+            },
+            "warnings": []
+          }
+        },
+        "stderr": null
+      }
+    ],
+    "ledger": "{\"kind\":\"deploy\",\"environment\":\"prod\",\"slug\":null,\"recorded_at\":\"<TIME>\",\"observed_head\":\"<COMMIT-2>\",\"observed_dirty\":false,\"deploy_id\":\"d-exec-1\",\"ref\":\"<COMMIT-2>\",\"ref_source\":\"explicit\",\"result\":\"done\",\"channel\":\"version\",\"mode\":\"script\",\"ref_input\":\"v1\",\"ref_requested\":\"<COMMIT-2>\",\"rollback\":false,\"rollback_from\":null,\"duration_ms\":\"<N>\",\"ci_run_id\":null,\"ci_run_url\":null,\"ci_reported_ref\":null,\"failure_reason\":null,\"log_path\":null,\"reconciled\":false}\n{\"kind\":\"approval\",\"environment\":\"prod\",\"slug\":null,\"recorded_at\":\"<TIME>\",\"observed_head\":\"<COMMIT-2>\",\"observed_dirty\":false,\"approval_id\":\"a-1\",\"ref\":\"<COMMIT-2>\",\"ref_input\":\"v1\",\"approver\":\"Alice <a@example.invalid>\",\"note\":null}\n{\"kind\":\"smoke\",\"environment\":\"staging\",\"slug\":null,\"recorded_at\":\"<TIME>\",\"observed_head\":\"<COMMIT-2>\",\"observed_dirty\":false,\"deploy_id\":\"d-stg-1\",\"ref\":\"<COMMIT-1>\",\"result\":\"pass\",\"env_evidence\":\"declared\",\"fresh_results\":true,\"deploy_env_confirmed\":true,\"verified\":true}\n{\"kind\":\"approval\",\"environment\":\"prod\",\"slug\":null,\"recorded_at\":\"<TIME>\",\"observed_head\":\"<COMMIT-2>\",\"observed_dirty\":false,\"approval_id\":\"a-2\",\"ref\":\"<COMMIT-1>\",\"ref_input\":\"v1\",\"approver\":\"Alice <a@example.invalid>\",\"note\":null}\n",
+    "proposal_files": [
+      "VERIFY_PASS",
+      "proposal.md",
+      "tasks.md"
+    ],
+    "deploy_done": null,
+    "tasks": "# 实现任务\n\n## [code] 代码实现\n- [x] 改代码\n\n## [deploy] 部署任务\n- [ ] 发布"
+  }
+}

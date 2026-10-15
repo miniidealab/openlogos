@@ -35,6 +35,7 @@
 - 仍须满足其它前置依赖（`VERIFY_PASS`、部署方案、`[deploy]` section、部署决策无冲突）。
 - 仍禁止：跳过部署方案凭经验执行、部署失败后写 `DEPLOY_DONE`、手写 `DEPLOY_DONE`、**跳过需要的 smoke**（全自动只是把 smoke 的"授权"前置到用户选择 `--auto`，并不允许略过 smoke 本身）。
 - **硬红线不受 `--auto` 影响**：代码未收敛 / 未绿（`gate:implement:loop-exhausted`）在任何模式下都绝不自动放行，自动放行只发生在"代码已绿"之后。
+- **审批与晋级是第二条硬红线**（来源变更 environment-promotion-approval，D14）：目标环境要求审批而该版本未获审批（`DEPLOY_APPROVAL_REQUIRED`），或晋级检查未通过（`DEPLOY_PROMOTION_UNVERIFIED`）时，`--auto` 的 standing 授权**不覆盖**——停止并报告「等待审批」或「晋级未满足」，等人批准后由宿主重新驱动。standing 授权也不覆盖执行 `openlogos approve`、加 `--force-promote` 或修改已配置门禁的 `logos/environments.yaml`；guard 在无人值守模式下会阻断这些调用，不要尝试绕开。
 - 部署完成后仍调用 `openlogos deploy-done` 受控落标，不手写 marker。
 
 > 据此，「前置依赖」第 1 条「用户明确授权部署」在 `--auto` 下由「本次响应 `gate_auto_passed=true`」满足；「禁止行为」第 1 条「未经用户明确确认自动部署」的"明确确认"在 `--auto` 下等价于用户选择 `--auto` + 本次放行，而非凭 AI 自行决定。
@@ -99,6 +100,10 @@ openlogos deploy --env <id> --format json
 - `DEPLOY_IN_PROGRESS` 时停止并报告持有者，不得删除锁或未决记录。
 - `DEPLOY_RECORD_FAILED` 表示已部署但记录失败：按 `details` 提示重新执行 `deploy` 或 `deploy-done --env --ref` 补记，不得手写 marker。
 - `DEPLOY_REF_UNCONFIRMED` 警告表示 CI 没有回报实际部署的提交，部署版本记为未知；如实告知用户，后续 smoke 不会得到已验证事实。
+- **晋级与审批门**（来源变更 environment-promotion-approval，见 `spec/environments.md` §12）：
+  - `DEPLOY_PROMOTION_UNVERIFIED`：该版本尚未在上游环境（`details.promote_from`）以 smoke 验证。停止并报告「晋级未满足」，给出 `details.upstream_candidate_ref`（上游最近一个已验证版本）供用户决定；不得自行先部署上游再继续，除非部署方案与用户明确要求。
+  - `DEPLOY_APPROVAL_REQUIRED`：该环境要求审批而该版本未获审批。停止并报告「等待审批」，把 `details.approve_command` 原文交给用户，由用户在终端以 `! <命令原文>` 执行或经 RunLogos 界面批准；审批写入后再重新执行本步。
+  - **任何模式（含 `--auto`）下都不得**：自行执行 `openlogos approve`、给 `deploy` 加 `--force-promote`、换环境或换版本、改用手工部署、改用 `deploy-done`（受门环境会以 `DEPLOY_DONE_GATED_ENV` 拒绝）、修改 `logos/environments.yaml` 关闭门禁。`--force-promote` 只能由用户本人带理由执行。
 
 **目标环境配置了 `deploy.mode: agent`**——两段式：
 

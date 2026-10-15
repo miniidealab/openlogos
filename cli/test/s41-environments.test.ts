@@ -130,11 +130,12 @@ describe('S41 环境登记表与账本 — 单元测试', () => {
   });
 
   it('UT-S41-04: 未知字段只警告', () => {
-    registry('schema_version: 1\nowner: team\nenvironments:\n  - {id: prod, name: P, tier: prod, promote_from: test}\n');
+    // promote_from / require_approval 自 environment-promotion-approval 起为受校验字段（UT-S41-16），样例改用 owner_team
+    registry('schema_version: 1\nowner: team\nenvironments:\n  - {id: prod, name: P, tier: prod, owner_team: ops}\n');
     const reg = loaded();
     expect(reg.errors).toEqual([]);
     expect(reg.environments.map(e => e.id)).toEqual(['prod']);
-    expect(reg.warnings.map(w => [w.code, w.field])).toEqual([['ENV_UNKNOWN_FIELD', 'owner'], ['ENV_UNKNOWN_FIELD', 'promote_from']]);
+    expect(reg.warnings.map(w => [w.code, w.field])).toEqual([['ENV_UNKNOWN_FIELD', 'owner'], ['ENV_UNKNOWN_FIELD', 'owner_team']]);
   });
 
   it('UT-S41-05: 环境解析顺序与失败', () => {

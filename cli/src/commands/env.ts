@@ -122,6 +122,18 @@ function printView(view: EnvView & { aliases?: string[] }, locale: Locale): void
     const verified = t(locale, view.last_smoke.verified ? 'env.view.verified' : 'env.view.notVerified');
     console.log(`      ${t(locale, 'env.view.lastSmoke', { result: view.last_smoke.result, verified, time: view.last_smoke.recorded_at })}`);
   }
+  // 晋级与审批字段只在条目写有 promote_from / require_approval 时出现（spec/environments.md §7.1）；未写时文本输出逐字不变
+  if (view.promotion) {
+    const candidate = view.promotion.candidate_ref ? shortRef(view.promotion.candidate_ref, locale) : t(locale, 'env.view.never');
+    console.log(`      ${t(locale, 'env.view.promotion', { from: view.promotion.from, ref: candidate })}`);
+  }
+  if (view.require_approval !== undefined) {
+    const key = view.require_approval ? 'env.view.approvalRequired' : 'env.view.approvalNotRequired';
+    console.log(`      ${t(locale, key, { count: String(view.open_approvals?.length ?? 0) })}`);
+    for (const a of view.open_approvals ?? []) {
+      console.log(`        ${t(locale, 'env.view.openApproval', { id: a.approval_id, ref: shortRef(a.ref, locale), approver: a.approver ?? '-', time: a.recorded_at })}`);
+    }
+  }
 }
 
 function printLedgerCorrupt(ledger: LedgerSnapshot, locale: Locale): void {
@@ -197,6 +209,9 @@ export function envShow(input: string | undefined, format: OutputFormat = 'text'
         : {}),
       last_deploy: view.last_deploy,
       last_smoke: view.last_smoke,
+      ...(env.gate
+        ? { promote_from: view.promote_from, require_approval: view.require_approval, open_approvals: view.open_approvals, promotion: view.promotion }
+        : {}),
       history,
       ledger: ledgerOut(ledger),
       warnings,
@@ -208,7 +223,11 @@ export function envShow(input: string | undefined, format: OutputFormat = 'text'
   if (env.description) console.log(`      ${env.description}`);
   console.log(`\n  ${t(locale, 'env.show.history', { limit: String(ENV_HISTORY_LIMIT) })}`);
   for (const h of history) {
-    const detail = h.kind === 'deploy' ? `ref=${shortRef(h.ref, locale)}` : `${h.result} ref=${shortRef(h.ref, locale)} verified=${h.verified}`;
+    const detail = h.kind === 'deploy'
+      ? `ref=${shortRef(h.ref, locale)}`
+      : h.kind === 'smoke'
+        ? `${h.result} ref=${shortRef(h.ref, locale)} verified=${h.verified}`
+        : `ref=${shortRef(h.ref, locale)} id=${h.approval_id} approver=${h.approver ?? '-'}`;
     console.log(`    ${h.recorded_at}  ${h.kind}  ${detail}  (${h.slug ?? (h.kind === 'deploy' ? h.channel ?? '-' : '-')})`);
   }
   for (const w of warnings) console.log(`  ⚠ ${w.message}`);
