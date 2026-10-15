@@ -10,6 +10,7 @@ import { archive } from './commands/archive.js';
 import { verify } from './commands/verify.js';
 import { smoke } from './commands/smoke.js';
 import { deployDone } from './commands/deploy-done.js';
+import { deploy } from './commands/deploy.js';
 import { launch } from './commands/launch.js';
 import { detect } from './commands/detect.js';
 import { indexCommand } from './commands/index-cmd.js';
@@ -69,6 +70,12 @@ Commands:
   deploy-done        Mark the active change deployment as completed
                        --env <name>                 Target environment label (id or alias when logos/environments.yaml exists)
                        --ref <git revision>         Version actually deployed (recorded in DEPLOY_DONE and the local ledger)
+  deploy             Run the deployment configured for an environment (logos/environments.yaml deploy)
+                       --env <id|alias>             Target environment (required)
+                       --ref <git revision>         Version to deploy (version channel; proposal channel defaults to HEAD)
+                       --rollback                   Redeploy the environment's previous_ref (version channel)
+                       --channel <proposal|version> Override the default channel
+                       --dry-run                    Run all checks and show the plan without executing or writing
   baseline-seed      Commit reverse-engineered baseline seed state (brownfield-adopter)
                        begin  --module <id> --manifest <path>   Freeze logical plan + create staging
                        commit --module <id> --run-id <id>       Validate staged bytes + atomic commit
@@ -105,7 +112,7 @@ Options:
   --help, -h         Show this help message
   --version, -v      Show version number
   --fresh-sandbox    verify / smoke: rebuild the persistent sandbox workspace from scratch
-  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list, env list, env show, env check)
+  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, deploy, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list, env list, env show, env check)
 
 Examples:
   openlogos init my-saas-project
@@ -119,6 +126,7 @@ Examples:
   openlogos smoke --env staging
   openlogos smoke --fresh-sandbox
   openlogos deploy-done --env staging
+  openlogos deploy --env staging --ref v1.2.0
   openlogos detect --format json
   openlogos change add-remember-me
   openlogos merge add-remember-me
@@ -139,6 +147,7 @@ const VALUE_OPTIONS = new Set([
   '--locale', '--ai-tool', '--aitool', '--module', '--interval', '--env',
   '--manifest', '--run-id', '--slug', '--lifecycle', '--format',
   '--base', '--head', '--prefix', '--ref',
+  '--channel', '--complete', '--result', '--abandon',
 ]);
 
 /** 剔除取值选项的值位 token，仅保留可参与全局选项判定的 token。 */
@@ -234,6 +243,32 @@ async function main() {
       // --ref 出现但缺值时传空串，由命令按 ENV_REF_UNRESOLVED 拒绝，不折叠成「未传」
       const refArg = args.includes('--ref') ? (args[args.indexOf('--ref') + 1] ?? '') : undefined;
       await deployDone(format, envArg, refArg);
+      break;
+    }
+    case 'deploy': {
+      // 取值参数出现但缺值（末尾或紧跟另一个 --flag）时记入 missingValue，由命令按 DEPLOY_ARGS_CONFLICT 拒绝
+      const missingValue: string[] = [];
+      const valueOf = (flag: string): string | undefined => {
+        const i = args.indexOf(flag);
+        if (i === -1) return undefined;
+        const v = args[i + 1];
+        if (v === undefined || (v.startsWith('--') && flag !== '--ref')) { missingValue.push(flag); return undefined; }
+        return v;
+      };
+      const refIdx = args.indexOf('--ref');
+      await deploy(format, {
+        env: valueOf('--env'),
+        // --ref 缺值时传空串，按 ENV_REF_UNRESOLVED 拒绝（与 deploy-done 一致）
+        ref: refIdx === -1 ? undefined : (args[refIdx + 1] ?? ''),
+        rollback: args.includes('--rollback'),
+        channel: valueOf('--channel'),
+        dryRun: args.includes('--dry-run'),
+        complete: valueOf('--complete'),
+        result: valueOf('--result'),
+        abandon: valueOf('--abandon'),
+        reconcile: args.includes('--reconcile'),
+        missingValue,
+      });
       break;
     }
     case 'change': {

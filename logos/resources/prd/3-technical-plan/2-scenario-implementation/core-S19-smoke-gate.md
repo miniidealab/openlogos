@@ -1131,9 +1131,10 @@ sequenceDiagram
 - **副作用**：正常写 smoke marker 与账本。
 
 #### EX-19.19：无活跃提案
+
 - **触发条件**：没有 `logos/.openlogos-guard`，执行 `smoke --env <x>`。
-- **期望响应**：既有流程照常执行，输出与退出码与引入前一致（登记表存在时环境解析规则照常生效）；不读 `DEPLOY_DONE`，`deploy_env_confirmed=false`，`verified=false`。
-- **副作用**：不写账本，不伪造 `slug`、`deploy_id`、`ref`。
+- **期望响应**：既有流程照常执行，输出与退出码与引入前一致（登记表存在时环境解析规则照常生效）；不读 `DEPLOY_DONE`、不写提案标记。部署执行未启用（`spec/environments.md` §1）时 `deploy_env_confirmed=false`、`verified=false`，与引入前一致。部署执行已启用时按「smoke 部署身份核对（environment-deploy）」以账本中该环境最近一条 deploy 记录为部署身份：该记录 `result=done` 时 `deploy_env_confirmed=true`，`verified` 按既有规则计算（`ref` 为 null 时不成立）；没有 deploy 记录时 `deploy_id`、`ref` 为 null、`deploy_env_confirmed=false`。
+- **副作用**：部署执行未启用时不写账本，不伪造 `slug`、`deploy_id`、`ref`；部署执行已启用时追加 `slug` 为 null 的 smoke 记录（来源变更 environment-deploy，决策 C15）。
 
 #### EX-19.20：账本追加失败
 - **触发条件**：存在活跃提案且传入 `--env`，门禁已得出结论；追加账本 smoke 行失败——账本锁被其他进程占用超过等待上限（5 秒），或账本文件不可写、被目录占据等。
@@ -1150,3 +1151,37 @@ sequenceDiagram
 - 需求：S19 验收条件（environment-registry 新增项）、「S19 本地部署后负向 Smoke 要求」同环境要求。
 - 功能规格：§2.93.4、§2.93.5；规范：`spec/environments.md` §4.2、§5、§6、§8，`spec/cli-json-output.md`「`openlogos smoke`」；`spec/test-results.md`「Smoke 结果与覆盖预检」。
 - 测试：UT-S19-58～UT-S19-67、ST-S19-25～ST-S19-27；增量修正（fix-environment-registry-review-gaps）：UT-S19-68～UT-S19-71、ST-S19-28。
+
+## smoke 部署身份核对（environment-deploy）
+
+> 来源变更：environment-deploy（决策 C15）。格式权威：`spec/environments.md` §4.2「部署身份核对」、§5.1、§5.2。版本通道（S42）让环境的当前部署不再只由提案落标决定：提案落标之后该环境可能又被发布了其他版本，若仍以提案的 `DEPLOY_DONE` 作为 smoke 的部署身份，会给旧 `deploy_id` / `ref` 附上新结果的验证事实。本节修订「smoke 环境一致性、环境证据与部署账本（environment-registry）」的 Step 2、Step 4 与 Step 9，其余步骤、沙箱、覆盖检查与 skip 口径不变。**本节全部新增行为只在部署执行已启用时生效**（`spec/environments.md` §1：登记表中至少一个环境配置了 `deploy`，或账本中已有 `openlogos deploy` 写出的记录）；未启用的项目 smoke 的读取、输出与账本写入与引入前逐字一致（review delta-r1 F3）。
+
+### 步骤修订
+
+- **Step 2 修订**：没有活跃提案时跳过提案前置、不读 `DEPLOY_DONE`；部署执行已启用且传入 `--env` 时，部署身份改为取自账本（见 Step 4b）。
+- **Step 4a（新增，排在 Step 4 的三类分类之后）**：部署执行已启用、传入 `--env` 且存在活跃提案、`DEPLOY_DONE` 为合法新格式时，CLI 读取账本中该环境最近一条 deploy 记录（任意 `result`；同一 `deploy_id` 取最后一条）。该记录存在且其 `deploy_id` 不等于 `DEPLOY_DONE.deploy_id` 时报 `SMOKE_DEPLOY_SUPERSEDED`（退出码 1，`details` 给出 marker 与账本最新记录的 `deploy_id`、`ref`、通道与结果），不运行 `smoke.command`、不写结果、不写标记、不写账本、不改写 `DEPLOY_DONE`。旧空格式 marker 或该环境没有 deploy 记录时不做此核对。
+- **Step 4b（新增）**：部署执行已启用、传入 `--env` 且没有活跃提案时，CLI 以该账本记录为部署身份：`deploy_id`、`ref` 取自记录，`deploy_env_confirmed` 在记录 `result=done` 时为 true；没有记录时三者分别为 null、null、false。
+- **Step 9 修订**：存在活跃提案时 smoke 记录的 `deploy_id`、`ref` 取自 `DEPLOY_DONE`（经 Step 4a 已确认与账本最新记录一致）；没有活跃提案且部署执行已启用时取自 Step 4b，追加 `slug` 为 null 的 smoke 记录，只写账本、不写任何提案标记（没有标记阶段）。`verified` 规则不变。
+
+### 异常与边界
+
+#### EX-19.22：提案部署身份已被后续部署取代
+- **触发条件**：当前提案已把 prod 部署为 R1（`DEPLOY_DONE.deploy_id=d1`），之后经 `openlogos deploy --env prod --ref R2` 版本通道部署 R2（账本最新记录 `deploy_id=d2`），再执行 `smoke --env prod`。
+- **期望响应**：`SMOKE_DEPLOY_SUPERSEDED`，退出码 1；消息提示在提案通道重新部署后再执行 smoke。
+- **副作用**：零副作用——不运行 `smoke.command`、不写 `SMOKE_PASS` / `SMOKE_FAIL`、不写账本、不改写 `DEPLOY_DONE`。
+
+#### EX-19.23：后续部署失败或结果未知
+- **触发条件**：提案落标后，同一环境又有一次 `result=failed` 或 `unknown` 的部署。
+- **期望响应**：同 EX-19.22。失败或结果未知的部署可能已部分改变环境，不能证明环境仍运行提案部署的版本。
+- **副作用**：同 EX-19.22。
+
+#### EX-19.24：无活跃提案、版本未确认
+- **触发条件**：无活跃提案，账本中 prod 最近一条 deploy 记录 `result=done`、`ref=null`（CI 版本未确认），执行 `smoke --env prod`，runner 全部声明 prod 并通过。
+- **期望响应**：门禁 PASS，`environment_evidence.deploy_env_confirmed=true`、`ref=null`、`verified=false`、`ledger_written=true`。
+- **副作用**：追加 `slug` 为 null 的 smoke 记录；不写提案标记。
+
+### 追溯
+
+- 需求：「S42: 按环境执行部署与回滚」验收条件「smoke 部署身份被取代」。
+- 功能规格：§2.93.4；规范：`spec/environments.md` §4.2、§5.1、§5.2、§8；`spec/cli-json-output.md`「smoke / env / status 部署字段增量（environment-deploy）」。
+- 测试：UT-S19-72、UT-S19-73、ST-S19-29。

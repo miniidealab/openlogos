@@ -125,7 +125,7 @@ deployment_gates:
 
 #### Step 5.1: 产出环境登记表 `logos/environments.yaml`（environment-registry）
 
-部署方案涉及具体环境（测试、预发、生产等）时，按方案「一、部署目标」「三、环境变量与密钥」产出或更新 `logos/environments.yaml`（格式权威：`spec/environments.md` §2）：
+部署方案涉及具体环境（测试、预发、生产等）时，按方案「一、部署目标」「三、环境变量与密钥」「四、构建与发布命令」产出或更新 `logos/environments.yaml`（格式权威：`spec/environments.md` §2、§11.2），并为可由 OpenLogos 执行部署的环境写出 `deploy` 条目与部署脚本（来源变更 environment-deploy）：
 
 ```yaml
 schema_version: 1
@@ -137,6 +137,20 @@ environments:
     health: https://staging.example.com/healthz
     version: https://staging.example.com/version
     secrets: [STAGING_DEPLOY_TOKEN]
+    deploy:
+      mode: script
+      script: deploy/staging.sh
+      args: ["{env}", "{ref}"]
+      timeout_sec: 1800
+  - id: prod
+    name: 生产环境
+    tier: prod
+    aliases: [生产]
+    deploy:
+      mode: ci
+      provider: github-actions
+      workflow: deploy.yml
+      inputs: { environment: "{env}" }
 ```
 
 规则：
@@ -145,15 +159,35 @@ environments:
 - `secrets` **只写环境变量名，不得写值**；方案中出现的真实密钥一律不进登记表。
 - `deployment_gates.<module>.environments` 中的每一项必须能按 id 或别名解析到登记表中的环境。
 - 只登记部署方案确实涉及的环境，不臆造；部署方案没有环境划分时不产出登记表（登记表是 opt-in）。
-- 产出后提示用户运行 `openlogos env check` 校验（只读命令）；登记表属于 `guard.exempt` 内置默认，修改不需立案。
+- 登记表属于 `guard.exempt` 内置默认，修改不需立案。
+
+**选择执行方式**：
+
+- 仓库已有可用的 GitHub Actions 部署工作流 → 优先 `mode: ci`、`provider: github-actions`；GitLab 等其他 CI → `mode: ci`、`provider: script`，编写仓库内的 `trigger_script` 与 `status_script`（JSON 协议见 `spec/environments.md` §11.3）。
+- 没有流水线、部署步骤可脚本化 → `mode: script`，编写部署脚本。
+- 部署步骤暂时无法脚本化（需要人工或 AI 判断的操作） → `mode: agent`，`plan_section` 写部署方案中对应章节标题；后续应尽量改为 script 或 ci。
+
+**登记表不承载可执行命令**（决策 D13）：`deploy` 只写脚本路径、工作流名、参数、超时等配置，**不得**写 `run`、`command`、`shell` 等命令字段——登记表免立案可改，命令写在这里会让部署行为绕过 guard。改变部署行为必须改受保护的脚本或工作流。
+
+**部署脚本编写要求**（script 方式）：
+
+- 放在仓库内被 git 跟踪的路径（默认 `deploy/<env>.sh`），提交可执行位；CLI 以参数数组直接执行、不经 shell，参数用 `args` 的占位符 `{env}`、`{ref}`、`{ref_short}`、`{deploy_id}` 传入。
+- 脚本在**目标版本的隔离工作树**中运行（`workdir: worktree` 默认）：工作树里没有 `node_modules`、构建产物等未跟踪文件，脚本必须自行安装依赖与构建，不得依赖当前工作区状态。
+- 失败时以非零退出码退出；不打印密钥值（CLI 只能遮盖已声明的密钥）；幂等，可重复执行。
+- 可读取 `OPENLOGOS_DEPLOY_ENV`、`OPENLOGOS_DEPLOY_REF`、`OPENLOGOS_DEPLOY_ID`、`OPENLOGOS_DEPLOY_CHANNEL`。
+
+**CI 工作流要求**（ci 方式）：工作流部署的必须是自身检出的提交，并以固定名称上传 artifact `openlogos-deploy-result`，其中 `result.json` 为 `{"deployed_ref": "<40 位 commit>"}`，值取自部署所用 `actions/checkout` 步骤的 `commit` 输出（provider: script 由 `status_script` 在 `completed` 时输出 `deployed_ref`）。没有回报时 OpenLogos 记录部署版本为未知，该次部署不能作为回滚目标、smoke 不能得到已验证事实。
+
+**自验证（设计阶段，不做真实部署）**：对每个配置了 `deploy` 的环境依次运行 `openlogos env check` 与 `openlogos deploy --env <id> --ref <当前提交> --dry-run`（只读，校验脚本在目标版本中存在且可执行、参数占位符合法、声明的密钥齐全、`gh` 可用且已登录），shell 脚本另做 `bash -n` 语法检查；任一失败先修正再交付。**设计阶段不得执行真实部署**。
 
 ## 输出规范
 
-- 部署方案：`logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md`
+- 部署方案：`logos/resources/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md`；配置了 `deploy` 的环境须在方案中新增「部署脚本审阅摘要」一节：每个脚本或工作流的路径、做什么、动哪些外部资源（服务、数据库、存储、域名）、需要哪些密钥变量名、失败与回滚方式。该节供愿意审阅的人阅读，**不写任何确认标记、不阻断流程**（来源变更 environment-deploy，决策 C03）
 - 环境登记表（部署方案涉及具体环境时）：`logos/environments.yaml`，格式见 `spec/environments.md`
+- 部署脚本（script 方式）：仓库内受保护路径，默认 `deploy/<env>.sh`；CI 适配脚本（provider: script）同样放在仓库内
 - 文档语言遵循项目 locale
 - Mermaid 可用于部署拓扑图，且必须遵循上述节点标签与子图命名安全规则
-- 不执行任何部署命令
+- 不执行任何真实部署命令；只运行只读的 `openlogos env check`、`openlogos deploy --dry-run` 与脚本语法检查
 
 ## 人类确认点
 

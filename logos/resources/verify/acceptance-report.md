@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 2317 |
+| Defined cases | 2346 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 2317 |
-| Passed | 2292 |
+| Executed cases | 2346 |
+| Passed | 2321 |
 | Failed | 0 |
 | Skipped | 25 |
 | Uncovered | 0 |
@@ -21,8 +21,8 @@
 
 - Mode: `final`
 - Attempted slice: `null`
-- Confirmed slices: `slice-01-marker-invalid-details`, `slice-02-schema-guard-exempt-defaults`, `slice-03-smoke-ledger-consistency-and-install-smoke`
-- Eligible tests: 2317
+- Confirmed slices: `slice-01-registry-deploy-config-and-ledger-view`, `slice-02-smoke-deploy-identity`, `slice-03-script-deploy-version-proposal-rollback`, `slice-04-ci-deploy-and-reconcile`, `slice-05-agent-deploy-skill-distribution-and-install-smoke`
+- Eligible tests: 2346
 - Pending tests: 0
 - Final: true
 

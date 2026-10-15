@@ -63,6 +63,10 @@ get_description() {
       echo "Design API orchestration test scenarios as executable JSON. Use when test cases exist in logos/resources/test/ but logos/resources/scenario/ is empty. For API projects only." ;;
     code-reviewer)
       echo "Review code for OpenLogos methodology compliance, including YAML validity checks. Use when reviewing code changes, checking pull requests, or performing code quality analysis." ;;
+    deployment-designer)
+      echo "Design the deployment plan (topology, environments, release commands, migrations, rollback, post-deploy smoke) and the environment registry deploy configuration for openlogos deploy. Use when API/DB design is complete but logos/resources/prd/3-technical-plan/3-deployment/ is empty, or when a change affects deployment." ;;
+    deployment-executor)
+      echo "Execute human-confirmed deployment tasks after openlogos verify passes, running openlogos deploy (script / ci / agent) per the merged deployment plan, then guide openlogos smoke. Use only in the deployment execution stage." ;;
     change-writer)
       echo "Write change proposals with impact analysis following OpenLogos delta workflow. Use when the project lifecycle is active and source code or methodology documents need modification." ;;
     merge-executor)

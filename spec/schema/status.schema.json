@@ -46,6 +46,48 @@
     },
     "merge_transaction": {
       "$ref": "#/$defs/mergeTransaction"
+    },
+    "environments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/envView"
+      },
+      "description": "环境视图（spec/environments.md §7.1、§7.3）：只在 logos/environments.yaml 存在时输出；登记表非法时为空数组并另输出 environment_registry_error。"
+    },
+    "environment_ledger": {
+      "type": "object",
+      "required": [
+        "path",
+        "corrupt_lines"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "corrupt_lines": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "description": "本机部署账本读取摘要（spec/environments.md §5.4）；与 environments 同时出现。"
+    },
+    "environment_registry_error": {
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "const": "ENV_REGISTRY_INVALID"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "登记表存在但非法时输出（spec/environments.md §7.3）。"
     }
   },
   "allOf": [
@@ -1937,6 +1979,282 @@
         }
       },
       "$comment": "由 spec/schema/merge-transaction.schema.json 的 canonical 公共投影生成；路径集合与 receipt identity 仍须通过 openlogos/merge-transaction-semantic@1。"
+    },
+    "envView": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "tier",
+        "current_ref",
+        "last_deploy",
+        "last_smoke"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tier": {
+          "enum": [
+            "dev",
+            "test",
+            "staging",
+            "prod"
+          ]
+        },
+        "current_ref": {
+          "$ref": "#/$defs/commitOrNull"
+        },
+        "previous_ref": {
+          "$ref": "#/$defs/commitOrNull",
+          "description": "部署执行已启用时输出（spec/environments.md §1、§7.1）：回滚目标。"
+        },
+        "deploy_mode": {
+          "enum": [
+            "script",
+            "ci",
+            "agent",
+            null
+          ],
+          "description": "部署执行已启用时输出：登记表中该环境 deploy.mode，未配置为 null。"
+        },
+        "deploy_in_progress": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/deployInProgress"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "部署执行已启用时输出：该环境未结束的部署占用（spec/environments.md §11.8）。"
+        },
+        "last_deploy": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/deployRecordView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_smoke": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/smokeRecordView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "环境视图 EnvView（spec/environments.md §7.1；environment-registry 与 environment-deploy）。部署执行未启用时不出现 previous_ref、deploy_mode、deploy_in_progress，last_deploy 不出现扩展子字段。"
+    },
+    "commitOrNull": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "deployRecordView": {
+      "type": "object",
+      "required": [
+        "deploy_id",
+        "slug",
+        "ref",
+        "ref_source",
+        "observed_head",
+        "observed_dirty",
+        "recorded_at"
+      ],
+      "properties": {
+        "deploy_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "slug": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ref": {
+          "$ref": "#/$defs/commitOrNull"
+        },
+        "ref_source": {
+          "enum": [
+            "explicit",
+            "ci-reported",
+            "unknown"
+          ]
+        },
+        "observed_head": {
+          "$ref": "#/$defs/commitOrNull"
+        },
+        "observed_dirty": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "recorded_at": {
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "done",
+            "failed",
+            "unknown"
+          ]
+        },
+        "channel": {
+          "enum": [
+            "proposal",
+            "version",
+            null
+          ]
+        },
+        "mode": {
+          "enum": [
+            "script",
+            "ci",
+            "agent",
+            null
+          ]
+        },
+        "ref_requested": {
+          "$ref": "#/$defs/commitOrNull"
+        },
+        "failure_reason": {
+          "enum": [
+            "exit-code",
+            "timeout",
+            "ci-failure",
+            "ci-run-id-missing",
+            "ci-observe-timeout",
+            "agent-reported",
+            "abandoned",
+            null
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "最近一次 deploy 记录（spec/environments.md §5.2、§7.1）；result 起的五个字段只在部署执行已启用时输出，旧形态记录为 done / null。"
+    },
+    "smokeRecordView": {
+      "type": "object",
+      "required": [
+        "deploy_id",
+        "slug",
+        "ref",
+        "result",
+        "env_evidence",
+        "fresh_results",
+        "deploy_env_confirmed",
+        "verified",
+        "observed_head",
+        "recorded_at"
+      ],
+      "properties": {
+        "deploy_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "slug": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ref": {
+          "$ref": "#/$defs/commitOrNull"
+        },
+        "result": {
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
+        "env_evidence": {
+          "enum": [
+            "declared",
+            "missing",
+            "mismatch"
+          ]
+        },
+        "fresh_results": {
+          "type": "boolean"
+        },
+        "deploy_env_confirmed": {
+          "type": "boolean"
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "observed_head": {
+          "$ref": "#/$defs/commitOrNull"
+        },
+        "recorded_at": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "deployInProgress": {
+      "type": "object",
+      "required": [
+        "deploy_id",
+        "mode",
+        "started_at",
+        "run_id",
+        "run_url",
+        "unresolved"
+      ],
+      "properties": {
+        "deploy_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "enum": [
+            "script",
+            "ci",
+            "agent",
+            null
+          ]
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "run_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "run_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unresolved": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

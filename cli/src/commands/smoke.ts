@@ -16,10 +16,10 @@ import {
 import { evaluateSmokePrecondition, readDeployDoneMarker, readLifecycleFacts } from '../lib/lifecycle-gate.js';
 import type { LifecycleFacts } from '../lib/lifecycle-gate.js';
 import {
-  ENV_REGISTRY_REL, computeVerified, loadEnvironmentRegistry, resolveEnvironment,
+  ENV_REGISTRY_REL, computeVerified, isDeployExecutionEnabled, loadEnvironmentRegistry, readDeploymentLedger, resolveEnvironment,
 } from '../lib/environments.js';
 import { DEPLOY_LEDGER_REL } from '../lib/environments.js';
-import type { EnvEvidence, SmokeLedgerRecord } from '../lib/environments.js';
+import type { DeployLedgerRecord, EnvEvidence, SmokeLedgerRecord } from '../lib/environments.js';
 import { appendLedgerLine, removeOwnLedgerLine } from '../lib/deployment-ledger.js';
 import type { Locale } from '../i18n.js';
 
@@ -88,6 +88,11 @@ interface SmokeEnvContext {
   deployId: string | null;
   ref: string | null;
   deployEnvConfirmed: boolean;
+  /**
+   * 部署执行已启用（spec/environments.md §1，environment-deploy）：启用时做部署身份核对（§4.2），
+   * 无活跃提案时也写账本（slug 为 null）。未启用时 smoke 行为与引入部署执行前逐字一致。
+   */
+  deployEnabled: boolean;
 }
 
 function smokeReject(format: OutputFormat, code: string, message: string, extra?: Record<string, unknown>): never {
@@ -127,8 +132,24 @@ function resolveSmokeEnvironment(
 
   const ctx: SmokeEnvContext = {
     registryPresent: reg.state !== 'absent', target, slug: facts?.slug ?? null, deployId: null, ref: null, deployEnvConfirmed: false,
+    deployEnabled: false,
   };
-  if (!facts) return ctx;
+  // 部署身份核对的依据：账本中该环境最近一条 deploy 记录（任意 result；同一 deploy_id 以最后一行为准）
+  let latestDeploy: DeployLedgerRecord | null = null;
+  if (reg.state === 'loaded' && target !== null) {
+    const ledger = readDeploymentLedger(root);
+    ctx.deployEnabled = isDeployExecutionEnabled(reg.environments, ledger);
+    latestDeploy = ledger.byEnvironment.get(target)?.lastDeploy ?? null;
+  }
+  if (!facts) {
+    if (ctx.deployEnabled && latestDeploy) {
+      // 无活跃提案（environment-deploy，决策 C15）：部署身份取自账本记录
+      ctx.deployId = latestDeploy.deploy_id;
+      ctx.ref = latestDeploy.ref;
+      ctx.deployEnvConfirmed = latestDeploy.result === 'done';
+    }
+    return ctx;
+  }
   const cls = readDeployDoneMarker(facts.proposalDir);
   if (cls.kind === 'unreadable') {
     // 读取失败不能证明文件属于旧空格式：零副作用拒绝并保留 I/O 原因（code-r1 F1）
@@ -148,6 +169,19 @@ function resolveSmokeEnvironment(
       } else if (ctx.registryPresent) {
         smokeReject(format, 'SMOKE_ENV_MISMATCH', t(locale, 'smoke.env.mismatch', { deployed: cls.marker.environment, target }));
       }
+    }
+    // 部署身份核对（决策 C15）：提案落标之后该环境又被部署过时，marker 已不代表环境当前部署，零副作用拒绝
+    if (ctx.deployEnabled && latestDeploy && latestDeploy.deploy_id !== cls.marker.deploy_id) {
+      smokeReject(format, 'SMOKE_DEPLOY_SUPERSEDED', t(locale, 'smoke.env.superseded', {
+        marker: cls.marker.deploy_id, latest: latestDeploy.deploy_id, channel: latestDeploy.channel ?? 'proposal', result: latestDeploy.result,
+      }), {
+        details: {
+          marker: { deploy_id: cls.marker.deploy_id, ref: cls.marker.ref },
+          latest: {
+            deploy_id: latestDeploy.deploy_id, ref: latestDeploy.ref, channel: latestDeploy.channel ?? 'proposal', result: latestDeploy.result,
+          },
+        },
+      });
     }
   }
   return ctx;
@@ -521,7 +555,8 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
     }
 
     // 存在活跃提案且传入 --env 时先追加账本 smoke 行、再写 smoke marker（spec/environments.md §5.1，决策 C02）
-    if (evidence && envCtx.slug !== null) {
+    // 部署执行已启用而无活跃提案时也写账本（slug 为 null，只写账本、不写提案标记；environment-deploy 决策 C15）
+    if (evidence && (envCtx.slug !== null || envCtx.deployEnabled)) {
       writeLedgerThenMarkers(data, evidence, envCtx.slug);
       return;
     }
@@ -554,7 +589,7 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
    * 账本先写、标记后写（EX-19.20、EX-19.21）：账本追加失败不碰任何 marker；账本已写后标记阶段任一步失败，
    * 按变更前快照恢复两种 marker 并撤销本次账本行。失败以 SMOKE_LEDGER_WRITE_FAILED 结束，恢复动作逐项捕获。
    */
-  const writeLedgerThenMarkers = (data: SmokeData, evidence: SmokeEnvironmentEvidence, slug: string): void => {
+  const writeLedgerThenMarkers = (data: SmokeData, evidence: SmokeEnvironmentEvidence, slug: string | null): void => {
     const gateResult = data.gate.result;
     const ledgerFailure = (stage: 'ledger' | 'marker', message: string, details: Record<string, unknown>): never =>
       smokeReject(format, 'SMOKE_LEDGER_WRITE_FAILED', message, { details: { stage, ...details, gate_result: gateResult } });
@@ -590,6 +625,8 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
       ledgerFailure('ledger', t(locale, 'smoke.ledger.appendFailed', { reason, gate: gateResult }), { reason });
     }
     evidence.ledger_written = true;
+    // 无活跃提案：没有提案标记阶段
+    if (slug === null) return;
 
     const proposalRel = `logos/changes/${slug}`;
     const proposalDir = join(root, proposalRel);

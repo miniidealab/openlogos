@@ -2930,3 +2930,66 @@ flowchart LR
 - 规范：`spec/environments.md`、`spec/cli-json-output.md`、`spec/test-results.md`、`spec/pretooluse-guard.md`、`spec/logos-project.md`。
 - 功能规格：§2.93、§2.11。
 - 场景：`core-S41-environment-registry.md`、`core-S21-deploy-done-marker.md`、`core-S19-smoke-gate.md`、`core-S11-status-progress.md`。
+
+## 五十四、环境部署执行器
+
+> 来源变更：environment-deploy（决策 C01～C13、C15，D13）。格式权威：`spec/environments.md` §11；功能规格：§2.94；场景：S42、S41、S21、S19。
+
+### 54.1 目标与边界
+
+让 OpenLogos 真正执行部署，并让「发的是哪个版本、结果如何」成为 CLI 自己记录的事实，而不是 AI 自报。三种执行方式（script / ci / agent）、两条通道（提案 / 版本）、回滚都落在「五十三」的登记表与账本之上，不另建事实来源。晋级顺序与审批门禁归提案 C；`next --auto` 仍只放 deliver 门，由 deployment-executor 调用 `openlogos deploy`，flow 与宿主不改。
+
+### 54.2 组件
+
+| 组件 | 职责 | 读 / 写 |
+|---|---|---|
+| `cli/src/commands/deploy.ts`（新增） | 参数解析与互斥、前置检查、通道判定与 ref 解析、dry-run、环境占用、调用执行函数、写账本与部署报告、提案通道调用 deploy-done 写入函数、`--complete` / `--abandon` / `--reconcile` | 读登记表、账本、提案；写账本、运行态目录、部署报告、提案标记 |
+| `cli/src/lib/deploy-runner.ts`（新增） | 共用执行函数：进程组启动、超时杀整个进程树、流式输出到终端与日志、尾部截断（80 行 / 8 KiB）、环境变量注入、已声明密钥值遮盖 | 写 `deploy-logs/<deploy_id>.log` |
+| `cli/src/lib/deploy-ci.ts`（新增） | github-actions 预设（`gh auth status`、工作流存在性、`gh api` dispatch 带 `return_run_details=true`、`gh run view` 轮询、`gh run download` 读回报）与 provider: script 适配（触发 / 状态脚本 JSON 协议） | 只调用 `gh` 与仓库内脚本 |
+| `cli/src/lib/environments.ts` | `deploy` 字段校验（拒绝命令字符串字段）、deploy 记录扩展字段校验、同一 `deploy_id` 取最后一条、`current_ref` 只认成功且已确认、`previous_ref` 流式维护、环境占用状态读取 | 读登记表、账本、运行态目录 |
+| `cli/src/lib/deployment-ledger.ts` | 复用：锁、末行换行检查、临时文件原子追加、按整行撤销 | 写账本 |
+| `cli/src/commands/deploy-done.ts` | 导出既有前置检查与写入函数（快照、勾选、清理旧 smoke 标记、追加账本、写 `DEPLOY_DONE`、失败恢复），行为不变 | 写提案标记与账本 |
+| `cli/src/commands/smoke.ts` | 部署身份核对：有登记表且传 `--env` 时比对 marker 与账本最新 deploy 记录（`SMOKE_DEPLOY_SUPERSEDED`）；无活跃提案时以账本记录为身份并写 `slug` 为 null 的 smoke 记录 | 读账本；写账本 |
+| `cli/src/commands/env.ts`、`cli/src/commands/status.ts` | 视图新增 `previous_ref`、`deploy_mode`、`deploy_in_progress` 与 `last_deploy` 扩展字段；`env check` 报告 `deploy` 字段问题 | 只读 |
+| `skills/deployment-designer`、`skills/deployment-executor` 与插件分发链 | designer 产出脚本与 `deploy` 条目并自验证；executor 调用 `openlogos deploy`；构建脚本重新生成插件副本，asset-manifest 登记两个 skill | — |
+
+### 54.3 执行流程
+
+```mermaid
+flowchart TD
+    A["deploy --env --ref"] --> B["前置：登记表 / 解析 / deploy 配置 / git / 占用 / 密钥 / 脚本或 CI"]
+    B -->|失败| X["错误 envelope，零执行零写入"]
+    B --> C{"通道"}
+    C -->|提案| P["可执行性检查（不要求部署报告）"]
+    C -->|版本| V["--ref 或 --rollback（previous_ref）"]
+    P --> R["占用环境：本地锁；ci 触发前写未决记录"]
+    V --> R
+    R --> M{"执行方式"}
+    M -->|script| S["隔离工作树 + deploy-runner"]
+    M -->|ci| CI["deploy-ci：dispatch 取 run_id → 轮询 → 读 openlogos-deploy-result"]
+    M -->|agent| AG["登记未决记录，返回 awaiting-agent"]
+    S --> E["确定 result 与已确认 ref"]
+    CI --> E
+    E --> L["追加账本（版本通道）/ 写部署报告后调用 deploy-done 写入函数（提案通道）"]
+    L --> Z["释放占用、移除工作树、输出结论"]
+```
+
+### 54.4 关键不变量
+
+- **事实来源唯一**：部署结果只进 `deployments.jsonl`；提案通道成功时由 deploy-done 写入函数同时写 `DEPLOY_DONE`，二者使用同一 `deploy_id`，账本只写一条。
+- **版本真实性**：`ref` 只写有证据的实际部署版本（script 在请求 commit 中执行；ci 只认运行回报的 `deployed_ref`）；无证据时为 null，`current_ref` 随之为 null，不进入回滚与 smoke 证据。
+- **先查后执行**：所有前置与可执行性检查完成后才执行；执行之后不再有能阻止记录的前置检查。提案通道的部署报告在执行之后由 CLI 生成，不作为执行前置。
+- **占用不靠本地进程判断远程**：ci 方式触发前写未决记录，只有观察到终态、`--reconcile` 查到终态或 `--abandon` 才解除。
+- **只执行受保护内容**（D13）：脚本与工作流来自被 git 跟踪的仓库文件，参数数组直接执行、不经 shell；登记表不承载命令。
+- **部署执行未启用时零回归**（`spec/environments.md` §1）：没有登记表，或登记表中没有任何 `deploy` 且账本中没有 `openlogos deploy` 写出的记录时，既有命令的输出、写入与行为逐字不变——smoke 不做部署身份核对、无活跃提案时不写账本，环境视图不出现部署执行字段。
+- **未决记录操作先分流**：`--complete` / `--abandon` / `--reconcile` 在部署前置之前分流，不受「环境未被占用」检查拦截，通道、版本与运行身份取自未决记录，不触发新部署。
+
+### 54.5 与后续提案的接口
+
+提案 C 在本节之上增加 `promote_from` 与 `require_approval`：晋级判断读取账本中上游环境的 `verified=true` smoke 记录与 `current_ref`；审批门在 `deploy` 前置检查中插入，`--auto` 下的生产停点由 C 定义。是否由 `next --auto` 直接产出 `openlogos deploy` 命令也留给 C。
+
+### 54.6 追溯
+
+- 规范：`spec/environments.md` §11；`spec/cli-json-output.md`「`openlogos deploy --format json`」。
+- 需求：「S42: 按环境执行部署与回滚」；功能规格：§2.94；决策：D13。
+- 场景：`core-S42-environment-deploy.md`；测试：`core-S42-test-cases.md`。

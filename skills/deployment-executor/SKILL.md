@@ -84,15 +84,29 @@
 
 ### Step 4: 执行部署
 
-按部署方案逐项执行。
+先确定目标环境的执行方式（来源变更 environment-deploy，见 `spec/environments.md` §11）：项目存在 `logos/environments.yaml` 时运行只读命令 `openlogos env show <id> --format json`，读取 `deploy_mode`。
 
-每个关键命令前必须说明：
+**目标环境配置了 `deploy.mode: script` 或 `ci`**——调用 OpenLogos 执行部署，**不得再手工执行部署方案中的步骤**：
 
-- 命令目的
-- 影响环境
-- 失败后的中止或回滚方式
+```bash
+openlogos deploy --env <id> --format json
+```
 
-不得执行部署方案中没有定义的命令。
+- 提案处于 ready-to-deploy 时默认走提案通道：CLI 自己做可执行性检查、执行脚本或触发并观察 CI、按实际结果写部署报告、成功后勾选 `[deploy]` 并写 `DEPLOY_DONE`。不要预先手写部署报告，也不要再执行 `openlogos deploy-done`。
+- 关键命令前说明目的、影响环境与失败后的处置；可先运行 `openlogos deploy --env <id> --dry-run --format json` 向用户展示将要执行的内容。
+- 失败（`DEPLOY_FAILED`）时如实上报 `details`（`failure_reason`、`log_path`、输出尾部）与回滚建议，**不得改用手工部署兜底**，不得换环境或换版本重试。
+- 结果未知（`DEPLOY_RESULT_UNKNOWN`，CI 观察超时或缺运行身份）时报告运行 URL，等待用户或稍后以 `openlogos deploy --env <id> --reconcile` 补记；确认远程不会再运行时才可 `--abandon <deploy_id>`。
+- `DEPLOY_IN_PROGRESS` 时停止并报告持有者，不得删除锁或未决记录。
+- `DEPLOY_RECORD_FAILED` 表示已部署但记录失败：按 `details` 提示重新执行 `deploy` 或 `deploy-done --env --ref` 补记，不得手写 marker。
+- `DEPLOY_REF_UNCONFIRMED` 警告表示 CI 没有回报实际部署的提交，部署版本记为未知；如实告知用户，后续 smoke 不会得到已验证事实。
+
+**目标环境配置了 `deploy.mode: agent`**——两段式：
+
+1. 执行 `openlogos deploy --env <id> --format json`，得到 `status: awaiting-agent`、`deploy_id` 与部署方案章节（`plan.plan_section`）。
+2. 按该章节逐项执行（每个关键命令前说明目的、影响环境与失败处置；不得执行方案中没有定义的命令），按 Step 5 写部署报告。
+3. 成功执行 `openlogos deploy --env <id> --complete <deploy_id> --result done`；失败执行 `--result failed` 并输出失败点与回滚建议；放弃执行 `--abandon <deploy_id>`。不再单独执行 `openlogos deploy-done`。
+
+**项目没有登记表，或目标环境未配置 `deploy`**——沿用既有做法：按部署方案逐项执行。每个关键命令前必须说明命令目的、影响环境、失败后的中止或回滚方式；不得执行部署方案中没有定义的命令；完成后按 Step 5、Step 6 写报告并落标。
 
 ### Step 5: 生成部署报告
 
@@ -100,19 +114,23 @@
 
 `logos/resources/verify/deployment-report.md`
 
-报告包含：
-
-- 部署时间
-- 目标环境
-- 执行命令摘要
-- 迁移结果
-- 服务启动结果
-- 回滚点
-- 未解决风险
+- **script / ci 方式**：部署报告由 `openlogos deploy` 在执行结束后按实际结果自动追加（来源变更 environment-deploy），本 Skill 不再手写；可在报告末尾补充 CLI 无法得知的信息（如人工确认的业务检查、未解决风险），不得改写 CLI 写出的结果。
+- **agent 方式与未配置 `deploy` 的环境**：由本 Skill 写入，报告包含：
+  - 部署时间
+  - 目标环境
+  - 执行命令摘要
+  - 迁移结果
+  - 服务启动结果
+  - 回滚点
+  - 未解决风险
 
 ### Step 6: 写入部署完成标记
 
-部署成功后：
+**script / ci 方式**：`openlogos deploy` 的提案通道成功时已完成落标（勾选 `[deploy]`、写 `DEPLOY_DONE`、追加账本），本步骤只核对输出中的 `proposal.marker_path` 与 `ledger_written`，不再执行 `openlogos deploy-done`。
+
+**agent 方式**：`openlogos deploy --complete <deploy_id> --result done` 在提案通道下同样完成落标（要求部署报告已写出），不再执行 `openlogos deploy-done`。
+
+**项目没有登记表，或目标环境未配置 `deploy`**——部署成功后：
 
 - 确认 `logos/resources/verify/deployment-report.md` 已写入并记录目标环境、执行命令摘要、回滚点和未解决风险
 - 执行受控命令写入部署完成状态：
@@ -144,12 +162,12 @@ openlogos deploy-done --env staging --ref <实际部署的 git revision>
 - 清理过期的 `SMOKE_PASS` / `SMOKE_FAIL`
 - 输出下一步 smoke 或 archive 建议
 
-部署失败时：
+部署失败时（任何方式）：
 
 - 不得执行 `openlogos deploy-done`
 - 不得手写 `DEPLOY_DONE`
 - 输出失败点和回滚建议
-- 以 `logos/resources/verify/deployment-report.md` 记录失败摘要
+- 部署报告记录失败摘要（script / ci 方式由 `openlogos deploy` 自动写入）
 
 ### Step 7: 引导 smoke
 
@@ -165,7 +183,11 @@ openlogos smoke
 openlogos smoke --env staging
 ```
 
-项目存在 `logos/environments.yaml` 时必须传入与 `deploy-done` 相同的环境；CLI 会把目标环境以 `OPENLOGOS_SMOKE_ENV` 注入 smoke 命令。smoke runner 应在结果行写入 `target_environment`（其实际验证的环境 id，见 `spec/test-results.md`「Smoke 结果与覆盖预检」）；结果声明不一致时门禁 FAIL，缺少声明时该次结果不算「已在该环境验证」。遇到 `SMOKE_ENV_MISMATCH` 或 `SMOKE_DEPLOY_MARKER_INVALID` 时停止并报告：前者说明部署与 smoke 的目标不一致，后者需确认真实部署环境与版本后重新执行 `openlogos deploy-done`，不得手写或修补 `DEPLOY_DONE`。
+项目存在 `logos/environments.yaml` 时必须传入与部署相同的环境；CLI 会把目标环境以 `OPENLOGOS_SMOKE_ENV` 注入 smoke 命令。smoke runner 应在结果行写入 `target_environment`（其实际验证的环境 id，见 `spec/test-results.md`「Smoke 结果与覆盖预检」）；结果声明不一致时门禁 FAIL，缺少声明时该次结果不算「已在该环境验证」。遇到以下错误时停止并报告，不得手写或修补 `DEPLOY_DONE`：
+
+- `SMOKE_ENV_MISMATCH`：部署与 smoke 的目标不一致。
+- `SMOKE_DEPLOY_MARKER_INVALID`：确认真实部署环境与版本后重新落标（script / ci 方式重新执行 `openlogos deploy`，其余执行 `openlogos deploy-done`）。
+- `SMOKE_DEPLOY_SUPERSEDED`（来源变更 environment-deploy）：提案落标之后该环境又被部署过（如版本通道发布），环境上运行的已不是本提案部署的版本；需在提案通道重新部署后再执行 smoke。
 
 **半自动 / 手动模式**：AI 不得自动运行 `openlogos smoke`，除非用户明确授权。
 

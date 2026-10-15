@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.4] - 2026-10-15
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- **环境部署执行**（environment-deploy）：新增 `openlogos deploy --env <id>`，按 `logos/environments.yaml` 中环境的 `deploy` 配置执行部署，支持三种方式：
+  - `script`：在请求版本的隔离工作树中以参数数组执行仓库内部署脚本（`workdir: in-place` 要求 HEAD 一致且工作区干净）；
+  - `ci`：GitHub Actions 预设（`gh` 调度并按运行身份轮询，只认运行回报的实际部署提交）与 `provider: script` 的触发 / 状态脚本适配；
+  - `agent`：登记未决记录、返回部署方案位置，由执行者完成后 `--complete` 写入结果。
+- 版本通道（`--ref`）、提案通道（ready-to-deploy 时默认，执行后追加部署报告并落标 `DEPLOY_DONE`）与回滚（`--rollback` 重新部署 `previous_ref`）；`--dry-run` 只检查不执行、不写文件。
+- 结果未知的 ci 部署以未决记录保持环境占用，`--reconcile` 按运行身份补记终态，`--abandon` 显式解除；同一环境同一时间只允许一次部署（`DEPLOY_IN_PROGRESS`）。
+- 部署日志 `logos/.openlogos-runtime/deploy-logs/<deploy_id>.log`；已声明密钥的值（含多行值）在日志、终端与 JSON 输出中一律替换为 `***`。
+- deployment-designer 产出部署脚本与 `deploy` 条目；deployment-executor 改用 `openlogos deploy` 执行部署。
+
+### Changed
+
+- smoke 以部署账本核对部署身份：提案落标后同一环境又被部署时报 `SMOKE_DEPLOY_SUPERSEDED`；无活跃提案时以账本中该环境最近一次部署为身份。
+- 环境视图的 `current_ref` 只认已确认的部署版本，新增 `previous_ref`、`deploy_mode`、`deploy_in_progress`（仅在部署执行已启用时输出，未启用的项目输出逐字不变）。
+
+### Fixed
+
+- deployment-designer / deployment-executor 两个 Skill 的插件分发与 asset-manifest 登记。
+
 ## [0.16.3] - 2026-10-15
 
 本机全局发布（未发布到 npm）。

@@ -43,3 +43,29 @@
 - `env check` 与探测（§7.2）：UT-S41-09、UT-S41-10。
 - guard 豁免（§9，决策 C07）：ST-S41-03。
 - 部署与 smoke 的环境、版本与证据细节分别由 `core-S21-test-cases.md`（UT-S21-12～UT-S21-19、ST-S21-05）、`core-S19-test-cases.md`（UT-S19-58～UT-S19-67、ST-S19-25～ST-S19-27）、`core-S11-test-cases.md`（UT-S11-96～UT-S11-100、ST-S11-52）覆盖。
+
+## 五、部署配置与部署记录扩展测试（environment-deploy）
+
+> 覆盖场景 `core-S41-environment-registry.md`「部署配置与部署记录扩展（environment-deploy）」、EX-41.11、EX-41.12，`spec/environments.md` §2.2、§5.2、§5.4、§7.1、§11.2，决策 C06、C08、D13。既有 UT-S41-01～UT-S41-11、ST-S41-01～ST-S41-03 不变（UT-S41-04 的 `promote_from` 仍为未知字段，UT-S41-07 列举的非法行仍为非法）。测试实现必须写入 OpenLogos reporter，`scenario_id="S41"`；账本记录以直接写入的方式构造，全部在一次性临时项目中执行。
+
+### 单元测试（UT）
+
+| ID | 描述 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|---------|----------|---------|
+| UT-S41-12 | 登记表 `deploy` 字段校验 | 分别构造：① 合法 script（`script: deploy/prod.sh`、`args: ["{env}","{ref}"]`、`timeout_sec: 600`）；② 合法 ci github-actions；③ 合法 ci provider script；④ 合法 agent；⑤ 缺 `mode`；⑥ `mode: shell`；⑦ script 为绝对路径；⑧ script 含 `..`；⑨ `args` 含数字；⑩ `args` 含未知占位符 `{token}`；⑪ `timeout_sec: 9000`；⑫ github-actions 缺 `workflow`；⑬ agent 缺 `plan_section`；⑭ `deploy` 含 `run: ./deploy.sh`；⑮ `deploy` 含未知子字段 `owner` | 加载登记表并执行 `env check` 的校验逻辑 | ①～④ 无 error；⑤～⑭ 各报 `ENV_FIELD_INVALID`，`field` 形如 `deploy.mode` / `deploy.script` / `deploy.args` / `deploy.run`，登记表判为非法；⑮ 只报 `ENV_UNKNOWN_FIELD` warning |
+| UT-S41-13 | 扩展 deploy 记录的校验与读取 | 账本依次为 prod：① deploy-done 旧形态记录（无 `channel`）；② `deploy` 写出的 `channel=version`、`slug=null`、`result=done`、`ref_source=explicit` 记录；③ `result=failed`、`ref=null`、`failure_reason=exit-code`；④ `result=unknown`、`ci_run_id` 非空；⑤ 与 ④ 同一 `deploy_id`、`reconciled=true`、`result=done`、`ref_source=ci-reported`；⑥ 非法：`slug=null` 而 `channel=proposal`；⑦ 非法：`ref_source=ci-reported` 而 `ref=null`；⑧ 非法：`result=pending` | 读取账本并投影 | ①～⑤ 被接受，① 读作 `channel=proposal`、`mode=null`；⑥⑦⑧ 计入 `corrupt_lines` 且不更新任何槽位；`last_deploy` 为 ⑤；同一 `deploy_id` 以 ⑤ 为该次部署结论；`env show` 历史含 ①～⑤ |
+| UT-S41-14 | `current_ref` 与 `previous_ref` 口径 | 账本 prod 依次：成功 R1；成功 R2；失败（`ref=null`）；成功 R2（重复部署）；未知 | 读取并投影 | `current_ref=R2`、`previous_ref=R1`（不因失败、未知或重复 R2 而改变）；再追加一条成功但 `ref=null`（版本未确认）后 `current_ref=null`、`previous_ref=R2`；另构造 R1 成功后追加 1000 条 test 记录与 30 条 prod 失败记录，`previous_ref` 仍按完整账本计算，不受 20 条历史窗口限制 |
+| UT-S41-15 | 环境视图新增字段与 schema | prod 配置 `deploy.mode: script`、test 未配置 `deploy`；运行态目录有 prod 的环境锁与 test 的未决记录 | `env list --format json`、`env show prod --format json`、`status --format json` | prod 的 `deploy_mode=script`、test 为 null；`deploy_in_progress` 分别反映锁与未决记录（含 `unresolved`）；`last_deploy` 含 `result`、`channel`、`mode`、`ref_requested`、`failure_reason`；三条命令同一环境的视图字段一致；`status` 输出通过 `spec/schema/status.schema.json`（含 `environments`、`environment_ledger`、`environment_registry_error`）校验 |
+
+### 场景测试（ST）
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S41-04 | 新旧记录混合账本的视图与 0.16.3 读取兼容 | 部署配置与部署记录扩展；EX-41.12 | 真实 CLI；登记表含 prod（配置 `deploy`）；账本含 deploy-done 旧形态记录、版本通道成功、失败与未知记录 | ① `env show prod --format json`；② `status --format json`；③ 以账本读取函数在「只认 0.16.3 字段集」的兼容夹具下读取同一账本 | ① ② 视图字段符合 §7.1，`current_ref` / `previous_ref` 与 UT-S41-14 口径一致；③ 新形态记录计入 `corrupt_lines` 并跳过，不抛出，旧形态记录照常生效 |
+
+### 覆盖度校验（environment-deploy 增量）
+
+- `deploy` 字段校验与 D13（拒绝命令字符串字段）：UT-S41-12。
+- 扩展记录校验、同一 `deploy_id` 取最后一条：UT-S41-13。
+- `current_ref` / `previous_ref`：UT-S41-14、ST-S41-04。
+- 视图新增字段与 status schema：UT-S41-15、ST-S41-04。

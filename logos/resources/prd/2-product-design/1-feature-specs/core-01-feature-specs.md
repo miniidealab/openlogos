@@ -5079,7 +5079,7 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 
 - 项目可在 `logos/environments.yaml` 登记环境：`schema_version: 1` 与 `environments` 数组，每项含 `id`（必填，`^[a-z0-9][a-z0-9-]*$`）、`name`（必填）、`tier`（必填，`dev | test | staging | prod`）、`aliases`、`description`、`health`、`version`、`secrets`（只写环境变量名）。id 与 alias 不区分大小写全局唯一。
 - 文件不存在表示未启用环境管理，全部既有行为不变；文件存在但非法时相关命令 fail-closed（`ENV_REGISTRY_INVALID`），`status` 不崩溃并输出 `environment_registry_error`。
-- 未知字段只警告（`ENV_UNKNOWN_FIELD`），为后续 B / C 提案预留。
+- 未知字段只警告（`ENV_UNKNOWN_FIELD`），为后续 C 提案预留。环境项可选的 `deploy` 字段声明部署执行方式（来源变更 environment-deploy，§2.94）：只允许引用仓库内脚本与 CI 工作流、不承载命令字符串（D13），由 `env check` 与 `deploy` 校验，非法时按登记表非法处理。
 - 登记表由 deployment-designer 按部署方案产出，RunLogos 或人可直接编辑；它属于 `guard.exempt` 内置默认，修改不需立案（决策 C07）。`openlogos init` 不默认生成该文件。
 - `deployment_gates.<module>.environments` 保留原语义，登记表存在时由 `env check` 校验其引用均已登记。
 
@@ -5097,23 +5097,25 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 
 - 存在活跃提案时，前置检查按 `DEPLOY_DONE` 内容分三类：旧空格式放行但 `deploy_env_confirmed=false`；合法新格式与本次 `--env` 不一致时，**登记表存在**报 `SMOKE_ENV_MISMATCH`，登记表不存在则不拒绝、只记 `deploy_env_confirmed=false`；非空损坏报 `SMOKE_DEPLOY_MARKER_INVALID`（无论有无登记表），恢复须重新执行 `deploy-done`。拒绝时不运行 `smoke.command`、不写 smoke marker、不写账本。
 - `SMOKE_DEPLOY_MARKER_INVALID` 在 `--format json` 下除 `code`、`message` 外带结构化问题列表（来源变更 fix-environment-registry-review-gaps，决策 C01）：内容非法时 `error.details.problems` 为问题字段名数组；`DEPLOY_DONE` 无法读取（如被目录替代、权限不足）时 `problems` 为 `["unreadable"]`，并以 `error.details.reason` 给出 I/O 原因。`message` 文本与文本模式输出不变。
-- 没有活跃提案时 smoke 照常执行既有流程（既有行为），不读 `DEPLOY_DONE`、不写账本、不产生已验证事实。
+- 没有活跃提案时 smoke 照常执行既有流程（既有行为），不读 `DEPLOY_DONE`、不写提案标记；部署执行未启用时也不写账本，行为与引入部署执行前逐字一致。
+- **部署身份核对**（来源变更 environment-deploy，决策 C15）：**部署执行已启用**（登记表中至少一个环境配置了 `deploy`，或账本中已有 `openlogos deploy` 写出的记录，`spec/environments.md` §1）且传入 `--env` 时，smoke 以账本中该环境最近一条部署记录为当前部署身份；未启用时不做此核对。存在活跃提案而 `DEPLOY_DONE` 的 `deploy_id` 与之不同（提案落标之后该环境又被部署过，如版本通道发布）时，报 `SMOKE_DEPLOY_SUPERSEDED` 并零副作用拒绝，不改写提案标记，提示在提案通道重新部署；无活跃提案时部署身份取自该账本记录，smoke 记录照常写入账本（`slug` 为 null），版本未确认（`ref` 为 null）时不算已验证。
 - 有登记表且传入 `--env` 时，`smoke.command` 进程（含沙箱内）可读到 `OPENLOGOS_SMOKE_ENV=<id>`；runner 在结果行写 `target_environment` 声明实际验证的环境。声明不一致 → 门禁 FAIL（`SMOKE_ENV_EVIDENCE_MISMATCH`）、写 `SMOKE_FAIL`；缺少声明 → 门禁按既有判据，但该次结果不算已验证。
 
 ### 2.93.5 本机部署账本与已验证判据
 
-- 账本 `logos/.openlogos-runtime/deployments.jsonl` 只由 `deploy-done --env` 与 `smoke --env` 写入；不进 git、不同步（单机，决策 C02）。**正常路径只追加**：两个写入方共用同一把账本锁（运行态目录下的锁文件），每次在锁内追加一整行。**写入失败时只撤销本次写入**：追加中途失败只截掉本次写出的残片；本次已追加、后续步骤失败时，按整行原文移除本次那一行，其他记录逐字节保留（来源变更 fix-environment-registry-review-gaps，决策 C02、C03）。
+- 账本 `logos/.openlogos-runtime/deployments.jsonl` 只由 `deploy-done --env`、`deploy`（来源变更 environment-deploy，§2.94）与 `smoke --env` 写入；不进 git、不同步（单机，决策 C02）。**正常路径只追加**：两个写入方共用同一把账本锁（运行态目录下的锁文件），每次在锁内追加一整行。**写入失败时只撤销本次写入**：追加中途失败只截掉本次写出的残片；本次已追加、后续步骤失败时，按整行原文移除本次那一行，其他记录逐字节保留（来源变更 fix-environment-registry-review-gaps，决策 C02、C03）。
 - **写入顺序**：`deploy-done` 与 `smoke` 都是先追加账本、最后写提案标记（`DEPLOY_DONE`；`SMOKE_PASS` / `SMOKE_FAIL`），因此标记在场即蕴含对应账本记录已写入。
   - `smoke` 账本追加失败（含账本锁等待超时）时：不写、不改任何 smoke 标记，以错误 `SMOKE_LEDGER_WRITE_FAILED`（退出码 1）结束，不以未捕获异常退出。
   - `smoke` 账本已写、随后标记阶段失败（写目标标记失败，或目标标记已写成、删除对侧标记失败）时：按执行前快照把 `SMOKE_PASS` / `SMOKE_FAIL` 恢复到原有存在性与原始内容，撤销本次账本行，同样以 `SMOKE_LEDGER_WRITE_FAILED` 结束；恢复动作本身失败时如实报告恢复未完成及未恢复的位置，不声称已完整恢复。
   - `deploy-done` 写入失败时按快照恢复 tasks.md、旧 smoke 标记、旧 `DEPLOY_DONE`，本次追加过账本时再撤销本次账本行，以 `DEPLOY_DONE_WRITE_FAILED` 结束；未传 `--env`（不写账本）时同样执行快照与恢复。
-  - smoke 未传 `--env` 或无活跃提案时不写账本，也不做本次新增的 smoke 标记快照与恢复，行为不变。`deploy-done` 不受此例外影响：无论是否传入 `--env`、有无登记表，都保留既有的 tasks.md / 旧 smoke 标记 / 旧 `DEPLOY_DONE` 快照与失败恢复，只在本次没有追加账本时跳过账本补偿。
+  - smoke 未传 `--env`，或部署执行未启用且无活跃提案时不写账本，也不做本次新增的 smoke 标记快照与恢复，行为不变。`deploy-done` 不受此例外影响：无论是否传入 `--env`、有无登记表，都保留既有的 tasks.md / 旧 smoke 标记 / 旧 `DEPLOY_DONE` 快照与失败恢复，只在本次没有追加账本时跳过账本补偿。
 - smoke 记录的 `ref` 继承所依据的部署记录；`verified=true` 当且仅当结果通过、环境证据为 declared、本次实际运行了 `smoke.command` 产生新结果（`fresh_results=true`）、部署环境已确认、ref 非 null。未运行命令而只汇总已有结果文件时（结果可能属于上一代部署）不算已验证。环境视图与后续晋级判断只认 `verified=true`。
 - 读取时顺序扫描完整账本，按环境保留最近 deploy、最近 smoke 与最近 20 条历史；按 kind 校验必需字段、类型、枚举与 `verified` 一致性，不合格的行整行跳过并计数，不覆盖之前的有效状态。
+- **部署记录扩展**（来源变更 environment-deploy，决策 C06）：`deploy` 写出的记录另含通道、执行方式、请求版本与已确认版本（未确认时 `ref` 为 null）、回滚信息、耗时、CI 运行身份与回报值、失败原因与日志路径；`result` 可为 `done` / `failed` / `unknown`，版本通道记录的 `slug` 为 null；同一 `deploy_id` 的多条记录以最后一条为准。`current_ref` 改为最近一条成功部署的已确认版本（成功但未确认时为 null，不沿用更早版本）；新增 `previous_ref` 为再往前最近一条成功且版本已确认、与当前不同的版本，基于完整账本计算，是回滚的唯一依据。账本追加以临时文件原子替换，账本末行缺换行时拒绝追加。
 
 ### 2.93.6 查询命令与 status 视图
 
-- `openlogos env list`：全部环境与 `current_ref`、`last_deploy`、`last_smoke`；无登记表返回空数组。
+- `openlogos env list`：全部环境与 `current_ref`、`previous_ref`、`deploy_mode`、`deploy_in_progress`、`last_deploy`、`last_smoke`（后三个新增字段来源变更 environment-deploy，只在部署执行已启用时输出；未启用时视图字段与原来逐字一致）；无登记表返回空数组。
 - `openlogos env show <id|alias>`：单个环境配置与最近 20 条历史。
 - `openlogos env check [<id|alias>] [--probe]`：校验格式、冲突、`deployment_gates` 引用、密钥变量名是否存在（只报名字）；`--probe` 时 GET `health` / `version`（超时 5 秒）。
 - 三个命令只读、不要求活跃提案、支持 `--format json`；无登记表时 `show` / `check` 报 `ENV_REGISTRY_NOT_FOUND`。
@@ -5140,3 +5142,62 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 
 - 场景：S41（新增）、S21、S19、S11。
 - 测试：UT-S41-01～UT-S41-11、ST-S41-01～ST-S41-03；UT-S21-12～UT-S21-19、ST-S21-05；UT-S19-58～UT-S19-67、ST-S19-25～ST-S19-27；UT-S11-96～UT-S11-100、ST-S11-52。
+
+## 2.94 环境部署执行（openlogos deploy）
+
+> 来源变更：environment-deploy（决策 C01～C13、C15，D13）。权威格式与判据见 `spec/environments.md` §11；本节描述用户可见行为。场景：S42（新增）、S41、S21、S19。
+
+### 2.94.1 命令与前置
+
+- `openlogos deploy --env <id|alias> [--ref <revision>] [--rollback] [--channel proposal|version] [--dry-run] [--format json]` 按登记表中该环境的 `deploy` 配置执行部署；agent 方式另有 `--complete <deploy_id> --result done|failed`，agent 与 ci 方式共用 `--abandon <deploy_id>` 与 `--reconcile`。
+- 先分流再检查：`--complete`、`--abandon`、`--reconcile` 是处理未决记录的操作，只要求登记表合法、`--env` 可解析、该环境存在对应的未决记录（`deploy_id` 匹配），通道、版本与运行身份都取自未决记录，不做「环境未被占用」检查、不需要 `--ref`、不触发新部署，没有活跃提案时同样可用。
+- 部署操作的前置：登记表存在且合法、`--env` 可解析（不做单环境默认推断）、该环境配置了 `deploy`、项目是 git 仓库、该环境没有进行中的部署、声明的密钥变量名全部存在于进程环境（只报名字）、脚本或 CI 可用。任一不满足即零执行、零写入。
+- `--dry-run` 完成全部前置检查并输出将要执行的内容（通道、请求 commit、脚本或工作流、参数展开、调度 ref），不建工作树、不执行、不写任何文件。deployment-designer 在设计阶段以 `env check` 与 `deploy --dry-run` 自验证，不做真实部署。
+
+### 2.94.2 三种执行方式
+
+- **script**：执行仓库内受 guard 保护的部署脚本，默认在请求 commit 的隔离工作树中运行（部署 v1.0.4 时执行的是 v1.0.4 自带的脚本）；工作树里没有依赖与构建产物，脚本需自行安装与构建。`workdir: in-place` 只在 HEAD 等于请求 commit 且工作区干净时允许。脚本以参数数组直接执行、不经 shell，超时后终止整个进程树。
+- **ci**：触发 GitHub Actions 工作流（`gh` 调用 dispatch 接口并取得本次运行身份），按运行身份轮询到出结果；GitLab 等其他 CI 通过仓库内的触发脚本与状态脚本接入。CI 结论为 success 记成功，其余记失败，观察超时记「结果未知」。
+- **agent**：沿用由 AI 按部署方案执行，但改为两段式——开始时登记一条未决记录并返回 `awaiting-agent`，AI 执行完毕后以 `--complete` 写入结果；结果同样进账本，`mode=agent` 让查看方能区分「CLI 执行」与「AI 自报」。
+- 登记表只引用脚本路径与工作流名，不承载可执行命令（D13）；改变部署实际执行的内容必须修改受保护的脚本或工作流，从而必须立案。
+
+### 2.94.3 版本、通道与部署报告
+
+- 账本区分请求版本与已确认部署版本：script 方式在请求 commit 中执行即确认；ci 方式只认该次运行回报的实际部署提交（GitHub Actions 以固定名称的 artifact `openlogos-deploy-result` 回报 `deployed_ref`），回报缺失或与请求版本不同时记为版本未知，并给出警告；运行的 `headSha`、`workflow_ref` 与 inputs 都不构成证据。
+- **提案通道**：提案处于 ready-to-deploy 时默认使用。执行前只检查能否部署（活跃提案、verify 通过、部署决策、`[deploy]` 任务、报告输出位置可写），**不要求部署报告已存在**；script / ci 方式执行结束后由 CLI 按实际结果追加本次部署报告，成功后沿用 `deploy-done` 的写入路径（勾选 `[deploy]`、清理旧 smoke 标记、写账本、最后写 `DEPLOY_DONE`），flow 与宿主无需改动。失败只记账本，不勾选、不写 `DEPLOY_DONE`。
+- **版本通道**：不依附提案，直接把一个 tag 或 commit 部署到指定环境，必须给出 `--ref`；账本记录的 `slug` 为 null。
+- 部署成功但记录失败时明确报告「已部署」与未能写入的记录，提示补记，不让已发生的部署无迹可查。
+
+### 2.94.4 回滚
+
+- `openlogos deploy --env <id> --rollback` 重新部署该环境上一个成功且版本已确认的 ref（`previous_ref`），恒走版本通道，账本记 `rollback` 与回滚前版本；没有可回滚版本时报错且零执行。回滚到更早的版本直接用 `--ref`。
+
+### 2.94.5 并发、日志与密钥
+
+- 同一环境同时只允许一次部署。script 方式以本地锁占用，进程退出后可回收；ci 方式触发前先写未决记录，此后占用不随本地进程退出而解除，直到确认远程终态——`--reconcile` 按运行身份补记结果，`--abandon` 显式放弃。
+- 完整输出写入运行态目录的部署日志；JSON 只带末尾 80 行或 8 KiB。日志与输出中已声明密钥的值替换为 `***`。密钥只从进程环境读取，CLI 不读本地密钥文件；RunLogos 从钥匙串注入，其他宿主由用户自行 export。
+
+### 2.94.6 与 deployment-designer / deployment-executor 的分工
+
+- deployment-designer 的产物改为：部署方案（含「部署脚本审阅摘要」，供愿意看的人看，不设门）+ 仓库内的部署脚本（默认 `deploy/`）+ 登记表 `deploy` 条目；仓库已有可用的 GitHub Actions 部署工作流时优先配置 ci 方式，并要求工作流回报 `openlogos-deploy-result`。
+- deployment-executor 在目标环境配置了 script / ci 时调用 `openlogos deploy --env <id> --format json`，不再手工执行方案步骤，失败如实上报、不手工兜底；agent 方式走开始 / 完成两段式；未配置 `deploy` 的环境保留 `deploy-done --env --ref` 原用法。
+- 两个 skill 的插件副本由构建脚本重新生成，asset-manifest 同时登记二者。
+
+### 2.94.7 兼容性
+
+- 部署执行未启用的项目（没有登记表，或登记表中没有任何 `deploy` 且账本中没有 `openlogos deploy` 写出的记录），既有命令的输出、写入与行为逐字不变——smoke 无活跃提案时不写账本、环境视图不出现部署执行字段；`deploy-done`、`DEPLOY_DONE` 格式、flow 节点与 smoke 前置检查不变。
+- 账本 deploy 记录只做加法扩展，旧记录原样有效；0.16.3 的读取方会把失败 / 未知记录、`slug` 为 null 的记录计为坏行并跳过，单机升级后即消失。
+- 晋级顺序与审批门禁不在本节范围（提案 C）；在此之前 `openlogos deploy --env prod` 不额外设门。
+
+### 2.94.8 实现映射与追溯
+
+| 能力 | 主要代码路径 | 主要测试路径 |
+|---|---|---|
+| deploy 命令、前置与通道 | `cli/src/commands/deploy.ts`、`cli/src/index.ts` | `cli/test/s42-*.test.ts` |
+| 共用执行函数（超时、进程树清理、流式输出、环境变量注入、密钥遮盖） | `cli/src/lib/deploy-runner.ts` | `cli/test/s42-*.test.ts` |
+| CI 适配（GitHub Actions 预设与脚本适配） | `cli/src/lib/deploy-ci.ts` | `cli/test/s42-*.test.ts`（替身 `gh`） |
+| 登记表 `deploy` 字段、账本扩展与 `previous_ref` | `cli/src/lib/environments.ts` | `cli/test/s41-*.test.ts` |
+| 提案通道复用的写入函数 | `cli/src/commands/deploy-done.ts`（导出既有函数，行为不变） | `cli/test/s21-*.test.ts`、`cli/test/s42-*.test.ts` |
+| smoke 部署身份核对 | `cli/src/commands/smoke.ts` | `cli/test/s19-*.test.ts` |
+| 环境视图新增字段 | `cli/src/commands/env.ts`、`cli/src/commands/status.ts` | `cli/test/s41-*.test.ts`、`cli/test/s11-*.test.ts` |
+| skill 分发链 | `scripts/build-plugin-skills.sh`、`cli/scripts/build-asset-manifest.mjs` | asset-manifest 与插件副本一致性测试 |

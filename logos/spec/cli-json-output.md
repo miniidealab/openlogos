@@ -23,7 +23,7 @@ OpenLogos CLI 的 `status`、`next`、`verify`、`smoke`、`detect`、`deploy-do
 
 ```jsonc
 {
-  "command": "<command-name>",   // "status" | "next" | "verify" | "smoke" | "detect" | "deploy-done" | "module list" | "flow show" | "watch"
+  "command": "<command-name>",   // "status" | "next" | "verify" | "smoke" | "detect" | "deploy-done" | "deploy" | "module list" | "flow show" | "watch"
   "version": "<cli-version>",
   "timestamp": "<ISO-8601>",
   "data": { ... }
@@ -1273,6 +1273,8 @@ openlogos smoke --env production --format json
 > `openlogos archive` 仍是纯文本命令，不新增 stdout JSON envelope。上述 `ARCHIVE_WATCH_*` 以稳定错误码文本写 stderr 并非零退出；机器可读握手细节位于 `logos/.runtime/archive-watch/v1/requests/<requestId>/result.json`。
 >
 > `openlogos impact` 的操作错误（`IMPACT_*`）在 `--format json` 下走 stderr error envelope、默认文本下走 stderr `Error [<code>]: <message>`；**判定完成（含 fail-closed `lifecycle_only: false`）不是错误**，走 stdout success envelope、exit 0（见 §3.16）。
+>
+> `openlogos deploy`（来源变更 environment-deploy）的错误码与 `error.details` 形态见「`openlogos deploy --format json`（environment-deploy）」，完整列表与触发条件见 `spec/environments.md` §8；smoke 新增的 `SMOKE_DEPLOY_SUPERSEDED` 见「smoke / env / status 部署字段增量（environment-deploy）」。
 
 ### 6.2 overlay 派生错误信封
 
@@ -3073,3 +3075,128 @@ openlogos env check [<id|alias>] [--probe] [--format json]
 - 有登记表时顶层新增 `environments`（EnvView 数组，见「`openlogos env list|show|check --format json`」公共对象）与 `environment_ledger`（Ledger 对象）。
 - 登记表存在但非法时 `environments` 为 `[]`，并新增 `environment_registry_error`：`{ "code": "ENV_REGISTRY_INVALID", "message": "…" }`；退出码不因此改变。
 - 登记表不存在时以上三个字段都不出现。`status` 不发起任何网络请求。
+
+## `openlogos deploy --format json`（environment-deploy）
+
+> 来源变更：environment-deploy（决策 C04～C12）。行为与判据的权威定义见 `spec/environments.md` §11；本节只定义 JSON 形态。信封沿用 §1.2，`command` 为 `"deploy"`；错误沿用 §6 通用错误 envelope（附加字段约定见「deploy-done / smoke / status 环境字段」开头）。
+
+### deploy 用法
+
+```bash
+openlogos deploy --env <id|alias> [--ref <revision>] [--rollback] [--channel proposal|version] [--dry-run] --format json
+openlogos deploy --env <id|alias> --complete <deploy_id> --result done|failed --format json
+openlogos deploy --env <id|alias> --abandon <deploy_id> --format json
+openlogos deploy --env <id|alias> --reconcile --format json
+```
+
+### deploy 成功输出（stdout，退出码 0）
+
+```jsonc
+{
+  "command": "deploy",
+  "version": "<cli-version>",
+  "timestamp": "<ISO-8601>",
+  "data": {
+    "status": "done",                    // "done" | "dry-run" | "awaiting-agent" | "reconciled" | "still-running" | "abandoned"
+    "environment": "prod",               // 解析后的 id
+    "deploy_id": "6f1c…",                // dry-run 时为 null
+    "channel": "version",                // "proposal" | "version"
+    "mode": "script",                    // "script" | "ci" | "agent"
+    "ref_input": "v1.0.4",
+    "ref_requested": "<40 位 commit>",
+    "ref": "<40 位 commit>",             // 已确认的部署版本；未确认为 null
+    "ref_source": "explicit",            // "explicit" | "ci-reported" | "unknown"
+    "rollback": false,
+    "rollback_from": null,
+    "duration_ms": 41230,
+    "ci": null,                          // ci 方式：{"provider","run_id","run_url","conclusion","reported_ref"}
+    "log_path": "logos/.openlogos-runtime/deploy-logs/6f1c….log",
+    "output_tail": "…",                  // 已遮盖密钥；末尾 80 行或 8 KiB
+    "ledger_written": true,
+    "proposal": null,                    // 提案通道：{"slug","marker_path","deploy_tasks_checked","deploy_tasks_total","cleared_smoke_markers","deployment_report_path","next_step"}
+    "plan": null,                        // dry-run：{"workdir","script","args","workflow","dispatch_ref","inputs","timeout_sec"}；agent：{"plan_path","plan_section"}
+    "warnings": []                       // [{"code":"DEPLOY_REF_UNCONFIRMED","message":"…","requested":"…","reported":"…"}]
+  }
+}
+```
+
+- `status=dry-run`：只做检查，`deploy_id`、`ref`、`duration_ms`、`log_path`、`output_tail` 为 null，`ledger_written=false`，`plan` 给出将要执行的内容。
+- `status=awaiting-agent`：agent 方式开始阶段，已登记未决记录，`ledger_written=false`，`plan` 给出部署方案位置与章节。
+- `status=reconciled`：`--reconcile` 查到远程已完成并补记终态记录；`still-running`：远程仍在运行，环境保持占用，`ledger_written=false`。
+- `status=abandoned`：`--abandon` 解除未决记录并追加 `result=unknown`、`failure_reason=abandoned` 的记录。
+- 成功但版本未确认时 `status` 仍为 `done`，`ref` 为 null、`ref_source="unknown"`，`warnings` 含 `DEPLOY_REF_UNCONFIRMED`。
+
+### deploy 失败输出（stderr，退出码 1）
+
+部署已执行但失败、结果未知或记录失败时，错误 envelope 的 `error.details` 带本次部署信息：
+
+```jsonc
+"error": {
+  "code": "DEPLOY_FAILED",               // 或 "DEPLOY_RESULT_UNKNOWN" / "DEPLOY_RECORD_FAILED"
+  "message": "…",
+  "details": {
+    "deploy_id": "6f1c…",
+    "environment": "prod",
+    "channel": "proposal",
+    "mode": "script",
+    "ref_requested": "<40 位 commit>",
+    "exit_code": 3,                      // 非 script 方式或超时为 null
+    "timed_out": false,
+    "failure_reason": "exit-code",       // 见 spec/environments.md §5.2
+    "ci": null,
+    "log_path": "logos/.openlogos-runtime/deploy-logs/6f1c….log",
+    "output_tail": "…",
+    "ledger_written": true,
+    "deployed": false,                   // 仅 DEPLOY_RECORD_FAILED 为 true
+    "unwritten_record": null             // 仅 DEPLOY_RECORD_FAILED：未能写入的账本记录原文
+  }
+}
+```
+
+- 前置拒绝（零执行、零写入）使用不带 `details` 的通用错误 envelope，错误码：`PROJECT_NOT_INITIALIZED`、`ENV_REGISTRY_NOT_FOUND`、`ENV_REGISTRY_INVALID`、`ENV_REQUIRED`、`ENV_UNKNOWN`、`ENV_REF_UNRESOLVED`、`DEPLOY_NOT_CONFIGURED`、`DEPLOY_ARGS_CONFLICT`、`DEPLOY_REF_REQUIRED`、`DEPLOY_ROLLBACK_TARGET_MISSING`、`DEPLOY_GIT_REQUIRED`、`DEPLOY_WORKTREE_MISMATCH`、`DEPLOY_SCRIPT_MISSING`、`DEPLOY_SCRIPT_NOT_EXECUTABLE`、`DEPLOY_CI_UNAVAILABLE`、`DEPLOY_CI_REF_NOT_DISPATCHABLE`、`DEPLOY_SECRETS_MISSING`、`DEPLOY_PENDING_NOT_FOUND`，以及提案通道沿用的 `NO_ACTIVE_CHANGE`、`CHANGE_NOT_FOUND`、`VERIFY_NOT_PASSED`、`DEPLOYMENT_DECISION_CONFLICT`、`DEPLOYMENT_NOT_REQUIRED`、`DEPLOY_TASKS_MISSING`。
+- `DEPLOY_IN_PROGRESS` 的 `error.details` 为 `{"holder": {"deploy_id","mode","started_at","pid","run_id","run_url","unresolved"}}`。
+- `DEPLOY_SECRETS_MISSING` 的 `error.details` 为 `{"missing": ["PROD_TOKEN"]}`，只列名字。
+- 文本模式：实时输出部署过程，结束时打印结论、`deploy_id`、已确认版本与 `log_path`；错误打印 `Error: [<code>] <message>`。
+
+## smoke / env / status 部署字段增量（environment-deploy）
+
+> 来源变更：environment-deploy（决策 C06、C15）。以下字段、写入与错误码只在部署执行已启用时出现（`spec/environments.md` §1：登记表中至少一个环境配置了 `deploy`，或账本中已有 `openlogos deploy` 写出的记录）；未启用的项目（含无登记表的项目）输出与写入与引入前逐字一致，既有字段语义不变。
+
+### smoke 部署身份字段（environment-deploy）
+
+- 前置新增错误码 `SMOKE_DEPLOY_SUPERSEDED`（错误 envelope，退出码 1，零副作用）：部署执行已启用（`spec/environments.md` §1）、传入 `--env` 且存在活跃提案时，`DEPLOY_DONE.deploy_id` 不是账本中该环境最近一条 deploy 记录（`spec/environments.md` §4.2「部署身份核对」）：
+
+```jsonc
+"error": {
+  "code": "SMOKE_DEPLOY_SUPERSEDED",
+  "message": "…",
+  "details": {
+    "marker": { "deploy_id": "6f1c…", "ref": "<40 位 commit>" },
+    "latest": { "deploy_id": "9a2b…", "ref": "<40 位 commit>", "channel": "version", "result": "done" }
+  }
+}
+```
+
+- 无活跃提案、部署执行已启用且传入 `--env` 时，`environment_evidence` 的 `deploy_id`、`ref` 取自账本中该环境最近一条 deploy 记录（无记录为 null），`deploy_env_confirmed` 在该记录 `result=done` 时为 true，`ledger_written=true`（追加 `slug` 为 null 的 smoke 记录）；不写任何提案 marker。`verified` 规则不变。
+
+### env 与 status 部署视图字段（environment-deploy）
+
+- EnvView（`env list` 的 `environments[]`、`env show` 的顶层视图字段、`status` 的 `environments[]`）在部署执行已启用时新增 `previous_ref`、`deploy_mode`、`deploy_in_progress`；`current_ref` 改为最近一条成功部署的已确认版本（成功但未确认时为 null）；`last_deploy` 新增 `result`、`channel`、`mode`、`ref_requested`、`failure_reason`（旧形态记录为 null）。字段定义见 `spec/environments.md` §7.1：
+
+```jsonc
+{
+  "id": "prod", "name": "生产环境", "tier": "prod",
+  "current_ref": "<40 位 commit>",
+  "previous_ref": "<40 位 commit>",      // string | null，回滚目标
+  "deploy_mode": "script",               // "script" | "ci" | "agent" | null
+  "deploy_in_progress": null,            // {"deploy_id","mode","started_at","run_id","run_url","unresolved"} | null
+  "last_deploy": { "deploy_id": "…", "slug": null, "ref": "…", "ref_source": "explicit", "result": "done",
+                   "channel": "version", "mode": "script", "ref_requested": "…", "failure_reason": null,
+                   "observed_head": "…", "observed_dirty": false, "recorded_at": "…" },
+  "last_smoke": { /* 不变 */ }
+}
+```
+
+- `env show` 的 `history[]` 中 deploy 记录带全部扩展字段（`spec/environments.md` §5.2）。
+- `env check` 的 `errors[]` 新增 `deploy` 子字段的 `ENV_FIELD_INVALID` 条目（`field` 形如 `deploy.script`）；配置了 `deploy` 的环境额外报告 `secrets` 存在性与 ci 方式的 `gh` 可用性（只报是否满足，不读取值）。
+- `spec/schema/status.schema.json` 覆盖 `environments`、`environment_ledger`、`environment_registry_error` 及本节新增字段（schema 文件在实现中直接修改，不经 delta）。

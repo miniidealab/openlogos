@@ -568,3 +568,26 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 - 「标记阶段失败」与「恢复失败」通过对 smoke 标记写入、删除与账本撤销的依赖注入构造，不依赖宿主权限；只读目录、权限 000 两类夹具在 root 下按既有口径 skip 并写明原因。
 - 「命令未运行」以 runner 夹具的运行痕迹文件不存在取证；「零副作用」以提案目录 marker 集合与账本字节前后比对取证。
 - 沙箱模式用例沿用既有沙箱测试的一次性 `sandbox_root` 口径，在嵌套沙箱等不具备能力的环境中按既有 skip 口径处理并写明原因。
+
+## S19 smoke 部署身份核对测试（environment-deploy）
+
+> 覆盖场景 `core-S19-smoke-gate.md`「smoke 部署身份核对（environment-deploy）」与 EX-19.19（修订）、EX-19.22～EX-19.24，功能规格 §2.93.4，`spec/environments.md` §4.2「部署身份核对」、§5.1、§5.2。既有 S19 用例（含 UT-S19-66 的无登记表零回归）不变。测试实现必须写入 OpenLogos reporter（`logos/resources/verify/test-results.jsonl`），测试名包含对应 ID，`scenario_id="S19"`；账本记录以直接写入合法 deploy 行的方式构造（不依赖 `openlogos deploy` 的实现），全部在一次性临时项目中执行。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S19-72 | 提案部署身份被后续部署取代时拒绝 | EX-19.22、EX-19.23 | 有登记表含 prod 且 prod 配置了 `deploy`（部署执行已启用）；活跃提案既有前置满足，`DEPLOY_DONE` 为合法 JSON（`deploy_id=d1`、`environment=prod`、`ref=R1`）；账本中 prod 依次有：① `d1` 之后一条 `deploy_id=d2`、`channel=version`、`result=done`、`ref=R2` 的记录；② `d1` 之后一条 `result=failed` 的记录；③ `d1` 之后一条 `result=unknown` 的记录；④ 对照：账本最新记录就是 `d1`；⑤ 对照：`DEPLOY_DONE` 为旧空格式、账本有 `d2`；⑥ 对照：账本中 prod 没有任何 deploy 记录；⑦ 对照（部署执行未启用）：登记表中没有任何 `deploy`，账本只有 `deploy-done` 写出的记录，且 `d1` 之后另有一条 `deploy-done` 写出的 prod 记录 | `smoke --env prod --format json`，runner 全部声明 prod 并通过 | ①②③ `SMOKE_DEPLOY_SUPERSEDED`、退出码 1，`error.details.marker.deploy_id=d1`、`error.details.latest.deploy_id` 为该后续记录；`smoke.command` 未运行，`SMOKE_PASS` / `SMOKE_FAIL`、`DEPLOY_DONE` 与账本字节前后一致；④ 门禁 PASS、`verified=true`；⑤⑥ 不做核对，沿用既有口径（⑤ `deploy_env_confirmed=false`、⑥ 按 marker 判定）；⑦ 不做核对、不报 `SMOKE_DEPLOY_SUPERSEDED`，输出、退出码与账本写入与修复前逐字一致 |
+| UT-S19-73 | 无活跃提案时以账本记录为部署身份 | EX-19.19（修订）、EX-19.24 | 有登记表含 prod 且 prod 配置了 `deploy`（部署执行已启用）；无 `logos/.openlogos-guard`；账本中 prod 最近一条 deploy 记录分别为：① `result=done`、`ref=R2`、`slug=null`；② `result=done`、`ref=null`、`ref_source=unknown`；③ `result=failed`；④ 无任何 deploy 记录；runner 全部声明 prod 并通过 | `smoke --env prod --format json` | ① `environment_evidence.deploy_id`、`ref` 取自该记录，`deploy_env_confirmed=true`、`verified=true`、`ledger_written=true`；账本新增 smoke 记录 `slug=null`、`ref=R2`；② `deploy_env_confirmed=true`、`ref=null`、`verified=false`；③ `deploy_env_confirmed=false`、`verified=false`；④ `deploy_id`、`ref` 为 null，`deploy_env_confirmed=false`；四种情形都不写任何提案标记；对照（部署执行未启用）：⑤ 无登记表；⑥ 登记表中没有任何 `deploy`、账本只有 `deploy-done` 写出的 prod 记录——同样操作的 JSON 输出（含 `environment_evidence` 字段集与取值）、退出码与账本字节都与修复前逐字一致，不写账本；⑦ 删除 prod 的 `deploy` 配置但账本保留 `openlogos deploy` 写出的记录时仍按启用口径处理 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S19-29 | 提案落标后被版本发布取代、提案通道重新部署后恢复 | S19 部署身份核对 Step 4a；EX-19.22 | 真实 CLI；登记表含 prod；活跃提案需部署需 smoke；runner 读 `OPENLOGOS_SMOKE_ENV` 并写 `target_environment` | ① `deploy-done --env prod --ref HEAD`；② 向账本追加一条同环境、`channel=version`、`result=done`、另一 commit 的合法 deploy 记录（模拟版本通道发布）；③ `smoke --env prod --format json`；④ 再次 `deploy-done --env prod --ref HEAD`；⑤ `smoke --env prod --format json` | ③ `SMOKE_DEPLOY_SUPERSEDED`、退出码 1、零副作用；⑤ 门禁 PASS、`verified=true`，账本新增的 smoke 记录 `deploy_id` 等于 ④ 写入的 `DEPLOY_DONE.deploy_id` |
+
+### 追溯与覆盖
+
+- 提案部署身份被取代（版本通道发布、后续失败或结果未知）：UT-S19-72、ST-S19-29。
+- 无活跃提案的部署身份与已验证口径：UT-S19-73。
+- 与 `openlogos deploy` 的端到端衔接（真实版本通道部署后 smoke 被拒绝）由 `core-S42-test-cases.md` 与安装态 SMOKE-core-256 覆盖。

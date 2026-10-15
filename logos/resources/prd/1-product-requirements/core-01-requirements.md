@@ -54,7 +54,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 
 ## 三、场景总览
 
-34 个场景（编号跳号、最高至 S41，`scenario_counter.next_id=42`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
+35 个场景（编号跳号、最高至 S42，`scenario_counter.next_id=43`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
 
 ### ① 初始化与存量接入
 把空目录或存量代码库低摩擦纳入 OpenLogos 治理（回应 P01/P02/P03/P04）。
@@ -92,6 +92,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 | S19 | 执行部署后 smoke 门禁 | 已部署到目标环境后 | P01/P03 | P0 |
 | S21 | 标记部署完成 | 外部部署已成功，需要推进提案状态 | P03/P05 | P0 |
 | S41 | 环境登记与查询 | 项目需要登记研发环境（测试 / 预发 / 生产等）、按环境标记部署与 smoke，或查询「某环境当前跑的是哪个版本」时 | P03/P05/P07 | P1 |
+| S42 | 按环境执行部署与回滚 | 需要把某个版本真正部署到登记过的环境（脚本、CI 或 AI 执行）、按版本发布或回滚时 | P01/P05/P07 | P1 |
 
 ### ④ AI 资产、资源索引与元数据
 维护跨工具一致的 AI 指令资产、可发现的资源索引与结构化元数据（回应 P02/P03）。
@@ -3248,3 +3249,84 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 - 功能规格：§2.93；架构：「五十三、环境登记表与部署账本」。
 - 场景：`core-S41-environment-registry.md`；相关场景 S21、S19、S11。
 - 测试：`core-S41-test-cases.md`。
+
+## S42: 按环境执行部署与回滚
+
+> 来源变更：environment-deploy（决策 C01～C13、C15，D13）。格式与判据的权威定义见 `spec/environments.md` §11。
+
+### 场景定义
+
+- **触发条件**：用户说「发布到某个环境」「把 v1.0.4 发到生产」「回滚生产」，或提案流程走到部署节点、需要真正执行部署时。
+- **用户价值**：部署有确定的「怎么发」——没有流水线的个人和小团队由 OpenLogos 执行仓库内受保护的部署脚本，已有 CI 的团队由 OpenLogos 触发并观察 CI；部署可以按版本进行、可以回滚；每次部署（含失败）都以可信的版本事实进入本机账本，RunLogos 环境面板与后续晋级判断据此展示和决策。
+- **优先级**：P1
+- **主路径**：deployment-designer 产出部署脚本与登记表 `deploy` 条目并以 `deploy --dry-run` 自验证；提案到达部署节点时 deployment-executor 调用 `openlogos deploy --env <id>`（提案通道），或用户直接 `openlogos deploy --env <id> --ref <tag>`（版本通道）；CLI 执行、记录、写部署报告并落标；`--rollback` 重新部署上一个成功版本。
+
+### 验收条件
+
+#### 正常：script 方式按版本部署
+- **GIVEN** 登记表中 prod 配置 `deploy.mode: script`，仓库在 tag `v1.0.4` 含可执行部署脚本，工作区另有未提交改动
+- **WHEN** 用户执行 `openlogos deploy --env prod --ref v1.0.4`
+- **THEN** 脚本在该 commit 的隔离工作树中运行，读到的 `OPENLOGOS_DEPLOY_REF` 与工作树 HEAD 都等于该 commit；账本追加 `channel=version`、`mode=script`、`result=done`、`slug=null`、`ref` 为该 commit 的记录；`env show prod` 的 `current_ref` 为该 commit；未提交改动没有被部署出去
+
+#### 正常：提案通道首次部署
+- **GIVEN** 活跃提案处于 ready-to-deploy、verify 已通过、`[deploy]` 任务齐全，且从未写过部署报告
+- **WHEN** deployment-executor 执行 `openlogos deploy --env prod`
+- **THEN** 部署正常执行；结束后 CLI 按实际结果追加本次部署报告，勾选 `[deploy]`、写 `DEPLOY_DONE`，账本只多一条记录；随后 `smoke --env prod` 可得到 `verified=true`
+
+#### 异常：可执行性检查不满足
+- **GIVEN** 提案通道下 verify 未通过，或环境未配置 `deploy`，或声明的密钥变量缺失
+- **WHEN** 执行 `openlogos deploy --env prod`
+- **THEN** 以对应错误码拒绝，零执行、零写入；密钥缺失只列变量名
+
+#### 异常：脚本失败或超时
+- **GIVEN** 部署脚本非零退出，或运行超过 `timeout_sec`
+- **WHEN** 执行部署
+- **THEN** 以 `DEPLOY_FAILED` 结束（超时时整个进程树被终止）；账本追加 `result=failed` 记录、`current_ref` 不变；不写 `DEPLOY_DONE`；`details` 含 `failure_reason` 与 `log_path`；日志与输出中已声明密钥的值替换为 `***`
+
+#### 正常：回滚
+- **GIVEN** prod 先后成功部署了 R1、R2（版本均已确认）
+- **WHEN** 执行 `openlogos deploy --env prod --rollback`
+- **THEN** 重新部署 R1，账本记 `rollback=true`、`rollback_from=R2`；没有可回滚版本时报 `DEPLOY_ROLLBACK_TARGET_MISSING` 且零执行
+
+#### 正常 / 异常：ci 方式与版本证据
+- **GIVEN** prod 配置 `deploy.mode: ci`、`provider: github-actions`
+- **WHEN** 执行部署
+- **THEN** 以 dispatch 响应返回的运行身份观察本次运行，不扫描运行列表；结论 success 记 `done`、其余记 `failed`；缺运行身份或观察超时记 `unknown`、环境保持占用；只有运行以 `openlogos-deploy-result` 回报的实际部署提交等于请求版本时才确认 `ref`，回报缺失或不同（例如 checkout 显式检出了另一个 tag）时 `ref` 为 null、不能作为回滚目标、smoke 不能 verified
+
+#### 正常：agent 方式两段式
+- **GIVEN** 环境配置 `deploy.mode: agent`
+- **WHEN** 执行 `openlogos deploy --env test`，AI 按方案完成后执行 `--complete <deploy_id> --result done`
+- **THEN** 开始时返回 `awaiting-agent` 并占用环境；完成时写入 `mode=agent` 记录（提案通道同时写 `DEPLOY_DONE`）；`--abandon` 释放环境
+
+#### 异常：并发与远程仍在运行
+- **GIVEN** 同一环境已有进行中的部署，或 CI 远程运行仍在进行而本地观察已超时退出
+- **WHEN** 再次执行 `openlogos deploy --env prod`
+- **THEN** 报 `DEPLOY_IN_PROGRESS` 且零执行；script 方式持有者进程已退出的遗留锁可回收；ci 方式只能经 `--reconcile`（查到远程已完成）或 `--abandon` 解除占用
+
+#### 正常：dry-run
+- **WHEN** 执行 `openlogos deploy --env prod --dry-run`
+- **THEN** 覆盖全部前置检查（脚本在目标版本中存在且可执行、密钥齐全、`gh` 可用且已登录），输出将要执行的内容，不建工作树、不执行、不写任何文件
+
+#### 异常：登记表 `deploy` 非法与零回归
+- **GIVEN** `deploy` 缺 `mode`、脚本路径越出仓库、`args` 非字符串数组，或出现命令字符串字段
+- **WHEN** 执行 `env check` 或 `deploy`
+- **THEN** 均拒绝并点名字段；部署执行未启用（没有登记表，或登记表中没有任何 `deploy` 且账本中没有 `openlogos deploy` 写出的记录）的项目，既有命令的输出、写入与行为逐字不变（smoke 无活跃提案时不写账本，环境视图不出现新增字段）
+
+#### 正常：账本读取与视图
+- **WHEN** 账本含失败、未知与版本通道记录时执行 `env show` / `status --format json`
+- **THEN** 失败与未知记录进入历史但不改变 `current_ref`；`previous_ref` 基于完整账本计算，不受 20 条历史窗口限制；输出新增字段，`status.schema.json` 覆盖环境字段
+
+#### 异常：smoke 部署身份被取代
+- **GIVEN** 当前提案已把 prod 部署为 R1，之后经版本通道把 prod 部署为 R2
+- **WHEN** 执行 `smoke --env prod`
+- **THEN** 报 `SMOKE_DEPLOY_SUPERSEDED` 且零副作用，不改提案标记；部署执行已启用且无活跃提案时，smoke 的部署身份取自账本，`ref` 为 null 时不能 verified；部署执行未启用时 smoke 行为不变
+
+#### 正常：部署 skill 分发
+- **THEN** `plugin/skills/` 下两个部署 skill 与源文件一致，`asset-manifest.json` 同时登记二者
+
+### 追溯
+
+- 规范：`spec/environments.md` §11、`spec/cli-json-output.md`「`openlogos deploy --format json`」。
+- 功能规格：§2.94；架构：「五十四、环境部署执行器」；决策：D13。
+- 场景：`core-S42-environment-deploy.md`；相关场景 S41、S21、S19、S11。
+- 测试：`core-S42-test-cases.md`，以及 `core-S41-test-cases.md`、`core-S19-test-cases.md` 中 environment-deploy 新增用例。

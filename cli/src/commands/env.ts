@@ -11,8 +11,9 @@ import type { Locale } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { readProjectYaml } from '../lib/project-yaml.js';
+import { ghUnavailableReason } from '../lib/deploy-ci.js';
 import {
-  ENV_HISTORY_LIMIT, ENV_REGISTRY_REL, buildEnvView, loadEnvironmentRegistry, projectHistoryRecord,
+  ENV_HISTORY_LIMIT, ENV_REGISTRY_REL, buildEnvView, isDeployExecutionEnabled, loadEnvironmentRegistry, projectHistoryRecord,
   readDeploymentLedger, resolveEnvironment,
 } from '../lib/environments.js';
 import type { EnvView, EnvironmentDef, LedgerSnapshot, RegistryIssue } from '../lib/environments.js';
@@ -108,7 +109,14 @@ function printView(view: EnvView & { aliases?: string[] }, locale: Locale): void
   if (view.aliases && view.aliases.length > 0) console.log(`      ${t(locale, 'env.view.aliases', { aliases: view.aliases.join(', ') })}`);
   console.log(`      ${t(locale, 'env.view.currentRef', { ref: view.last_deploy ? shortRef(view.current_ref, locale) : t(locale, 'env.view.never') })}`);
   if (view.last_deploy) {
-    console.log(`      ${t(locale, 'env.view.lastDeploy', { time: view.last_deploy.recorded_at, slug: view.last_deploy.slug })}`);
+    console.log(`      ${t(locale, 'env.view.lastDeploy', { time: view.last_deploy.recorded_at, slug: view.last_deploy.slug ?? view.last_deploy.channel ?? '-' })}`);
+  }
+  // 部署执行已启用时才有以下字段（spec/environments.md §7.1）；未启用时文本输出逐字不变
+  if (view.previous_ref !== undefined && view.previous_ref !== null) {
+    console.log(`      ${t(locale, 'env.view.previousRef', { ref: shortRef(view.previous_ref, locale) })}`);
+  }
+  if (view.deploy_in_progress) {
+    console.log(`      ${t(locale, 'env.view.inProgress', { id: view.deploy_in_progress.deploy_id, mode: view.deploy_in_progress.mode ?? '-' })}`);
   }
   if (view.last_smoke) {
     const verified = t(locale, view.last_smoke.verified ? 'env.view.verified' : 'env.view.notVerified');
@@ -129,7 +137,8 @@ export function envList(format: OutputFormat = 'text', root: string = process.cw
   const loaded = requireValidRegistry(root, 'env list', format, locale, true);
   if (loaded === undefined) return;
   const ledger = readDeploymentLedger(root);
-  const environments = (loaded?.environments ?? []).map(env => ({ ...buildEnvView(env, ledger), aliases: env.aliases }));
+  const deployEnabled = isDeployExecutionEnabled(loaded?.environments ?? [], ledger);
+  const environments = (loaded?.environments ?? []).map(env => ({ ...buildEnvView(env, ledger, { deployEnabled, root }), aliases: env.aliases }));
   const warnings = (loaded?.warnings ?? []).map(w => toIssueOut(locale, w));
 
   if (format === 'json') {
@@ -171,8 +180,9 @@ export function envShow(input: string | undefined, format: OutputFormat = 'text'
   }
   const env = loaded.environments.find(e => e.id === resolved.id)!;
   const ledger = readDeploymentLedger(root);
-  const view = buildEnvView(env, ledger);
-  const history = (ledger.byEnvironment.get(env.id)?.history ?? []).map(projectHistoryRecord);
+  const deployEnabled = isDeployExecutionEnabled(loaded.environments, ledger);
+  const view = buildEnvView(env, ledger, { deployEnabled, root });
+  const history = (ledger.byEnvironment.get(env.id)?.history ?? []).map(r => projectHistoryRecord(r, deployEnabled));
   const warnings = loaded.warnings.map(w => toIssueOut(locale, w));
 
   if (format === 'json') {
@@ -182,6 +192,9 @@ export function envShow(input: string | undefined, format: OutputFormat = 'text'
         health: env.health, version: env.version, secrets: env.secrets,
       },
       current_ref: view.current_ref,
+      ...(deployEnabled
+        ? { previous_ref: view.previous_ref, deploy_mode: view.deploy_mode, deploy_in_progress: view.deploy_in_progress }
+        : {}),
       last_deploy: view.last_deploy,
       last_smoke: view.last_smoke,
       history,
@@ -196,7 +209,7 @@ export function envShow(input: string | undefined, format: OutputFormat = 'text'
   console.log(`\n  ${t(locale, 'env.show.history', { limit: String(ENV_HISTORY_LIMIT) })}`);
   for (const h of history) {
     const detail = h.kind === 'deploy' ? `ref=${shortRef(h.ref, locale)}` : `${h.result} ref=${shortRef(h.ref, locale)} verified=${h.verified}`;
-    console.log(`    ${h.recorded_at}  ${h.kind}  ${detail}  (${h.slug})`);
+    console.log(`    ${h.recorded_at}  ${h.kind}  ${detail}  (${h.slug ?? (h.kind === 'deploy' ? h.channel ?? '-' : '-')})`);
   }
   for (const w of warnings) console.log(`  ⚠ ${w.message}`);
   printLedgerCorrupt(ledger, locale);
@@ -276,6 +289,20 @@ export async function envCheck(
       code: 'ENV_SECRET_MISSING', environment: s.environment, name: s.name,
       message: t(locale, 'env.issue.ENV_SECRET_MISSING', { environment: s.environment, name: s.name }),
     });
+  }
+
+  // ci（github-actions）方式的环境：报告 gh 是否可用且已登录（只报是否满足；environment-deploy，spec/cli-json-output.md）
+  const ghEnvs = inScope.filter(env => env.deploy?.mode === 'ci' && env.deploy.provider === 'github-actions');
+  if (ghEnvs.length > 0) {
+    const reason = ghUnavailableReason(root);
+    if (reason !== null) {
+      for (const env of ghEnvs) {
+        errors.push({
+          code: 'DEPLOY_CI_UNAVAILABLE', environment: env.id,
+          message: t(locale, 'env.issue.DEPLOY_CI_UNAVAILABLE', { environment: env.id, reason }),
+        });
+      }
+    }
   }
 
   const probes: ProbeOut[] = [];

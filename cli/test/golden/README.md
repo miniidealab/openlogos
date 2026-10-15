@@ -77,3 +77,27 @@
 
 同 `prechange-baseline.json`：只有**有意**变更这些输出或集合时才重新生成，且须连同理由一起评审。
 日常实现改动不得为了让测试变绿而刷新基线。
+
+---
+
+# `s42-zero-regression-baseline.json`（environment-deploy）
+
+**部署执行引入之前**（提交 `a04e9b1`，0.16.3）的实测输出，用于 UT-S42-16 的零回归举证：部署执行未启用的项目
+（① 无登记表；② 有登记表但所有环境未配置 `deploy`、账本只有 `deploy-done` 写出的记录）上，
+`deploy-done`、`smoke`（有 / 无活跃提案）、`status`、`env list`、`env show` 的 JSON 输出、退出码、
+账本字节与提案目录文件。
+
+## 生成方式（可追溯，一次性）
+
+1. `git archive a04e9b1 cli spec skills plugin` 导出变更前源码到一次性目录，`cli/node_modules` 以符号链接复用；
+2. 在该目录 `cli/` 下执行 `npx tsc` 得到**变更前** `dist`；
+3. 执行 `node cli/test/golden/s42-zero-regression-fixture.mjs <变更前 dist/index.js> cli/test/golden/s42-zero-regression-baseline.json`。
+
+`s42-zero-regression-fixture.mjs` 是夹具与规范化规则的唯一定义点：生成脚本与测试调用同一函数。
+规范化只去掉随调用或构建变化的值（ISO 时间、UUID、临时目录路径、信封 `version` / `timestamp`、耗时、
+64 位资产 / 载荷哈希），40 位 commit 按首次出现顺序编号（夹具固定 git 作者与提交时间）。
+
+## 反证（确认断言会失败）
+
+- 让部署执行未启用时 smoke 在无活跃提案下也写账本 → 账本由 2 行变 3 行，UT-S42-16 变红。
+- 让环境视图在未启用时也输出 `previous_ref` / `deploy_mode` → `env list` / `status` 输出不一致，UT-S42-16 变红。

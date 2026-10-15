@@ -1,7 +1,7 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { readLocale, t, type Locale } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
@@ -19,7 +19,7 @@ import { DEPLOY_LEDGER_REL, ENV_REGISTRY_REL, loadEnvironmentRegistry, resolveEn
 import type { DeployLedgerRecord } from '../lib/environments.js';
 import { appendLedgerLine, removeOwnLedgerLine } from '../lib/deployment-ledger.js';
 
-const DEPLOYMENT_REPORT_PATH = 'logos/resources/verify/deployment-report.md';
+export const DEPLOYMENT_REPORT_PATH = 'logos/resources/verify/deployment-report.md';
 
 /**
  * S30·决策 G：verify 判定结果。
@@ -172,7 +172,7 @@ function resolveDeployTarget(
 }
 
 /** 调用时 HEAD 与工作区状态：只作观察信息（spec/environments.md §5.2），不作为部署版本。 */
-function observeWorkspace(root: string): { head: string | null; dirty: boolean | null } {
+export function observeWorkspace(root: string): { head: string | null; dirty: boolean | null } {
   const head = git(root, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']);
   const status = git(root, ['status', '--porcelain']);
   return {
@@ -233,7 +233,7 @@ export function checkTaskSection(content: string, tag: string): SectionCheckResu
   };
 }
 
-function resolveModuleDefaults(root: string, moduleId: string | null): Pick<ModuleInfo, 'deployment_required' | 'smoke_required'> {
+export function resolveModuleDefaults(root: string, moduleId: string | null): Pick<ModuleInfo, 'deployment_required' | 'smoke_required'> {
   const project = readProjectYaml(root).data;
   const modules = project?.modules ?? [];
   const selectedModule = moduleId
@@ -251,17 +251,24 @@ function resolveModuleDefaults(root: string, moduleId: string | null): Pick<Modu
   };
 }
 
-function fail(format: OutputFormat, locale: Locale, code: string, messageKey: string, vars?: Record<string, string>): never {
+function fail(
+  format: OutputFormat, locale: Locale, code: string, messageKey: string, vars?: Record<string, string>, command = 'deploy-done',
+): never {
   const message = t(locale, messageKey, vars);
-  failRaw(format, code, message);
+  failRaw(format, code, message, command);
 }
 
-/** S30：format 感知的原始 message 错误退出（json → envelope，否则 `Error: …`）。 */
-function failRaw(format: OutputFormat, code: string, message: string): never {
+/**
+ * S30：format 感知的原始 message 错误退出（json → envelope，否则 `Error: …`）。
+ * command 为错误信封的 command 字段：`openlogos deploy` 复用提案通道前置时传 'deploy'（environment-deploy）。
+ */
+function failRaw(format: OutputFormat, code: string, message: string, command = 'deploy-done'): never {
   if (format === 'json') {
-    console.error(JSON.stringify(makeErrorEnvelope('deploy-done', code, message)));
-  } else {
+    console.error(JSON.stringify(makeErrorEnvelope(command, code, message)));
+  } else if (command === 'deploy-done') {
     console.error(`Error: ${message}`);
+  } else {
+    console.error(`Error: [${code}] ${message}`); // openlogos deploy 文本模式（spec/cli-json-output.md「deploy 失败输出」）
   }
   process.exit(1);
 }
@@ -360,15 +367,17 @@ function checkVerifyIsCmdGate(root: string): boolean {
 }
 
 /** S30：执行 verify 判定；FlowError/CmdSpawnError/未通过一律 fail loud；通过则返回结果（带 cmdEval 回灌用）。 */
-async function verifyOrFail(root: string, proposalDir: string, format: OutputFormat, locale: Locale): Promise<{ passed: true; cmdEval?: CmdGateEval }> {
+async function verifyOrFail(
+  root: string, proposalDir: string, format: OutputFormat, locale: Locale, command = 'deploy-done',
+): Promise<{ passed: true; cmdEval?: CmdGateEval }> {
   let verifyResult: VerifyForDeploy;
   try {
     verifyResult = await isVerifyPassedForDeploy(root, proposalDir);
   } catch (e) {
-    if (e instanceof FlowError) failRaw(format, e.code, e.message);
+    if (e instanceof FlowError) failRaw(format, e.code, e.message, command);
     if (e instanceof CmdSpawnError) {
       const field = (e as CmdSpawnError & { field?: string }).field ?? 'done_when';
-      failRaw(format, 'FLOW_CMD_SPAWN_FAILED', `verify.${field} cmd gate 命令无法启动：${e.command}（${e.errno}）`);
+      failRaw(format, 'FLOW_CMD_SPAWN_FAILED', `verify.${field} cmd gate 命令无法启动：${e.command}（${e.errno}）`, command);
     }
     throw e;
   }
@@ -376,11 +385,171 @@ async function verifyOrFail(root: string, proposalDir: string, format: OutputFor
     const c = verifyResult.cmd;
     if (c) {
       const baseMsg = t(locale, 'deployDone.error.verifyNotPassed');
-      failRaw(format, 'VERIFY_NOT_PASSED', `${baseMsg}：verify.${c.field} = cmd:${c.command}（${c.timed_out ? '超时' : `exit ${c.exit_code ?? '?'}`}）`);
+      failRaw(format, 'VERIFY_NOT_PASSED', `${baseMsg}：verify.${c.field} = cmd:${c.command}（${c.timed_out ? '超时' : `exit ${c.exit_code ?? '?'}`}）`, command);
     }
-    fail(format, locale, 'VERIFY_NOT_PASSED', 'deployDone.error.verifyNotPassed');
+    fail(format, locale, 'VERIFY_NOT_PASSED', 'deployDone.error.verifyNotPassed', undefined, command);
   }
   return verifyResult;
+}
+
+/** 提案通道前置检查的结果（environment-deploy 与 deploy-done 共用）。 */
+export interface ProposalDeployPreflight {
+  active: ActiveProposalGuard;
+  moduleDefaults: Pick<ModuleInfo, 'deployment_required' | 'smoke_required'>;
+  /**
+   * 完成 verify 判定：marker verify 已在前置中判定、直接返回；cmd-gate verify 的命令可有副作用，
+   * 调用方须在自己的全部纯读前置之后再调用（S30·#2）。
+   */
+  finishVerify: () => Promise<{ passed: true; cmdEval?: CmdGateEval }>;
+  /** verify 判据为 cmd 命令（finishVerify 会执行该命令）；只读调用方（如 deploy --dry-run）据此拒绝而不执行（code-r1 F3）。 */
+  verifyIsCmdGate: boolean;
+}
+
+/**
+ * 提案通道前置（S21；spec/environments.md §11.5）：活跃提案、verify、部署决策、[deploy] 任务与部署报告。
+ * requireReport=false 时只检查报告输出位置可写——`openlogos deploy` 在执行之后才按实际结果写报告（delta-r1 F4）。
+ * 任一不满足即以 command 对应的错误信封退出（零副作用）。
+ */
+export async function preflightProposalDeploy(
+  root: string, format: OutputFormat, locale: Locale, opts: { command: string; requireReport: boolean },
+): Promise<ProposalDeployPreflight> {
+  const { command } = opts;
+  const active = readActiveProposalGuard(root);
+  if (!active) {
+    fail(format, locale, 'NO_ACTIVE_CHANGE', 'deployDone.error.noActiveChange', undefined, command);
+  }
+
+  if (!existsSync(active.proposalDir)) {
+    fail(format, locale, 'CHANGE_NOT_FOUND', 'deployDone.error.changeNotFound', { slug: active.slug }, command);
+  }
+
+  // S30·#2：verify 求值顺序按 verify 类型分流——
+  //  · marker verify（默认）：保持 S21 旧顺序，verify marker 先于部署决策/报告校验（逐字节等价现状）；
+  //  · cmd-gate verify：命令可有副作用，纯读前置（决策/section/报告）全过后再执行 cmd（无需部署/缺报告时绝不跑外部命令）。
+  let verifyIsCmdGate: boolean;
+  try {
+    verifyIsCmdGate = checkVerifyIsCmdGate(root);
+  } catch (e) {
+    if (e instanceof FlowError) failRaw(format, e.code, e.message, command);
+    throw e;
+  }
+
+  let verifyResult: { passed: true; cmdEval?: CmdGateEval } | undefined;
+  if (!verifyIsCmdGate) {
+    verifyResult = await verifyOrFail(root, active.proposalDir, format, locale, command); // marker：verify 先
+  }
+
+  const moduleDefaults = resolveModuleDefaults(root, active.moduleId);
+  const deploymentDecision = resolveProposalDeploymentDecision(active.proposalDir, moduleDefaults);
+  if (deploymentDecision.deployment_decision_conflict) {
+    fail(format, locale, 'DEPLOYMENT_DECISION_CONFLICT', 'deployDone.error.decisionConflict', {
+      reason: deploymentDecision.deployment_decision_conflict_reason ?? '',
+    }, command);
+  }
+
+  if (deploymentDecision.deployment_required !== true) {
+    fail(format, locale, 'DEPLOYMENT_NOT_REQUIRED', 'deployDone.error.notRequired', undefined, command);
+  }
+
+  const deploySummary = readDeploySummary(active.proposalDir);
+  if (!deploySummary || deploySummary.total === 0) {
+    fail(format, locale, 'DEPLOY_TASKS_MISSING', 'deployDone.error.deployTasksMissing', undefined, command);
+  }
+
+  const deploymentReportFullPath = join(root, DEPLOYMENT_REPORT_PATH);
+  if (opts.requireReport) {
+    if (!existsSync(deploymentReportFullPath)) {
+      fail(format, locale, 'DEPLOYMENT_REPORT_MISSING', 'deployDone.error.deploymentReportMissing', {
+        path: DEPLOYMENT_REPORT_PATH,
+      }, command);
+    }
+  } else if (!reportLocationWritable(deploymentReportFullPath)) {
+    fail(format, locale, 'DEPLOYMENT_REPORT_MISSING', 'deployDone.error.deploymentReportNotWritable', {
+      path: DEPLOYMENT_REPORT_PATH,
+    }, command);
+  }
+
+  return {
+    active,
+    moduleDefaults,
+    finishVerify: async () => verifyResult ?? verifyOrFail(root, active.proposalDir, format, locale, command),
+    verifyIsCmdGate,
+  };
+}
+
+/** 报告输出位置可写：文件存在时可写；不存在时最近的已存在祖先目录可写（写入时按需创建目录）。 */
+function reportLocationWritable(file: string): boolean {
+  try {
+    if (existsSync(file)) {
+      accessSync(file, constants.W_OK);
+      return statSync(file).isFile();
+    }
+    let dir = dirname(file);
+    while (!existsSync(dir)) {
+      const parent = dirname(dir);
+      if (parent === dir) return false;
+      dir = parent;
+    }
+    accessSync(dir, constants.W_OK);
+    return statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** 落标写入的输入：本次部署的 DEPLOY_DONE 内容与要追加的账本行（null 表示不写账本）。 */
+export interface DeployCompletionInput {
+  root: string;
+  active: ActiveProposalGuard;
+  marker: DeployDoneMarker;
+  ledgerLine: string | null;
+  /** 写 DEPLOY_DONE 的写入口；测试注入写入失败（UT-S42-15），缺省为 writeFileSync。 */
+  writeMarker?: (path: string, content: string) => void;
+}
+
+export type DeployCompletionResult =
+  | {
+    ok: true; markerPath: string; deployTasksChecked: number; deployTasksTotal: number;
+    clearedSmokeMarkers: string[]; ledgerWritten: boolean;
+  }
+  | { ok: false; stage: 'snapshot' | 'write'; reason: string; rollbackProblems: string[] };
+
+/**
+ * 落标写入（S21 写入路径；environment-deploy 提案通道复用，同一 deploy_id 写 DEPLOY_DONE 与账本）：
+ * 快照 → 勾选 [deploy] → 清理旧 smoke 标记 → 追加账本 → 最后写 DEPLOY_DONE；任一步失败按快照恢复并只撤销本次账本行
+ *（code-r1 F2、code-r2 F2）。不直接退出进程：失败以结构化结果返回，由调用方映射为各自的错误码。
+ */
+export function writeDeployCompletion(input: DeployCompletionInput): DeployCompletionResult {
+  const { root, active, marker, ledgerLine } = input;
+  const markerRelativePath = `logos/changes/${active.slug}/DEPLOY_DONE`;
+  let snapshot: WriteSnapshot;
+  try {
+    snapshot = takeWriteSnapshot(root, active.proposalDir, join(root, markerRelativePath), join(root, DEPLOY_LEDGER_REL));
+  } catch (error) {
+    // 快照读取失败（如 DEPLOY_DONE 被目录替代）：尚未写入任何文件
+    return { ok: false, stage: 'snapshot', reason: (error as Error).message, rollbackProblems: [] };
+  }
+
+  const checkedTasks = checkTaskSection(snapshot.tasks, 'deploy');
+  let clearedSmokeMarkers: string[] = [];
+  let ownLedgerLine: string | null = null;
+  try {
+    writeFileSync(snapshot.tasksPath, checkedTasks.content);
+    clearedSmokeMarkers = clearSmokeMarkers(active.proposalDir);
+    if (ledgerLine !== null) {
+      appendLedgerLine(root, ledgerLine); // 锁内经临时文件原子替换追加；抛错时账本保持调用前字节
+      ownLedgerLine = ledgerLine;
+    }
+    // DEPLOY_DONE 最后写：成功时它在场即蕴含勾选、清理与账本记录均已完成；重跑整体重写
+    (input.writeMarker ?? writeFileSync)(join(root, markerRelativePath), `${JSON.stringify(marker)}\n`);
+  } catch (error) {
+    // 任一写入失败：按快照恢复 tasks.md、旧 smoke marker、旧 DEPLOY_DONE 与账本，不留部分状态（code-r1 F2）
+    return { ok: false, stage: 'write', reason: (error as Error).message, rollbackProblems: restoreWriteSnapshot(snapshot, ownLedgerLine) };
+  }
+  return {
+    ok: true, markerPath: markerRelativePath, deployTasksChecked: checkedTasks.checked, deployTasksTotal: checkedTasks.total,
+    clearedSmokeMarkers, ledgerWritten: ownLedgerLine !== null,
+  };
 }
 
 export async function deployDone(format: OutputFormat = 'text', environment?: string, refInput?: string) {
@@ -392,61 +561,14 @@ export async function deployDone(format: OutputFormat = 'text', environment?: st
     fail(format, locale, 'PROJECT_NOT_INITIALIZED', 'deployDone.error.projectNotInitialized');
   }
 
-  const active = readActiveProposalGuard(root);
-  if (!active) {
-    fail(format, locale, 'NO_ACTIVE_CHANGE', 'deployDone.error.noActiveChange');
-  }
-
-  if (!existsSync(active.proposalDir)) {
-    fail(format, locale, 'CHANGE_NOT_FOUND', 'deployDone.error.changeNotFound', { slug: active.slug });
-  }
-
-  // S30·#2：verify 求值顺序按 verify 类型分流——
-  //  · marker verify（默认）：保持 S21 旧顺序，verify marker 先于部署决策/报告校验（逐字节等价现状）；
-  //  · cmd-gate verify：命令可有副作用，纯读前置（决策/section/报告）全过后再执行 cmd（无需部署/缺报告时绝不跑外部命令）。
-  let verifyIsCmdGate: boolean;
-  try {
-    verifyIsCmdGate = checkVerifyIsCmdGate(root);
-  } catch (e) {
-    if (e instanceof FlowError) failRaw(format, e.code, e.message);
-    throw e;
-  }
-
-  let verifyResult: { passed: true; cmdEval?: CmdGateEval } | undefined;
-  if (!verifyIsCmdGate) {
-    verifyResult = await verifyOrFail(root, active.proposalDir, format, locale); // marker：verify 先
-  }
-
-  const moduleDefaults = resolveModuleDefaults(root, active.moduleId);
-  const deploymentDecision = resolveProposalDeploymentDecision(active.proposalDir, moduleDefaults);
-  if (deploymentDecision.deployment_decision_conflict) {
-    fail(format, locale, 'DEPLOYMENT_DECISION_CONFLICT', 'deployDone.error.decisionConflict', {
-      reason: deploymentDecision.deployment_decision_conflict_reason ?? '',
-    });
-  }
-
-  if (deploymentDecision.deployment_required !== true) {
-    fail(format, locale, 'DEPLOYMENT_NOT_REQUIRED', 'deployDone.error.notRequired');
-  }
-
-  const deploySummary = readDeploySummary(active.proposalDir);
-  if (!deploySummary || deploySummary.total === 0) {
-    fail(format, locale, 'DEPLOY_TASKS_MISSING', 'deployDone.error.deployTasksMissing');
-  }
-
-  const deploymentReportFullPath = join(root, DEPLOYMENT_REPORT_PATH);
-  if (!existsSync(deploymentReportFullPath)) {
-    fail(format, locale, 'DEPLOYMENT_REPORT_MISSING', 'deployDone.error.deploymentReportMissing', {
-      path: DEPLOYMENT_REPORT_PATH,
-    });
-  }
+  const { active, moduleDefaults, finishVerify } = await preflightProposalDeploy(root, format, locale, {
+    command: 'deploy-done', requireReport: true,
+  });
 
   // environment-registry：环境与 --ref 判定是纯读前置，排在 cmd-gate verify 与任何写入之前
   const target = resolveDeployTarget(root, environment, refInput, format, locale);
 
-  if (verifyIsCmdGate) {
-    verifyResult = await verifyOrFail(root, active.proposalDir, format, locale); // cmd-gate：纯读前置之后执行 cmd
-  }
+  const verifyResult = await finishVerify(); // cmd-gate：纯读前置之后执行 cmd；marker verify 已在前置中判定
 
   const observed = observeWorkspace(root);
   const marker: DeployDoneMarker = {
@@ -457,59 +579,39 @@ export async function deployDone(format: OutputFormat = 'text', environment?: st
     recorded_at: new Date().toISOString(),
   };
 
-  const markerRelativePath = `logos/changes/${active.slug}/DEPLOY_DONE`;
-  const ledgerPath = join(root, DEPLOY_LEDGER_REL);
-  let snapshot: WriteSnapshot;
-  try {
-    snapshot = takeWriteSnapshot(root, active.proposalDir, join(root, markerRelativePath), ledgerPath);
-  } catch (error) {
-    // 快照读取失败（如 DEPLOY_DONE 被目录替代）：尚未写入任何文件，直接失败
-    failRaw(format, 'DEPLOY_DONE_WRITE_FAILED', t(locale, 'deployDone.error.writeFailed', {
-      reason: (error as Error).message, rollback: t(locale, 'deployDone.error.writeFailedNothingWritten'),
-    }));
+  // 传入 --env 时追加账本 deploy 记录（spec/environments.md §5.1、§5.2）
+  let ledgerLine: string | null = null;
+  if (target.environment !== null) {
+    const record: DeployLedgerRecord = {
+      kind: 'deploy',
+      environment: target.environment,
+      slug: active.slug,
+      recorded_at: marker.recorded_at,
+      observed_head: observed.head,
+      observed_dirty: observed.dirty,
+      deploy_id: marker.deploy_id,
+      ref: marker.ref,
+      ref_source: marker.ref_source,
+      result: 'done',
+    };
+    ledgerLine = `${JSON.stringify(record)}\n`;
   }
 
-  const tasksPath = snapshot.tasksPath;
-  const checkedTasks = checkTaskSection(snapshot.tasks, 'deploy');
-  let clearedSmokeMarkers: string[] = [];
-  let ledgerWritten = false;
-  let ownLedgerLine: string | null = null;
-  try {
-    writeFileSync(tasksPath, checkedTasks.content);
-    clearedSmokeMarkers = clearSmokeMarkers(active.proposalDir);
-
-    // 传入 --env 时追加账本 deploy 记录（spec/environments.md §5.1、§5.2）
-    if (target.environment !== null) {
-      const record: DeployLedgerRecord = {
-        kind: 'deploy',
-        environment: target.environment,
-        slug: active.slug,
-        recorded_at: marker.recorded_at,
-        observed_head: observed.head,
-        observed_dirty: observed.dirty,
-        deploy_id: marker.deploy_id,
-        ref: marker.ref,
-        ref_source: marker.ref_source,
-        result: 'done',
-      };
-      const line = `${JSON.stringify(record)}\n`;
-      appendLedgerLine(root, line); // 锁内经临时文件原子替换追加；抛错时账本保持调用前字节
-      ownLedgerLine = line;
-      ledgerWritten = true;
-    }
-
-    // DEPLOY_DONE 最后写：成功时它在场即蕴含勾选、清理与账本记录均已完成；重跑整体重写
-    writeFileSync(join(root, markerRelativePath), `${JSON.stringify(marker)}\n`);
-  } catch (error) {
-    // 任一写入失败：按快照恢复 tasks.md、旧 smoke marker、旧 DEPLOY_DONE 与账本，不留部分状态（code-r1 F2）
-    const problems = restoreWriteSnapshot(snapshot, ownLedgerLine);
+  const completion = writeDeployCompletion({ root, active, marker, ledgerLine });
+  if (!completion.ok) {
     failRaw(format, 'DEPLOY_DONE_WRITE_FAILED', t(locale, 'deployDone.error.writeFailed', {
-      reason: (error as Error).message,
-      rollback: problems.length === 0
-        ? t(locale, 'deployDone.error.writeFailedRolledBack')
-        : t(locale, 'deployDone.error.writeFailedRollbackIncomplete', { problems: problems.join('; ') }),
+      reason: completion.reason,
+      rollback: completion.stage === 'snapshot'
+        ? t(locale, 'deployDone.error.writeFailedNothingWritten')
+        : completion.rollbackProblems.length === 0
+          ? t(locale, 'deployDone.error.writeFailedRolledBack')
+          : t(locale, 'deployDone.error.writeFailedRollbackIncomplete', { problems: completion.rollbackProblems.join('; ') }),
     }));
   }
+  const markerRelativePath = completion.markerPath;
+  const ledgerWritten = completion.ledgerWritten;
+  const checkedTasks = { checked: completion.deployTasksChecked, total: completion.deployTasksTotal };
+  const clearedSmokeMarkers = completion.clearedSmokeMarkers;
   // S30·#1：cmd-gate verify 通过后磁盘无 VERIFY_PASS，必须把 cmdEval 回灌 detect，否则会误判停在 ready-to-verify
   //（→ 错误地把需 smoke 的提案报成可归档）。marker verify 时 cmdEval 为空、行为不变。
   const nextStep = normalizeNextStep(detectProposalStepViaFlow(active.proposalDir, moduleDefaults, verifyResult?.cmdEval));

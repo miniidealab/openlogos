@@ -1,7 +1,7 @@
 /**
  * environment-registry 切片 4：smoke 环境一致性、环境证据与 smoke 账本（S19），以及 S41 全链路。
  *
- * 覆盖 UT-S19-58～UT-S19-71、ST-S19-25～ST-S19-28（core-S19-test-cases.md「S19 smoke 环境一致性、环境证据与部署账本测试」）
+ * 覆盖 UT-S19-58～UT-S19-73、ST-S19-25～ST-S19-29（core-S19-test-cases.md「S19 smoke 环境一致性、环境证据与部署账本测试」）
  * 与 UT-S41-11、ST-S41-02（core-S41-test-cases.md）。规范源：spec/environments.md §3、§4.2、§5、§6；spec/test-results.md。
  * 全部在一次性临时项目（git 仓库）中构造；除 UT-S19-58 的纯函数与需要注入写入口 / 等锁上限的 UT-S19-69～UT-S19-71
  * （进程内调用 smoke 并注入 SmokeWriteIo）外，均走真实 CLI 入口 cli/dist/index.js。
@@ -248,6 +248,40 @@ const ioError = (code: string, what: string) => Object.assign(new Error(`${code}
 /** 去掉账本末尾的换行，构造「末行完整但缺少换行」的现场（既有读取器仍接受该末行）。 */
 function stripLedgerTrailingNewline(): void {
   writeFileSync(ledgerPath(), readFileSync(ledgerPath(), 'utf-8').replace(/\n$/, ''));
+}
+
+// ───────────── environment-deploy 切片 2：smoke 部署身份核对（UT-S19-72、UT-S19-73、ST-S19-29） ─────────────
+
+/** prod 配置了 deploy 的登记表：部署执行已启用（spec/environments.md §1）。 */
+const REGISTRY_DEPLOY = 'schema_version: 1\nenvironments:\n  - {id: test, name: Test, tier: test, aliases: [测试]}\n  - id: prod\n    name: Production\n    tier: prod\n    aliases: [生产]\n    deploy: {mode: script, script: deploy/prod.sh}\n';
+const RA = 'a'.repeat(40);
+const RB = 'b'.repeat(40);
+
+/** deploy-done 写出的旧形态 deploy 记录。 */
+function legacyDeployLine(env: string, deployId: string, ref: string | null): Record<string, unknown> {
+  return {
+    kind: 'deploy', environment: env, slug: SLUG, recorded_at: '2026-10-15T00:00:00.000Z', observed_head: RA, observed_dirty: false,
+    deploy_id: deployId, ref, ref_source: ref === null ? 'unknown' : 'explicit', result: 'done',
+  };
+}
+
+/** openlogos deploy 写出的扩展 deploy 记录（版本通道）。 */
+function execDeployLine(env: string, deployId: string, result: 'done' | 'failed' | 'unknown', ref: string | null): Record<string, unknown> {
+  return {
+    kind: 'deploy', environment: env, slug: null, recorded_at: '2026-10-15T01:00:00.000Z', observed_head: RA, observed_dirty: false,
+    deploy_id: deployId, ref, ref_source: ref === null ? 'unknown' : 'explicit', result,
+    channel: 'version', mode: 'script', ref_input: 'v2', ref_requested: ref ?? RB,
+    failure_reason: result === 'failed' ? 'exit-code' : (result === 'unknown' ? 'ci-observe-timeout' : null),
+  };
+}
+
+function writeLedger(lines: Array<Record<string, unknown>>): void {
+  if (lines.length === 0) { rmSync(ledgerPath(), { force: true }); return; }
+  put(DEPLOY_LEDGER_REL, lines.map(l => JSON.stringify(l)).join('\n') + '\n');
+}
+
+function proposalFiles(): string[] {
+  return readdirSync(join(root, 'logos/changes', SLUG)).sort();
 }
 
 beforeEach(() => {
@@ -776,6 +810,102 @@ describe('S19 smoke 环境一致性与证据 — 单元测试', () => {
     expect(readFileSync(ledgerPath(), 'utf-8').startsWith(glued)).toBe(true);
     expect(markerLedgerState()).toMatchObject({ SMOKE_PASS: null, SMOKE_FAIL: Buffer.from('old-fail\n').toString('base64') });
   }, 120_000);
+  it('UT-S19-72: 提案部署身份被后续部署取代时拒绝', () => {
+    setup({ registry: REGISTRY_DEPLOY });
+    const d1 = legacyDeployLine('prod', 'd1', RA);
+    const cases: Array<[string, Record<string, unknown>]> = [
+      ['① 版本通道', execDeployLine('prod', 'd2', 'done', RB)],
+      ['② 后续失败', execDeployLine('prod', 'd3', 'failed', null)],
+      ['③ 后续未知', execDeployLine('prod', 'd4', 'unknown', null)],
+    ];
+    for (const [label, later] of cases) {
+      placeMarkers({});
+      writeMarker(marker('prod', RA, 'd1'));
+      writeLedger([d1, later]);
+      const err = expectRejected('prod', 'SMOKE_DEPLOY_SUPERSEDED');
+      expect(err.details.marker, label).toEqual({ deploy_id: 'd1', ref: RA });
+      expect(err.details.latest, label).toMatchObject({ deploy_id: later.deploy_id, channel: 'version', result: later.result });
+      expect(readFileSync(markerPath(), 'utf-8'), `${label} 不改写 marker`).toBe(`${JSON.stringify(marker('prod', RA, 'd1'))}\n`);
+    }
+
+    // ④ 对照：账本最新记录就是 d1 → 门禁 PASS、已验证
+    placeMarkers({});
+    writeLedger([d1]);
+    const r4 = smokeJson('prod');
+    expect(r4.status, r4.stderr).toBe(0);
+    expect(r4.data.environment_evidence).toMatchObject({ deploy_id: 'd1', ref: RA, deploy_env_confirmed: true, verified: true });
+
+    // ⑤ 对照：旧空格式 marker、账本有 d2 → 不做核对，部署环境未确认
+    placeMarkers({});
+    writeMarker('');
+    writeLedger([d1, execDeployLine('prod', 'd2', 'done', RB)]);
+    const r5 = smokeJson('prod');
+    expect(r5.status, r5.stderr).toBe(0);
+    expect(r5.data.environment_evidence).toMatchObject({ deploy_id: null, deploy_env_confirmed: false, verified: false });
+
+    // ⑥ 对照：账本中 prod 没有 deploy 记录 → 按 marker 判定
+    placeMarkers({});
+    writeMarker(marker('prod', RA, 'd1'));
+    writeLedger([legacyDeployLine('test', 't1', RB)]);
+    const r6 = smokeJson('prod');
+    expect(r6.status, r6.stderr).toBe(0);
+    expect(r6.data.environment_evidence).toMatchObject({ deploy_id: 'd1', deploy_env_confirmed: true, verified: true });
+
+    // ⑦ 对照（部署执行未启用）：登记表无 deploy，账本只有 deploy-done 记录且 d1 之后另有一条 → 不做核对，行为同修复前
+    placeMarkers({});
+    put(ENV_REGISTRY_REL, REGISTRY);
+    writeMarker(marker('prod', RA, 'd1'));
+    writeLedger([d1, legacyDeployLine('prod', 'd9', RB)]);
+    const r7 = smokeJson('prod');
+    expect(r7.status, r7.stderr).toBe(0);
+    expect(r7.error).toBeNull();
+    expect(r7.data.gate.result).toBe('PASS');
+    expect(r7.data.environment_evidence).toMatchObject({ deploy_id: 'd1', ref: RA, deploy_env_confirmed: true, verified: true, ledger_written: true });
+    expect(smokeRows().pop()).toMatchObject({ slug: SLUG, deploy_id: 'd1' });
+  }, 120_000);
+
+  it('UT-S19-73: 无活跃提案时以账本记录为部署身份', () => {
+    setup({ registry: REGISTRY_DEPLOY, guard: false });
+    const files = proposalFiles();
+    const cases: Array<[string, Array<Record<string, unknown>>, Record<string, unknown>]> = [
+      ['① 成功且版本已确认', [execDeployLine('prod', 'v2', 'done', RB)], { deploy_id: 'v2', ref: RB, deploy_env_confirmed: true, verified: true }],
+      ['② 成功但版本未确认', [execDeployLine('prod', 'v3', 'done', null)], { deploy_id: 'v3', ref: null, deploy_env_confirmed: true, verified: false }],
+      ['③ 失败', [execDeployLine('prod', 'v4', 'failed', null)], { deploy_id: 'v4', deploy_env_confirmed: false, verified: false }],
+      ['④ 无 deploy 记录', [], { deploy_id: null, ref: null, deploy_env_confirmed: false, verified: false }],
+    ];
+    for (const [label, lines, expected] of cases) {
+      writeLedger(lines);
+      const r = smokeJson('prod');
+      expect(r.status, `${label}: ${r.stderr}`).toBe(0);
+      expect(r.data.environment_evidence, label).toMatchObject({ ...expected, ledger_written: true });
+      const row = smokeRows().pop()!;
+      expect(row, label).toMatchObject({ slug: null, deploy_id: expected.deploy_id, verified: expected.verified });
+      expect(proposalFiles(), `${label} 不写任何提案标记`).toEqual(files);
+    }
+
+    // 对照（部署执行未启用）：⑤ 无登记表；⑥ 登记表无 deploy、账本只有 deploy-done 记录 → 不写账本，证据与修复前一致
+    rmSync(join(root, ENV_REGISTRY_REL));
+    writeLedger([legacyDeployLine('prod', 'd1', RA)]);
+    const before5 = readFileSync(ledgerPath(), 'utf-8');
+    const r5 = smokeJson('prod');
+    expect(r5.status, r5.stderr).toBe(0);
+    expect(r5.data).not.toHaveProperty('environment_evidence');
+    expect(readFileSync(ledgerPath(), 'utf-8')).toBe(before5);
+
+    put(ENV_REGISTRY_REL, REGISTRY);
+    const r6 = smokeJson('prod');
+    expect(r6.status, r6.stderr).toBe(0);
+    expect(r6.data.environment_evidence).toMatchObject({ deploy_id: null, ref: null, deploy_env_confirmed: false, verified: false, ledger_written: false });
+    expect(readFileSync(ledgerPath(), 'utf-8')).toBe(before5);
+
+    // ⑦ 删除 deploy 配置但账本保留 openlogos deploy 写出的记录 → 仍按启用口径处理
+    writeLedger([legacyDeployLine('prod', 'd1', RA), execDeployLine('prod', 'v5', 'done', RB)]);
+    const r7 = smokeJson('prod');
+    expect(r7.status, r7.stderr).toBe(0);
+    expect(r7.data.environment_evidence).toMatchObject({ deploy_id: 'v5', ref: RB, deploy_env_confirmed: true, ledger_written: true });
+    expect(smokeRows().pop()).toMatchObject({ slug: null, deploy_id: 'v5' });
+    expect(proposalFiles()).toEqual(files);
+  }, 120_000);
 });
 
 describe('S19 smoke 环境一致性与证据 — 场景测试', () => {
@@ -845,6 +975,27 @@ describe('S19 smoke 环境一致性与证据 — 场景测试', () => {
     // last_smoke 是账本记录的投影：不含 kind、environment、observed_dirty
     const projected = Object.fromEntries(Object.entries(smokeRecord).filter(([k]) => !['kind', 'environment', 'observed_dirty'].includes(k)));
     expect(show.last_smoke).toEqual(projected);
+  }, 120_000);
+  it('ST-S19-29: 提案落标后被版本发布取代、提案通道重新部署后恢复', () => {
+    setup();
+    // ① 部署落标
+    expect(cli(['deploy-done', '--env', 'prod', '--ref', 'HEAD']).status).toBe(0);
+    // ② 账本追加一条同环境的版本通道成功记录（模拟 openlogos deploy 版本通道发布；登记表本身未配置 deploy，
+    //    由账本中的 openlogos deploy 记录使部署执行已启用）
+    const lines = readFileSync(ledgerPath(), 'utf-8');
+    put(DEPLOY_LEDGER_REL, `${lines}${JSON.stringify(execDeployLine('prod', 'v-other', 'done', RB))}\n`);
+    // ③ smoke 被拒绝且零副作用
+    const err = expectRejected('prod', 'SMOKE_DEPLOY_SUPERSEDED');
+    expect(err.details.latest).toMatchObject({ deploy_id: 'v-other', channel: 'version' });
+    // ④ 提案通道重新落标
+    expect(cli(['deploy-done', '--env', 'prod', '--ref', 'HEAD']).status).toBe(0);
+    const redeployed = JSON.parse(readFileSync(markerPath(), 'utf-8'));
+    // ⑤ smoke 通过并得到已验证事实，smoke 记录关联 ④ 的部署
+    const r = smokeJson('prod');
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.data.gate.result).toBe('PASS');
+    expect(r.data.environment_evidence).toMatchObject({ deploy_id: redeployed.deploy_id, verified: true });
+    expect(smokeRows().pop()).toMatchObject({ deploy_id: redeployed.deploy_id, verified: true });
   }, 120_000);
 });
 

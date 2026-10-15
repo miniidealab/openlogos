@@ -16,6 +16,7 @@ const sources = [
   { group: 'skills', path: 'skills/merge-executor/SKILL.en.md', sourcePath: source('skills/merge-executor/SKILL.en.md', 'skills/merge-executor/SKILL.en.md') },
   { group: 'skills', path: 'skills/scenario-architect/SKILL.md', sourcePath: source('skills/scenario-architect/SKILL.md', 'skills/scenario-architect/SKILL.md') },
   { group: 'skills', path: 'skills/deployment-designer/SKILL.md', sourcePath: source('skills/deployment-designer/SKILL.md', 'skills/deployment-designer/SKILL.md') },
+  { group: 'skills', path: 'skills/deployment-executor/SKILL.md', sourcePath: source('skills/deployment-executor/SKILL.md', 'skills/deployment-executor/SKILL.md') },
   { group: 'skills', path: 'skills/test-writer/SKILL.md', sourcePath: source('skills/test-writer/SKILL.md', 'skills/test-writer/SKILL.md') },
   { group: 'skills', path: 'skills/code-reviewer/SKILL.md', sourcePath: source('skills/code-reviewer/SKILL.md', 'skills/code-reviewer/SKILL.md') },
   { group: 'templates', path: 'dist/i18n.js', sourcePath: join(cliRoot, 'dist/i18n.js') },
@@ -32,6 +33,7 @@ const sources = [
   { group: 'plugins', path: 'claude-plugin-template/skills/architecture-designer/SKILL.md', sourcePath: source('claude-plugin-template/skills/architecture-designer/SKILL.md', 'plugin/skills/architecture-designer/SKILL.md') },
   { group: 'plugins', path: 'claude-plugin-template/skills/scenario-architect/SKILL.md', sourcePath: source('claude-plugin-template/skills/scenario-architect/SKILL.md', 'plugin/skills/scenario-architect/SKILL.md') },
   { group: 'plugins', path: 'claude-plugin-template/skills/deployment-designer/SKILL.md', sourcePath: source('claude-plugin-template/skills/deployment-designer/SKILL.md', 'plugin/skills/deployment-designer/SKILL.md') },
+  { group: 'plugins', path: 'claude-plugin-template/skills/deployment-executor/SKILL.md', sourcePath: source('claude-plugin-template/skills/deployment-executor/SKILL.md', 'plugin/skills/deployment-executor/SKILL.md') },
   { group: 'plugins', path: 'claude-plugin-template/skills/test-writer/SKILL.md', sourcePath: source('claude-plugin-template/skills/test-writer/SKILL.md', 'plugin/skills/test-writer/SKILL.md') },
   { group: 'plugins', path: 'claude-plugin-template/skills/code-reviewer/SKILL.md', sourcePath: source('claude-plugin-template/skills/code-reviewer/SKILL.md', 'plugin/skills/code-reviewer/SKILL.md') },
 ];

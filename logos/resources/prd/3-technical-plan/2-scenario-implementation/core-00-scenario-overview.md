@@ -222,3 +222,45 @@ flowchart LR
 ### 元数据 apply
 
 merge 时把 S41 登记进 `logos/logos-project.yaml` 的 `scenarios`（`module: core`，`feature: F05` 验收与部署门禁），将 `scenario_counter.next_id` 从 41 推进到 42，并把 `core-S41-environment-registry.md`、`core-S41-test-cases.md` 与 `spec/environments.md` 纳入 `resource_index`。
+
+## S42 场景登记与依赖关系（environment-deploy）
+
+### 场景地图增量
+
+| 编号 | 场景名称 | 主要实现 | 测试规格 | 状态 |
+|---|---|---|---|---|
+| S42 | 按环境执行部署与回滚 | `commands/deploy.ts` / `lib/deploy-runner.ts` / `lib/deploy-ci.ts`（并扩展 `environments.ts`、`deploy-done.ts`、`smoke.ts`、`env.ts`、`status.ts`） | `core-S42-test-cases.md` | 进行中 |
+
+### 依赖关系
+
+```mermaid
+flowchart LR
+    S41["S41 环境登记与查询（登记表与账本）"] --> S42["S42 按环境执行部署与回滚"]
+    DSN["deployment-designer 产出部署脚本与 deploy 条目"] --> S42
+    S42 -->|提案通道成功| S21["S21 deploy-done 写入函数"]
+    S42 --> LED["本机部署账本"]
+    S21 --> LED
+    LED --> S19["S19 smoke 部署身份核对"]
+    LED --> S41
+    LED --> S11["S11 status environments 视图"]
+    EXE["deployment-executor"] --> S42
+```
+
+### 依赖说明
+
+1. S42 依赖 S41 的登记表、`--env` 解析与账本读写；登记表新增的 `deploy` 字段由 S41 的校验实现一并校验。
+2. 提案通道成功时 S42 调用 S21 的既有写入函数写 `DEPLOY_DONE` 与账本，二者同一 `deploy_id`；S21 的前置检查被拆为「可执行性」与「完成记录」两段，前者在执行前、后者在执行后。
+3. S19 以账本中该环境最近一条 deploy 记录核对 smoke 的部署身份：提案标记被后续部署取代时拒绝；无活跃提案时以账本记录为身份。
+4. S11 与 S41 的环境视图新增 `previous_ref`、`deploy_mode`、`deploy_in_progress`，与 S42 共用同一账本读取实现。
+5. 没有登记表或环境未配置 `deploy` 时 S21、S19、S11、S41 的既有行为不变。
+
+### 场景索引增量
+
+- [S42：按环境执行部署与回滚](./core-S42-environment-deploy.md)
+- `core-S41-environment-registry.md`：新增「部署配置与部署记录扩展（environment-deploy）」一节；对应测试 UT-S41-12～UT-S41-15、ST-S41-04。
+- `core-S19-smoke-gate.md`：新增「smoke 部署身份核对（environment-deploy）」一节；对应测试 UT-S19-72、UT-S19-73、ST-S19-29。
+- 对应测试：`logos/resources/test/core-S42-test-cases.md`。
+
+### 元数据 apply
+
+merge 时把 S41、S42 登记进 `logos/logos-project.yaml` 的 `scenarios`（`module: core`，`feature: F05` 验收与部署门禁）——S41 在 environment-registry 合并时漏登记，本次补登——并将 `scenario_counter.next_id` 从 41 推进到 43；把 `core-S42-environment-deploy.md`、`core-S42-test-cases.md` 纳入 `resource_index`。

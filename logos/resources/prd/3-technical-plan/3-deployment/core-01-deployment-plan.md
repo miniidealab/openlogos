@@ -4493,3 +4493,86 @@ runlogos 侧改造完成、两侧测试皆绿后，再单独提案执行本机�
 - 测试：见「构建与 Tarball 冻结」第 1 条；安装态 smoke：SMOKE-core-251～SMOKE-core-253。
 - 通则：本文件「发布前检查通则：环境事实不入 verify 期断言」。
 - 来源提案：environment-registry（决策 C01～C08）；fix-environment-registry-review-gaps（决策 C01～C04）。
+
+## OpenLogos 0.16.4 发布方案（环境部署执行，本地全局）
+
+### 部署目标与授权边界
+
+把 `openlogos deploy` 执行器（script / ci / agent）、版本通道、回滚，以及配套改动的 deployment-designer / deployment-executor 两个 Skill（来源提案 `environment-deploy`，功能规格 §2.94）装进本机全局安装态。RunLogos 的环境面板、一键发布与回滚要调用 `openlogos deploy`，只有全局 `openlogos` 升级后才可用。
+
+- **目标环境**：本机 npm 全局 prefix（计划时为 `/opt/homebrew`，入口 `/opt/homebrew/bin/openlogos`，当前为本地构建的 `0.16.3`）。
+- **授权来源**：提案待定决策 C14 的推荐方案（升版 0.16.4，安装到本机全局，并在本仓执行 `openlogos sync`）；全自动运行中以本次 `next --auto` 的 deliver-entry 门 `gate_auto_passed=true` 为执行依据。
+- **本仓 sync**：本次改动 deployment-designer / deployment-executor 两个 Skill 并修复其插件分发，本仓执行一次 `openlogos sync`，使本仓托管副本与新装的全局包同源。
+- 本方案**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`；merge、verify、部署执行、smoke、archive 仍按项目执行门。**不改写其他仓库**（包括 runlogos），不在其项目根运行任何命令。
+- **版本号边界**：0.16.4 只作本机全局版本，不进入 npm registry；后续公开发布另立 release 提案。
+
+### 部署前置与冻结事实
+
+1. 本提案 delta 已 merge，`[code]` 切片实现完成，`openlogos verify` PASS。
+2. **版本事实复核**：读取 `cli/package.json` 当前版本（计划时为 `0.16.3`），候选为下一 patch `0.16.4`；执行 `npm view @miniidealab/openlogos@0.16.4 version`，应返回 E404。若实施前已有其他提案升版或 registry 已存在候选版本号，候选改为「当时版本与 registry 最高版本中较大者的下一 patch」，回滚版本改为「当前本机全局版本」，并在部署记录写明实际值。
+3. **冻结当前本机全局**：记录 `command -v openlogos`、入口 realpath、`npm prefix -g`、`openlogos --version`；实际值在部署前重新读取，不在测试或脚本中硬编码。
+4. **先有回滚制品，再动版本号**：
+   1. **来源**：在 `$(npm prefix -g)/lib/node_modules/@miniidealab/openlogos` 执行 `npm pack --ignore-scripts`，产出 `cli/rollback/miniidealab-openlogos-0.16.3.tgz`。**禁止**从当前工作树打包。
+   2. **内容身份**：解包后逐文件计算 SHA-256，与全局安装目录中同名文件比对，全部一致；另确认包内不含 `dist/commands/deploy.js`（0.16.3 不含部署执行器）。
+   3. **旧行为验证**：在一次性隔离 prefix 中试装该制品：`--version` 为 `0.16.3`；`openlogos deploy --env x` 报未知命令。
+   4. **记录**：来源安装路径、制品字节数与 SHA-256、内容比对结果与旧行为证据写入部署记录。任一项不满足即判发布前检查失败，不得进入升版。
+
+### 0.16.4 版本与制品身份
+
+执行 `node cli/scripts/bump-version.mjs 0.16.4`，由脚本一次更新全部版本载体（以脚本 `VERSION_CARRIERS` 为准）与 `cli/src/lib/local-release-candidate.ts` 的候选 / 回滚版本（→ `0.16.4` / `0.16.3`），并调用既有生成器重算 `cli/asset-manifest.json`。asset-manifest 的变化只能由生成器写出，**禁止手改**；预期新增 `dist/commands/deploy.js`、`dist/lib/deploy-runner.js`、`dist/lib/deploy-ci.js` 等，`skills/deployment-executor/SKILL.md` 新登记，两个部署 Skill 与随包规范的 hash 变化。
+
+在 `CHANGELOG.md` 的 `## [Unreleased]` 之后新增 `## [0.16.4]` 条目，注明「本机全局发布（未发布到 npm）」，不改既有条目：Added（`openlogos deploy` 三种执行方式、版本通道、回滚、dry-run、部署日志与密钥遮盖；deployment-designer 产出部署脚本与 `deploy` 条目）、Changed（smoke 以账本核对部署身份，`SMOKE_DEPLOY_SUPERSEDED`；环境视图 `current_ref` 只认已确认版本并新增 `previous_ref`）、Fixed（两个部署 Skill 的插件分发与 asset-manifest 登记）。
+
+### 构建与 Tarball 冻结
+
+1. 升版后复跑 `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`，必须全绿，范围包括本提案的 `core-S42-test-cases.md` 全部用例、`core-S41-test-cases.md` 与 `core-S19-test-cases.md` 中 environment-deploy 新增用例，以及 `UT-S19-46` / `UT-S19-49`；`npm run build` 通过。
+2. 执行真实 `npm pack`，产出 `cli/miniidealab-openlogos-0.16.4.tgz`，记录字节数与 SHA-256，并在部署记录中标为本次**唯一候选制品**。之后的隔离验证、全局安装与回滚演练都只用这个文件。
+3. 解包核对制品带有本次行为：`--version` 与包内 asset-manifest 为候选版本且自洽；包内存在 `dist/commands/deploy.js`，`dist/index.js` 注册 `deploy` 命令；包内 `skills/deployment-executor/SKILL.md` 与 `claude-plugin-template/skills/deployment-executor/SKILL.md` 都存在且与源文件一致。
+
+### 隔离 Prefix 行为矩阵
+
+用 `mktemp -d` 建一次性 npm prefix，安装固定 tarball，从绝对入口执行。全部项目态都在一次性临时 git 项目内构造，**不得触碰本机全局 prefix、本仓活跃提案与用户其他仓库**；部署目标是临时目录中的「环境」（脚本把文件写入临时目录模拟发布），不触达任何真实服务。
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package / asset hash 全部来自固定 tarball，无 workspace link |
+| script 版本通道 | 临时项目登记 `staging`（`deploy.mode: script`），仓库中两个 tag 各带一版部署脚本；`deploy --env staging --ref <tag1>` 成功，脚本在该 commit 的隔离工作树中运行（写出的版本标识等于 tag1 的 commit），账本 `channel=version`、`result=done`、`ref` 为该 commit；工作区未提交改动未被部署 |
+| 回滚 | 再部署 tag2 后 `deploy --env staging --rollback` 重新部署 tag1，账本 `rollback=true`、`rollback_from` 为 tag2 的 commit；`env show staging` 的 `current_ref` / `previous_ref` 正确 |
+| 提案通道 | 临时项目活跃提案处于 ready-to-deploy、无任何旧部署报告：`deploy --env staging` 成功，部署报告追加本次结果，`[deploy]` 勾选、`DEPLOY_DONE` 与账本同一 `deploy_id`；随后 `smoke --env staging` 得到 `verified=true` |
+| dry-run 与失败 | `--dry-run` 不写任何文件；脚本非零退出时 `DEPLOY_FAILED`、账本 `result=failed`、`current_ref` 不变，日志中声明密钥的值被替换为 `***` |
+| 并发锁 | 一个部署运行中再次 `deploy --env staging` 报 `DEPLOY_IN_PROGRESS` 且零执行 |
+| 无登记表零回归 | 另一临时项目不写登记表：`deploy-done`、`smoke`、`status` 的退出码与关键字段与 0.16.3 回滚制品上同一夹具的输出一致 |
+| 全局零触碰 | 矩阵执行前后 `command -v openlogos` 指向同一路径，`--version` 逐字一致 |
+| 回滚演练 | 在隔离 prefix 用 `cli/rollback/miniidealab-openlogos-0.16.3.tgz` 回装（SHA-256 与冻结记录一致），`--version` 回到 `0.16.3`，`openlogos deploy` 报未知命令 |
+
+ci 方式在矩阵中以替身 `gh`（本地脚本，按约定输出 dispatch 响应、运行状态与 `openlogos-deploy-result`）验证，不触发真实 GitHub Actions。
+
+### 本机全局部署与本仓 sync
+
+隔离矩阵与回滚演练通过后，按以下顺序执行：
+
+1. 用**同一** tarball 执行 `npm install -g <绝对路径>/cli/miniidealab-openlogos-0.16.4.tgz` 覆盖本机全局，在新 shell 中复核 entry realpath、`--version`、package.json、asset-manifest 全部同源于候选版本。
+2. 在本仓项目根执行 `openlogos sync`，随后逐字节比对：本仓托管的 `.claude/openlogos/bin/guard-check` 与全局包内 `claude-plugin-template/bin/guard-check` 一致；`logos/skills/deployment-designer/SKILL.md`、`logos/skills/deployment-executor/SKILL.md` 与全局包内同名 Skill 一致。sync 若再次向 `.claude/settings.json` 重复加入 SessionStart hook，按既有先例（提交 `bf61f6f`）还原。sync 产生的托管文件变化随部署记录一起由流程提交，不 push。
+3. 写部署记录 `logos/resources/verify/deployment-report.md`（追加一节）：部署身份（版本、tarball 路径与 SHA-256、入口 realpath）；回滚入口（`cli/rollback/miniidealab-openlogos-0.16.3.tgz` 的路径与 SHA-256）；源码回归证据与安装态证据分开写。
+4. 经 `openlogos deploy-done` 受控落标（本仓无登记表，不带 `--env`），再按流程进入 smoke（SMOKE-core-254～SMOKE-core-257）。
+
+### 失败处置与回滚边界
+
+1. 发布前检查、构建、隔离矩阵或回滚演练任一失败：不安装全局、不执行本仓 sync、不写 `DEPLOY_DONE`，输出失败点与修复建议；删除隔离 prefix 即可回滚隔离环境。
+2. 已全局安装后发现问题：用 `cli/rollback/miniidealab-openlogos-0.16.3.tgz` 执行 `npm install -g`（绝对路径）回装，新 shell 复核 `--version` 为 `0.16.3`；若已执行本仓 sync，用回装后的 0.16.3 再执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件。
+3. 本次无数据迁移。回装 0.16.3 后，账本中 0.16.4 写出的新形态记录会被旧版计为坏行并跳过，保留不影响旧版行为；运行态目录中的部署日志、锁与未决记录不被旧版读取。
+4. 回滚不以手改 asset-manifest 作为修复手段，也不以放宽 verify / smoke 判定「让矩阵变绿」。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`。
+- 不改写其他仓库（包括 runlogos），不在其项目根运行任何命令（含 `openlogos sync`）。
+- 不在本仓配置 `logos/environments.yaml` 或真实部署目标；本仓自身的发布仍按本方案执行，不改用 `openlogos deploy`。
+
+### 追溯
+
+- 功能规格：§2.94（环境部署执行）、§2.93（环境登记表与部署账本）。
+- 根规范：`spec/environments.md` §11；`spec/cli-json-output.md`「`openlogos deploy --format json`」。
+- 场景：S42、S41、S19「smoke 部署身份核对（environment-deploy）」、S21。
+- 测试：见「构建与 Tarball 冻结」第 1 条；安装态 smoke：SMOKE-core-254～SMOKE-core-257。
+- 来源提案：environment-deploy（决策 C01～C15，D13）。
