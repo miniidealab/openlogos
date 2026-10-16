@@ -6,16 +6,25 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 2381 |
+| Defined cases | 2393 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 2381 |
-| Passed | 2356 |
+| Executed cases | 2393 |
+| Passed | 2368 |
 | Failed | 0 |
 | Skipped | 25 |
 | Uncovered | 0 |
 | Coverage | 100% |
 | Pass rate | 100% |
 | **Gate 3.5** | **PASS** |
+
+## Slice Verification
+
+- Mode: `final`
+- Attempted slice: `null`
+- Confirmed slices: `slice-01-scripted-local-deploy`, `slice-02-installed-state-smoke`
+- Eligible tests: 2393
+- Pending tests: 0
+- Final: true
 
 ## Skipped Cases
 
