@@ -872,3 +872,16 @@ runner `scripts/smoke-proposal-default-environment-0-16-6.js` 以正式模式运
 | SMOKE-core-265 | **pass**：未登记与 alias 两种非法值使登记表判为非法，`deploy-done` 与 `smoke` 零副作用拒绝 | `local-global-temp-project` |
 | SMOKE-core-266 | **pass**：默认环境指向受门环境合法，部署仍被晋级检查拦截；`env show` 输出 `environment.deploy` | `local-global-temp-project` |
 | SMOKE-core-267 | **pass**：未配置该字段的项目与 0.16.5 回滚基线一致；基线离线组装（`baseline_mode=offline-assembled`、`npm_invocations=0`） | `local-global-temp-project` |
+
+## 部署记录 2026-10-16T14:30:37.505Z → test
+
+- 目标环境: test
+- 通道 / 执行方式: proposal / script
+- deploy_id: 7652a96b-b340-4e6e-9f08-b5a7dec65d73
+- ref_requested: 02355709cf742bfe095124ca2e285437f6153694（HEAD）
+- ref: 02355709cf742bfe095124ca2e285437f6153694
+- 执行脚本: scripts/deploy-local.mjs（workdir: worktree）
+- 耗时: 39007 ms
+- 结果: done
+- log_path: logos/.openlogos-runtime/deploy-logs/7652a96b-b340-4e6e-9f08-b5a7dec65d73.log
+- previous_ref: 无
