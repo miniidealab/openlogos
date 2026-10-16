@@ -4736,3 +4736,144 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 - 场景：S41。
 - 测试：见「构建与 Tarball 冻结」第 1 条（含 UT-S41-23）；安装态 smoke：SMOKE-core-263～SMOKE-core-267。
 - 来源提案：proposal-default-environment（决策 C01～C09，D15）。
+
+## 本机测试环境脚本部署（scripts/deploy-local.mjs）
+
+> 来源提案：local-install-deploy-script（决策 C01～C04）。本节是部署到本仓 `test` 环境（本机 npm 全局安装态）的通用方案，取代此前各版本「本地全局」发布方案中逐版本复写的冻结、打回滚包、打包、试装、全局安装与复核步骤。此后需要部署到 `test` 的提案直接引用本节，只在各自的发布方案中补写与本次改动相关的版本号、CHANGELOG、源码回归范围、`openlogos sync` 与安装态 smoke 用例。执行机制见 `spec/environments.md` §11（script 方式），本节不改变 CLI 行为。
+
+### 一、适用范围与授权边界
+
+- **目标环境**：`logos/environments.yaml` 中的 `test`（别名 本地 / 测试 / local / local-global / staging），即当前开发机的 npm 全局 prefix（计划时为 `/opt/homebrew`，入口 `/opt/homebrew/bin/openlogos`）。实际 prefix 与入口在每次部署时由脚本重新读取，不在方案、脚本或测试中硬编码。
+- **入口命令**：
+  - 提案通道：`openlogos deploy --env test`（存在活跃提案且处于 ready-to-deploy 时的默认通道；部署请求 HEAD）。
+  - 版本通道：`openlogos deploy --env test --ref <版本>`，或 `openlogos deploy --env test --rollback`。
+  - 部署前预检：`openlogos deploy --env test --dry-run`（零执行、零写入）。
+- **职责划分**：CLI 负责前置检查、环境锁、在请求 commit 的隔离工作树中执行脚本、写账本、提案通道的部署报告与 `DEPLOY_DONE`、`--rollback` 目标选择；脚本只负责「把请求 commit 的 CLI 装到本机全局并证明装对了」。
+- **授权**：部署执行、smoke、archive 仍按项目执行门：半自动模式逐次由用户明确授权，`next --auto` 模式按 deliver-entry 门的 standing 授权执行。本节**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`；公开发布属 `prod`，另行立案。
+
+### 二、登记表配置
+
+`logos/environments.yaml` 的 `test` 环境写入：
+
+```yaml
+    deploy:
+      mode: script
+      script: scripts/deploy-local.mjs
+```
+
+- 不设 `args` 与 `timeout_sec`，沿用默认 `workdir: worktree`、`timeout_sec: 1800`。
+- `test` 不配置 `promote_from` / `require_approval`，登记表保持 guard 内置豁免；`secrets` 为空，脚本不读取任何密钥。
+- 脚本必须存在于请求 commit 的树中且带可执行位（git 文件模式 `100755`），否则 CLI 在执行前拒绝。因此**早于本脚本的提交无法经 `openlogos deploy` 部署到 `test`**（见「五、回滚口径」）。
+
+### 三、部署前置
+
+1. 提案通道：本提案 delta 已 merge，`[code]` 切片实现完成，`openlogos verify` PASS；需要升版的提案已在实现中执行 `node cli/scripts/bump-version.mjs <版本>` 并提交。脚本**不升版**，只安装请求 commit 中 `cli/package.json` 声明的版本。
+2. 请求 commit 已提交。`workdir: worktree` 只检出已提交内容，工作区中未提交的改动不会被部署。
+3. `openlogos env check` 无 error；`openlogos deploy --env test --dry-run` 通过。
+4. 本机可执行 `npm`、`node`、`git`，且 `npm ci` 能取得 `cli/package-lock.json` 所列依赖（本机缓存或网络）。
+
+### 四、脚本执行顺序
+
+脚本由 CLI 以参数数组直接执行（不经 shell），工作目录是请求 commit 的隔离工作树。CLI 注入的 `OPENLOGOS_DEPLOY_ENV`、`OPENLOGOS_DEPLOY_REF`、`OPENLOGOS_DEPLOY_ID`、`OPENLOGOS_DEPLOY_CHANNEL` 是脚本唯一的输入。顺序固定，不得调换：
+
+| 步骤 | 动作 | 通过条件 |
+|---|---|---|
+| ① 输入校验 | 检查 `OPENLOGOS_DEPLOY_ENV`、`OPENLOGOS_DEPLOY_REF`、`OPENLOGOS_DEPLOY_ID` 齐全；当前工作树 `git rev-parse HEAD` 等于 `OPENLOGOS_DEPLOY_REF` | 全部成立 |
+| ② 冻结当前全局 | 读取 `npm prefix -g`、`command -v openlogos` 及其 realpath、`openlogos --version`（记为 `previous_version`）、全局安装目录 `dist/index.js` 的 SHA-256（记为 `previous_entry_sha256`） | 读取成功；未全局安装时 `previous_version`、`previous_entry_sha256` 为 null |
+| ③ 回滚制品 | 已全局安装时，在 `$(npm prefix -g)/lib/node_modules/@miniidealab/openlogos` 执行 `npm pack --ignore-scripts`，制品保存为主工作树 `logos/.openlogos-runtime/local-install/rollback/<deploy_id>.tgz`，记录 SHA-256。**禁止**从工作树打包回滚制品 | 制品存在且非空；未全局安装时回滚制品为 null，跳过 ④ |
+| ④ 回滚制品验证 | 在 `mktemp -d` 隔离 prefix 中安装同一 SHA-256 的回滚制品，从隔离入口执行 `--version` | `--version` 等于 `previous_version`，隔离安装目录 `dist/index.js` 的 SHA-256 等于 `previous_entry_sha256` |
+| ⑤ 构建候选 | 在工作树 `cli/` 执行 `npm ci` 与 `npm pack`（`prepack` 完成构建与模板组装），得到唯一候选 tarball；复制保存为 `logos/.openlogos-runtime/local-install/candidates/<deploy_id>.tgz`，记录候选版本、tarball SHA-256 与包内 `package/dist/index.js` 的 SHA-256（`candidate_entry_sha256`） | 恰好产出一个 tarball，包内版本等于工作树 `cli/package.json` 版本 |
+| ⑥ 候选隔离试装 | 在另一个 `mktemp -d` 隔离 prefix 中安装保存的候选，从隔离入口执行 `--version` | `--version` 等于候选版本 |
+| ⑦ 全局安装 | `npm install -g <保存的候选绝对路径>` | 退出码 0 |
+| ⑧ 全局复核 | 新进程重新解析 `command -v openlogos`，读取 realpath、`--version`、全局安装目录 `package.json` 与 `dist/index.js` | 入口 realpath 位于 `npm prefix -g` 之下；`--version` 与 `package.json.version` 等于候选版本；`dist/index.js` 的 SHA-256 等于 `candidate_entry_sha256` |
+| ⑨ 写回执 | 以「同目录临时文件写入 → 原子替换」写 `logos/.openlogos-runtime/local-install/last-deploy.json`（见「六、回执」），不留下半个 JSON | 替换成功 |
+
+- 主工作树运行态目录经 `git rev-parse --path-format=absolute --git-common-dir` 定位（取其上级目录为主工作树根），不写入隔离工作树——后者在脚本结束后由 CLI 删除。
+- 两个隔离 prefix 在脚本结束时删除；回滚制品与候选 tarball 保留，脚本不自动清理。
+- 每一步向 stdout 输出一行带步骤编号的进度，失败时向 stderr 输出失败步骤、命令与输出摘要；完整输出由 CLI 写入 `logos/.openlogos-runtime/deploy-logs/<deploy_id>.log`。
+
+### 五、失败处置与回滚口径
+
+**失败处置（脚本内）**：
+
+1. ①～⑥ 任一步失败：不执行 ⑦，本机全局入口、`--version` 与 `dist/index.js` 前后不变；写 `result=failed`、`restored=false`、`restore_error=null` 的回执（① 输入校验失败时运行态目录可能无法定位，此时不写回执），脚本非零退出，CLI 在账本记 `result=failed`、`failure_reason=exit-code`。
+2. **全局已被改动后的任何错误**——⑦ 安装、⑧ 复核或 ⑨ 写回执失败（delta r1 F2）——且有回滚制品：脚本在执行 ⑦ 之前即记下「全局将被改动」，此后任何使本次不能成功完成的错误都进入本分支，不得在全局已换包时直接退出或吞掉错误后以 0 退出。脚本自动执行 `npm install -g <回滚制品绝对路径>`，再按 ④ 的判据复核全局（`--version` 等于 `previous_version`、`dist/index.js` 哈希等于 `previous_entry_sha256`）。复核通过记 `restored=true`；回装或复核失败记 `restored=false`，`restore_error` 写失败步骤与输出摘要，并在 stderr 与回执中给出人工恢复命令 `npm install -g <回滚制品绝对路径>`。两种情况脚本都非零退出、`result=failed`、`failed_step` 为实际失败的步骤（`⑦` / `⑧` / `⑨`）。
+3. 同上的错误发生而没有回滚制品（部署前未全局安装）：脚本不自动卸载，记 `restored=false`，`restore_error` 写明无回滚制品，并在 stderr 与回执中给出人工恢复命令 `npm uninstall -g @miniidealab/openlogos`；人工执行后复核 `command -v openlogos` 解析不到，即回到部署前的未安装状态。脚本非零退出。
+4. **失败分支的回执也写不出**（如 ⑨ 的目标被目录占据、运行态目录不可写）：不影响第 2、3 条回装与复核的执行。脚本把失败步骤、回装与复核结果、回滚制品绝对路径（或「无回滚制品」）与人工恢复命令逐行输出到 stderr——CLI 将其写入 `logos/.openlogos-runtime/deploy-logs/<deploy_id>.log`——然后非零退出。回执写不出不得成为跳过恢复的理由。
+5. 脚本非零退出时，CLI 记 `result=failed`、`ref=null`（`spec/environments.md` §11.3、§11.4），不推进 `current_ref`，提案通道不写 `DEPLOY_DONE`；因此第 2、3 条恢复成功后，实际安装与账本一致，属于下文「(a) 部署未成功后的恢复」。
+
+**回滚口径**：
+
+- **(a) 部署未成功后的恢复**：账本记 `result=failed`，`current_ref` / `previous_ref` 不推进。自动回装失败时，人工执行回执给出的 `npm install -g <回滚制品绝对路径>`，在新 shell 复核 `--version` 等于 `previous_version`。恢复后实际安装就是部署前的版本，与账本未推进的 `current_ref` 一致（首次部署时 `current_ref` 为 null，部署前的手工安装本就不在账本中），不需要补记。
+- **(b) 成功部署后回到旧版本**：只经 CLI 记账入口完成——`openlogos deploy --env test --rollback`（目标为账本 `previous_ref`，该提交须含本脚本），或 `openlogos deploy --env test --ref <含本脚本的提交>`。两者都执行目标版本自己的脚本，由 CLI 写账本、由脚本写回执。
+- **不支持**把成功部署回退到早于本脚本的版本：首次部署的回滚制品来自账本之外的手工安装，没有可证明的 commit 身份，不能以 `deploy-done --env test --ref` 如实记账；此类需求以前向修复处理（部署一个含本脚本的修复提交）。**禁止直接编辑账本**。
+- **(c) 成功落账后 smoke 失败**（delta r1 F1）：部署已成功、账本已推进，这不是「部署未成功」，**不得**手工回装回滚制品或其他旧包。处置：停止后续完成流程（不 archive），保留 smoke 结果、回执、部署日志与部署报告作为失败证据；回流修复后，以 `openlogos deploy --env test`（提案通道，部署修复提交）或 `openlogos deploy --env test --ref <含本脚本的修复提交>` 重新部署，再经授权重跑 `openlogos smoke --env test`，确认 `current_ref` 与实际安装一致后才继续。若 `previous_ref` 存在且含本脚本，也可经授权执行 `openlogos deploy --env test --rollback` 回到上一版，同样由 CLI 记账。
+- **手工回装造成的偏离**：成功部署后若仍有人手工 `npm install -g` 回滚制品或其他包，环境与账本、回执不一致。执行者须在 `logos/resources/verify/deployment-report.md` 追加一节记录该偏离（时间、安装的制品与版本、原因），并尽快以 `openlogos deploy --env test --ref <含本脚本的提交>` 重新部署恢复一致。安装态 smoke 的身份核对能检出**可观测的偏离**——全局 `--version`、入口 realpath 或 `dist/index.js` 内容与回执不同；若手工安装的包在这三项上与回执记录的候选完全相同（例如重装同一版本、同一入口内容的包），smoke 无法证明安装来源，此时以部署报告中的记录为准。
+
+### 六、回执
+
+脚本在 ⑨ 以及失败分支（以同一原子替换方式）写 `logos/.openlogos-runtime/local-install/last-deploy.json`（单个 JSON 对象，整体重写；该目录已被 `.gitignore` 托管区块排除，不进 git）：
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `deploy_id` | 字符串 | `OPENLOGOS_DEPLOY_ID` |
+| `environment` | 字符串 | `OPENLOGOS_DEPLOY_ENV` |
+| `ref` | 字符串 | `OPENLOGOS_DEPLOY_REF`（40 位 commit） |
+| `candidate_version` | 字符串 \| null | 候选包版本；⑤ 之前失败为 null |
+| `candidate_tarball` | 对象 \| null | `{path, sha256}`：保存的候选 tarball 绝对路径与 SHA-256 |
+| `candidate_entry_sha256` | 字符串 \| null | 候选包内 `dist/index.js` 的 SHA-256 |
+| `prefix` | 字符串 | `npm prefix -g` |
+| `entry_realpath` | 字符串 \| null | ⑧ 复核时的全局入口 realpath；未到 ⑧ 为 null |
+| `previous_version` | 字符串 \| null | 部署前全局版本；未安装为 null |
+| `previous_entry_sha256` | 字符串 \| null | 部署前全局 `dist/index.js` 的 SHA-256 |
+| `rollback_artifact` | 对象 \| null | `{path, sha256}`；部署前未全局安装为 null |
+| `result` | `done` \| `failed` | 脚本结论 |
+| `failed_step` | 字符串 \| null | 失败步骤编号（如 `④`、`⑨`） |
+| `restored` | 布尔 | 自动回装且复核通过才为 true |
+| `restore_error` | 字符串 \| null | 回装或复核失败的步骤与输出摘要 |
+| `recorded_at` | 字符串 | ISO 8601 |
+
+回执只是脚本侧证据，**不是**版本事实来源；环境当前版本以账本（`openlogos env show test`）为准。
+
+### 七、部署后检查与 smoke
+
+1. 读回执与 `openlogos env show test --format json`：`last_deploy.deploy_id` 等于回执 `deploy_id`，`last_deploy.result=done`、`last_deploy.mode=script`，`current_ref` 等于回执 `ref`。
+2. 在新 shell 复核：`command -v openlogos` 的 realpath 等于回执 `entry_realpath`，`openlogos --version` 等于 `candidate_version`，全局 `dist/index.js` 的 SHA-256 等于 `candidate_entry_sha256`。
+3. 本次改动了托管 Skill、guard 或指令模板的提案，按各自发布方案在**主工作树**执行 `openlogos sync` 并读回（脚本不执行 sync）。
+4. 经授权执行 `openlogos smoke --env test`；安装态通用用例见 smoke 用例「本机测试环境脚本部署安装态 smoke（SMOKE-core-268～SMOKE-core-271）」，各提案自己的行为用例另列。
+
+### 八、明确不做
+
+- 脚本不运行 `npm test`、`npm run lint`（源码回归由部署前的 verify 负责）；不执行 `openlogos sync`；不升版、不改仓库内任何被跟踪文件。
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`，不部署官网，不改写其他仓库（包括 runlogos）。
+- 不为 `prod` 配置 `deploy`；不提供自动清理回滚制品与候选 tarball 的机制。
+
+### 九、追溯
+
+- 根规范：`spec/environments.md` §2.2、§11.2～§11.8。
+- 场景：S42（script 方式）、S41（环境视图）。
+- 测试：`core-S42-test-cases.md`「五、本仓本机测试环境部署脚本（local-install-deploy-script）」UT-S42-18～UT-S42-25、ST-S42-05～ST-S42-08；安装态 smoke：SMOKE-core-268～SMOKE-core-271。
+- 来源提案：local-install-deploy-script（决策 C01～C04）。
+
+## local-install-deploy-script 部署（本机测试环境首次脚本部署）
+
+### 部署目标与授权边界
+
+- **目标环境**：`test`（登记表 `proposal_default_env: test`，`source: policy`）。
+- **授权来源**：用户 2026-10-16 对提案决策 C01 的回答「用新脚本部署 (Recommended)」（`category: deployment`, `source: user`）；全自动运行中以本次 `next --auto` 的 deliver-entry 门 `gate_auto_passed=true` 为执行依据。
+- **版本**：本提案不改 CLI 与随包文件、不升版，部署安装的仍是 `cli/package.json` 声明的当前版本（计划时为 `0.16.6`），只是改由新脚本从本提案提交构建安装；这是脚本的首次真实运行，也是账本第一次记录 `test` 的 `current_ref`。
+- 不含 `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`；本次不需要 `openlogos sync`（未改托管 Skill、guard 与指令模板）。
+
+### 部署步骤
+
+1. 前置：本提案 delta 已 merge，`[code]` 切片实现并提交，`openlogos verify` PASS。
+2. 在 `logos/environments.yaml` 的 `test` 环境写入「本机测试环境脚本部署」第二节的 `deploy` 配置；`openlogos env check` 无 error，`openlogos deploy --env test --dry-run` 通过。
+3. 执行 `openlogos deploy --env test`（提案通道），由 CLI 追加部署报告并写 `DEPLOY_DONE`。
+4. 按「本机测试环境脚本部署」第七节第 1、2 条读回回执与账本，确认全局 `--version`、入口 realpath、`dist/index.js` 哈希等于 `candidate_entry_sha256`，并记录候选 tarball 与回滚制品的路径与 SHA-256。
+5. 经授权执行 `openlogos smoke --env test`（SMOKE-core-268～SMOKE-core-271）。
+
+### 失败处置与回滚
+
+- 部署前登记表或 dry-run 失败：修正登记表或回流实现，不执行部署。
+- 脚本失败：按「本机测试环境脚本部署」第五节处置；本次是首次部署，账本 `test` 无 `previous_ref`，恢复只走回滚制品（部署前的全局 `0.16.6`）这一条路径。
+- smoke 失败：此时部署已成功落账（`DEPLOY_DONE` 已写、账本 `current_ref` 为本次提交），按「本机测试环境脚本部署」第五节「(c) 成功落账后 smoke 失败」处置——停止后续完成流程，保留失败证据，回流本提案修复后以 `openlogos deploy --env test` 部署修复提交并重跑 smoke。本次是首次部署，账本 `test` 没有 `previous_ref`，`--rollback` 不可用；**不得**手工 `npm install -g` 回执中的回滚制品（它来自账本之外的手工安装，回装会造成账本声明本次版本、实际却是旧包的不一致）。回滚制品只用于脚本失败时的恢复（第五节第 2 条）。

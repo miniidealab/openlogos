@@ -57,3 +57,51 @@
 - 验收 11（插件分发）：UT-S42-17。
 - 验收 12（smoke 部署身份）：ST-S42-02；细节见 UT-S19-72、UT-S19-73、ST-S19-29。
 - 记录失败（C10）：UT-S42-15。
+
+## 五、本仓本机测试环境部署脚本（local-install-deploy-script）
+
+> 覆盖本仓 script 方式部署脚本 `scripts/deploy-local.mjs` 与安装态 smoke runner `scripts/smoke-local-install-deploy.js`。依据：部署方案「本机测试环境脚本部署（scripts/deploy-local.mjs）」第四～七节，`spec/environments.md` §11.3～§11.6，提案 local-install-deploy-script 决策 C01～C04。既有 UT-S42-01～UT-S42-17、ST-S42-01～ST-S42-04 不变。测试实现写入 `cli/test/local-install-deploy-script.test.ts`，必须写入 OpenLogos reporter，`scenario_id="S42"`。
+>
+> **测试替身与隔离**：全部用例在 `mktemp -d` 一次性临时 git 项目中执行，项目内放入本仓 `scripts/deploy-local.mjs` 的副本（git 文件模式 `100755`）与一个最小 `cli/` 包夹具（`package.json` 声明版本，`dist/index.js` 对 `--version` 输出该版本）。PATH 前置一个**替身 `npm`**：`prefix -g` 返回一次性「全局」prefix（或 `--prefix` / `npm_config_prefix` 指定的隔离 prefix）；`pack` 把当前包目录打成 tarball；`ci` 只记录调用；`install -g <tgz>` 把 tarball 解包到 `<prefix>/lib/node_modules/@miniidealab/openlogos` 并在 `<prefix>/bin/openlogos` 建入口；`uninstall -g` 删除二者；每次调用按顺序追加到调用日志；可按用例配置在指定调用上失败或写入被篡改的内容。脚本中的 `openlogos` 一律解析到该一次性 prefix 的入口。**不触碰本机真实全局 prefix、本仓运行态目录与用户其他仓库**；「全局零触碰」以一次性全局 prefix 目录树前后 SHA-256 一致取证。
+
+### 单元测试（UT）
+
+| ID | 描述 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|---------|----------|---------|
+| UT-S42-18 | 输入校验失败时拒绝且零触碰 | 一次性全局 prefix 已安装旧版 A；分别构造：① 缺 `OPENLOGOS_DEPLOY_REF`；② 缺 `OPENLOGOS_DEPLOY_ID`；③ `OPENLOGOS_DEPLOY_REF` 为另一提交（工作树 HEAD 不等于它） | 在工作树中直接执行 `scripts/deploy-local.mjs` | 三种情况都非零退出，stderr 点名缺失的变量或 HEAD 与请求 commit 不一致；替身 `npm` 调用日志为空；全局 prefix 前后 SHA-256 一致；未生成回滚制品与候选 tarball |
+| UT-S42-19 | 正常路径的执行顺序与回执 | 全局已安装 A（`dist/index.js` 内容 a）；工作树为请求 commit，候选版本 B（`dist/index.js` 内容 b）；三个 `OPENLOGOS_DEPLOY_*` 变量齐全 | 执行脚本 | 退出码 0；替身 `npm` 调用顺序为：全局安装目录 `pack --ignore-scripts` → 隔离 prefix 安装回滚制品 → `cli/` 下 `ci` → `cli/` 下 `pack` → 另一隔离 prefix 安装候选 → `install -g` 候选（回滚制品的隔离试装严格先于全局安装）；全局 `--version` 为 B、`dist/index.js` 哈希为 b 的 SHA-256；回执 `last-deploy.json` 位于主工作树 `logos/.openlogos-runtime/local-install/`（经 `git rev-parse --git-common-dir` 定位，不在工作树内），字段齐全：`deploy_id`、`environment`、`ref` 等于注入值，`candidate_version`=B，`candidate_tarball.path` 指向 `candidates/<deploy_id>.tgz` 且文件 SHA-256 等于 `candidate_tarball.sha256`，`candidate_entry_sha256` 等于 b 的 SHA-256，`previous_version`=A，`previous_entry_sha256` 等于 a 的 SHA-256，`rollback_artifact.path` 指向 `rollback/<deploy_id>.tgz` 且 SHA-256 一致，`result=done`、`failed_step=null`、`restored=false`、`restore_error=null`；两个隔离 prefix 已删除 |
+| UT-S42-20 | 回滚制品可打包但隔离试装失败时不执行全局安装 | 同 UT-S42-19，但令替身 `npm` 对回滚制品的隔离安装产出 `--version` 不等于 A（或安装失败） | 执行脚本 | 非零退出；回执 `result=failed`、`failed_step=④`；调用日志中没有 `cli/` 下 `ci` / `pack` 之后的任何安装调用，且**没有** `install -g`；全局 prefix 前后 SHA-256 一致 |
+| UT-S42-21 | 构建、打包或候选隔离试装失败时全局零触碰 | 同 UT-S42-19，分别令：① `ci` 失败；② `pack` 失败；③ `pack` 产出两个 tarball；④ 候选隔离试装后 `--version` 不等于 B | 执行脚本 | 四种情况都非零退出，回执 `result=failed`，`failed_step` 依次为 `⑤`、`⑤`、`⑤`、`⑥`；调用日志中没有 `install -g`；全局 prefix 前后 SHA-256 一致；回滚制品保留 |
+| UT-S42-22 | 全局安装后复核失败的自动回装 | 同 UT-S42-19，令 `install -g` 候选后全局 `dist/index.js` 内容不等于 b（模拟装坏）。三个子例：① 回滚制品回装正常；② 回滚制品回装后 `--version` 仍不等于 A；③ 部署前未全局安装（无回滚制品） | 执行脚本 | 三个子例都非零退出、回执 `result=failed`、`failed_step=⑧`。① 调用日志在 `install -g` 候选之后有 `install -g` 回滚制品；全局 `--version` 为 A、`dist/index.js` 哈希等于 `previous_entry_sha256`；`restored=true`、`restore_error=null`。② `restored=false`，`restore_error` 非空且点名复核不通过；stderr 与回执中含人工恢复命令 `npm install -g <回滚制品绝对路径>`。③ `restored=false`，`restore_error` 写明无回滚制品，stderr 给出 `npm uninstall -g @miniidealab/openlogos` |
+| UT-S42-23 | 部署前未全局安装时首次安装 | 一次性全局 prefix 为空（`command -v openlogos` 解析不到） | 执行脚本 | 退出码 0；调用日志中没有全局安装目录 `pack` 与回滚制品隔离安装；全局 `--version` 为 B；回执 `previous_version=null`、`previous_entry_sha256=null`、`rollback_artifact=null`、`result=done` |
+| UT-S42-24 | smoke runner 安装态身份核对（部署工作树删除后） | UT-S42-19 成功部署后删除部署工作树，只保留主工作树运行态目录中的回执、候选 tarball 与回滚制品；runner 指向同一一次性全局 prefix 与临时项目，账本中 test 最近一条 deploy 记录的 `deploy_id` 等于回执 | 执行 `scripts/smoke-local-install-deploy.js` 的身份核对用例；随后分别：① 改写全局 `dist/index.js` 一个字节；② 改写全局 `package.json` 的版本；③ 改写保存的候选 tarball 一个字节；④ 令账本最近一条 deploy 记录的 `deploy_id` 与回执不同 | 初始状态各用例 `pass`；①②③④ 各使身份核对用例 `fail`，`evidence` 分别点名 `dist/index.js` 哈希、版本、候选 tarball SHA-256、`deploy_id` 不一致；runner 对一次性全局 prefix 只读（前后 SHA-256 一致，① ② 的改写由测试自身完成） |
+| UT-S42-25 | 第 ⑨ 步写回执失败纳入全局变更后的恢复 | 同 UT-S42-19（全局已装 A），令 ⑦ ⑧ 成功、⑨ 失败：主工作树 `logos/.openlogos-runtime/local-install/last-deploy.json` 预先被一个**目录**占据（另测一次：令同目录临时文件写入失败）。两个子例：① 回滚制品回装正常；② 回滚制品回装后 `--version` 仍不等于 A | 执行脚本 | 两个子例都非零退出；调用日志在 `install -g` 候选之后有 `install -g` 回滚制品，且之后有一次按 ④ 判据的全局复核（回装与复核被执行）。① 全局 `--version` 为 A、`dist/index.js` 哈希等于 `previous_entry_sha256`；② 全局未恢复，失败被如实报告。两个子例的 stderr 都逐行含失败步骤 `⑨`、回装与复核结果（① 为恢复成功、② 为恢复失败及原因）、回滚制品绝对路径与人工恢复命令 `npm install -g <回滚制品绝对路径>`；占据回执路径的目录前后不变，运行态目录中不出现半个 JSON 或残留临时文件；回滚制品与候选 tarball 保留 |
+
+### 场景测试（ST）
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S42-05 | 真实 CLI 经脚本部署到 test | S42 Step 1～9、12、14、17 | 真实 CLI；临时 git 项目登记 `test`（`deploy: {mode: script, script: scripts/deploy-local.mjs}`）；脚本副本与 `cli/` 夹具已提交并打 tag `v1`（候选版本 B）；一次性全局 prefix 已装 A；PATH 前置替身 `npm` | ① `openlogos env check --format json`；② `openlogos deploy --env test --ref v1 --dry-run --format json`；③ `openlogos deploy --env test --ref v1 --format json`；④ `openlogos env show test --format json`；⑤ 读取回执 | ① 无 error；② 零执行（替身 `npm` 调用日志为空、全局 prefix 不变）；③ 成功，账本 test 最近记录 `result=done`、`mode=script`、`ref=ref_requested=v1` 的 commit、`ref_source=explicit`；部署工作树已删除；④ `current_ref` 为 v1 的 commit；⑤ 回执 `deploy_id` 等于账本记录、`ref` 等于 v1 的 commit、`result=done`，全局 `--version` 为 B |
+| ST-S42-06 | 成功部署后手工回装被检出，经记账入口恢复一致 | S42 Step 1～9、14、17；部署方案第五节回滚口径 | 真实 CLI；同 ST-S42-05，另有含脚本的 tag `v2`（候选版本 C，`dist/index.js` 内容与 B 不同）；`v1` 已按 ST-S42-05 成功部署 | ① 以替身 `npm` 对一次性全局 prefix 手工 `install -g` 回执中的回滚制品 A（A 的版本与 `dist/index.js` 均与 B 不同）；② 运行 smoke runner 身份核对；③ `openlogos deploy --env test --ref v2 --format json`；④ `openlogos env show test --format json`；⑤ 再次运行 smoke runner 身份核对 | ① 后账本未变（`current_ref` 仍为 v1）；② 身份核对 `fail`，`evidence` 点名全局版本与 `dist/index.js` 哈希与回执不一致；③ 成功；④ `current_ref` 为 v2 的 commit、`previous_ref` 为 v1 的 commit；⑤ 身份核对 `pass`，全局 `--version` 为 C |
+| ST-S42-07 | 回执写失败时 CLI 只落失败、全局恢复为部署前版本 | S42 Step 1～9、14；部署方案第五节失败处置第 2、4、5 条 | 真实 CLI；同 ST-S42-05（全局已装 A，`v1` 候选版本 B）；主工作树 `logos/.openlogos-runtime/local-install/last-deploy.json` 预先被目录占据 | ① `openlogos deploy --env test --ref v1 --format json`；② `openlogos env show test --format json`；③ 读取 `logos/.openlogos-runtime/deploy-logs/<deploy_id>.log`；④ 读取全局 `--version` 与 `dist/index.js` 哈希 | ① 退出码 1、错误码 `DEPLOY_FAILED`，`error.details.deployed=false`；② 账本 test 最近记录 `result=failed`、`ref=null`、`failure_reason=exit-code`，`current_ref` 与部署前相同（未产生新的成功版本事实）；③ 日志含失败步骤 `⑨`、恢复成功、回滚制品绝对路径与人工恢复命令；④ 全局 `--version` 为 A、`dist/index.js` 哈希等于部署前值 |
+| ST-S42-08 | 成功落账后 smoke 失败不回装旧包，经 CLI 部署修复提交恢复 | S42 Step 1～9、14、17；部署方案第五节「(c) 成功落账后 smoke 失败」 | 真实 CLI；同 ST-S42-05，`v1` 已成功部署（`current_ref`=v1）；另有含脚本的修复提交 tag `v2`（候选版本 C） | ① 删除回执记录的候选 tarball，运行 smoke runner（SMOKE-core-270 失败）；② 记录调用日志与全局 prefix 的 SHA-256；③ `openlogos deploy --env test --ref v2 --format json`；④ `openlogos env show test --format json`；⑤ 再次运行 smoke runner | ① 有用例 `fail`；② smoke runner 未发出任何 `install -g` / `uninstall -g` 调用，全局 prefix 与账本在 ① 前后不变（smoke 失败不触发旧制品回装）；③ 成功；④ `current_ref` 为 v2 的 commit、`previous_ref` 为 v1 的 commit；⑤ 全部用例 `pass`，全局 `--version` 为 C、`dist/index.js` 哈希等于新回执的 `candidate_entry_sha256` |
+
+### 测试数据与断言要求（local-install-deploy-script 增量）
+
+- 替身 `npm` 的调用日志是「执行顺序」与「零触碰」的唯一判据；「全局零触碰」同时以一次性全局 prefix 目录树前后 SHA-256 一致取证。
+- 回执断言以 JSON 字段与类型为准，不解析人类可读文案；stderr 只断言是否包含失败步骤编号与人工恢复命令。
+- ST-S42-06 的 A 必须在版本与 `dist/index.js` 内容上都与 B 不同。部署方案第五节已写明：手工安装的包若与回执记录的候选在版本、入口路径与 `dist/index.js` 内容上完全相同，smoke 无法证明安装来源，本节不对该情形作断言。
+- 用例结束后删除临时项目、一次性全局 prefix 与全部隔离 prefix。
+
+### 覆盖度校验（local-install-deploy-script 增量）
+
+- 输入校验与零触碰：UT-S42-18。
+- 正常路径顺序、回执字段、候选与回滚制品留存：UT-S42-19、ST-S42-05。
+- 回滚制品在全局安装前隔离试装、失败不安装：UT-S42-20。
+- 构建 / 打包 / 候选试装失败零触碰：UT-S42-21。
+- 安装后复核失败的自动回装（通过 / 回装失败 / 无回滚制品）：UT-S42-22。
+- 第 ⑨ 步写回执失败纳入回装与复核、回执写不出时经 stderr 与部署日志给出恢复入口：UT-S42-25、ST-S42-07。
+- 成功落账后 smoke 失败不回装旧包、经 CLI 部署修复提交恢复一致：ST-S42-08。
+- 首次安装：UT-S42-23。
+- 部署工作树删除后的安装态身份核对与篡改负例：UT-S42-24。
+- 成功部署后手工回装可检出、经 `deploy --ref` 恢复一致：ST-S42-06。

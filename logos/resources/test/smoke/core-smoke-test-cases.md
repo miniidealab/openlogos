@@ -2349,3 +2349,40 @@
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；**失败不得写 pass**。
 - 判据以 `--format json` 的结构化字段、退出码与命令实际输出为准，不解析人类可读文案（SMOKE-core-264 ③ 的文本标注除外，它本身就是被测输出）。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-263～SMOKE-core-267 均被 runner 覆盖。
+
+## 本机测试环境脚本部署安装态 smoke（SMOKE-core-268～271）
+
+> 这组用例验证经 `openlogos deploy --env test`（`scripts/deploy-local.mjs`）部署后的本机全局安装态，与账本、脚本回执一致，且候选与回滚制品留存可用。依据：部署方案「本机测试环境脚本部署（scripts/deploy-local.mjs）」第二、四～七节，来源提案 local-install-deploy-script（决策 C01～C04）。本组是 `test` 环境的**通用**安装态检查，此后每次部署到 `test` 都会执行；各提案自己的行为用例另列。
+>
+> runner 对本机全局安装态、本仓运行态目录（回执、候选 tarball、回滚制品、账本）**只读**，不安装、不卸载、不改写任何文件；唯一的安装动作是 SMOKE-core-271 在 `mktemp -d` 一次性隔离 prefix 中试装回滚制品，结束即删除。判据以回执、账本（`openlogos env show test --format json`）与实际安装内容的交叉比对为准。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-268 | 登记表部署配置合法且预检零执行 | 本仓 `logos/environments.yaml` 的 `test` 已配置 `deploy: {mode: script, script: scripts/deploy-local.mjs}`；HEAD 含该脚本 | ① `openlogos env check --format json`；② `openlogos env show test --format json`；③ `openlogos deploy --env test --ref HEAD --channel version --dry-run --format json`；记录 ③ 前后本机全局入口 realpath、`--version`、运行态目录 `local-install/` 与账本的 SHA-256 | ① 退出码 0，`errors` 为空；② `environment.deploy.mode` 为 `script`，`environment.deploy.script` 为 `scripts/deploy-local.mjs`；③ 退出码 0、`status=dry-run`，`plan` 中脚本路径为 `scripts/deploy-local.mjs`；快照前后一致（零执行、零写入） | 保留输出。① ② 不成立 → 修正登记表后重跑；③ 不成立（如脚本缺可执行位）→ 回流实现修复，不执行部署 |
+| SMOKE-core-269 | 全局身份与账本、回执一致 | 已经 `openlogos deploy --env test` 成功部署；回执 `logos/.openlogos-runtime/local-install/last-deploy.json` 存在 | ① 读取回执；② `openlogos env show test --format json`；③ 在新子进程中读取 `command -v openlogos` 的 realpath、`openlogos --version`、全局安装目录 `package.json` 版本与 `dist/index.js` 的 SHA-256 | ① 回执 `result=done`、`environment=test`；② `last_deploy.deploy_id` 等于回执 `deploy_id`，`last_deploy.result=done`、`last_deploy.mode=script`，`current_ref` 等于回执 `ref`；③ realpath 等于回执 `entry_realpath` 且位于回执 `prefix` 之下，`--version` 与 `package.json` 版本等于 `candidate_version`，`dist/index.js` 的 SHA-256 等于 `candidate_entry_sha256`；`evidence` 逐项记录比对值，不一致时点名字段 | 停止后续流程。按部署方案第五节：若账本最近部署成功而全局不一致，在部署报告记录偏离，以 `openlogos deploy --env test --ref <含本脚本的提交>` 重新部署；不得手改账本或回执 |
+| SMOKE-core-270 | 候选 tarball 留存且可复算 | 同 SMOKE-core-269 | ① 读取回执 `candidate_tarball.path`；② 计算该文件 SHA-256；③ 解包到一次性目录，读取 `package/package.json` 版本与 `package/dist/index.js` 的 SHA-256 | 文件存在；② 等于 `candidate_tarball.sha256`；③ 版本等于 `candidate_version`，`dist/index.js` 哈希等于 `candidate_entry_sha256` | 停止后续流程。候选缺失或被改动时，以 `openlogos deploy --env test --ref <当前 current_ref>` 重新部署生成新回执与候选 |
+| SMOKE-core-271 | 回滚制品可用 | 同 SMOKE-core-269，且回执 `rollback_artifact` 非 null | ① 计算 `rollback_artifact.path` 的 SHA-256；② 在 `mktemp -d` 隔离 prefix 中安装该制品，从隔离入口执行 `--version`，读取隔离安装目录 `dist/index.js` 的 SHA-256；③ 删除隔离 prefix 并复核本机全局入口与 `--version` 前后不变 | ① 等于 `rollback_artifact.sha256`；② `--version` 等于 `previous_version`，`dist/index.js` 哈希等于 `previous_entry_sha256`；③ 全局不变 | 回滚制品不可用不影响当前安装态，但须在部署报告记录，并在下次部署前确认脚本 ④ 的试装判据；不得以此跳过脚本 ④ |
+
+### 二、执行边界
+
+- 对本机全局 prefix、本仓 `logos/resources/`、本仓运行态目录与账本只读；唯一的写入是一次性解包目录与 SMOKE-core-271 的隔离 prefix，结束即删除。不触碰用户其他仓库（包括 runlogos），不访问 npm registry 以外的远程服务。
+- `OPENLOGOS_SMOKE_ENV` 为 `test`（或未设置）时执行本组用例，每条结果写 `target_environment: "test"`；为其他环境时本组不适用，写显式 `skip` 并注明 `reason: "env-not-test"`。
+- 回执缺失（`test` 从未经脚本部署）时，SMOKE-core-269～271 写显式 `skip` 并携带缺失项；SMOKE-core-271 在回执 `rollback_artifact` 为 null（部署前未全局安装）时写显式 `skip` 并注明原因。有 skip 时不得写 `SMOKE_PASS`。不得标 `reason_code:"platform-unavailable"`。
+
+### 三、追溯与覆盖
+
+- 部署：`core-01-deployment-plan.md`「本机测试环境脚本部署（scripts/deploy-local.mjs）」、「local-install-deploy-script 部署（本机测试环境首次脚本部署）」。
+- 根规范：`spec/environments.md` §2.2、§7.1、§11.2～§11.6。
+- 场景：S42（script 方式）、S41（环境视图）。
+- 仓库内对应用例：UT-S42-19、UT-S42-24、ST-S42-05、ST-S42-06、ST-S42-08。
+- 本组任一用例失败而部署已成功落账时，按部署方案第五节「(c) 成功落账后 smoke 失败」处置：不手工回装旧包，经 `openlogos deploy` 部署修复提交后重跑。
+- 局限：手工安装的包若与回执记录的候选在版本、入口 realpath 与 `dist/index.js` 内容上完全相同，SMOKE-core-269 无法证明安装来源（部署方案第五节）。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-local-install-deploy.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-268～SMOKE-core-271，不得依靠通配发现后无条件 PASS。runner 的项目根、回执路径与 `npm` 可执行文件经参数或环境变量可覆盖，供 UT-S42-24 / ST-S42-06 指向一次性夹具；默认指向本仓与本机。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
+- 判据以 JSON 字段、文件哈希与命令退出码为准，不解析人类可读文案。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-268～SMOKE-core-271 均被 runner 覆盖。
