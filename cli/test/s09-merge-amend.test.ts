@@ -6,7 +6,7 @@
  * 夹具一律为 `mktemp -d` 下 `git init` 的隔离 launched 项目；CLI 用例以真实 `openlogos` 子进程执行。
  * 结果由 OpenLogos reporter 依 it 标题中的 ID 写入 logos/resources/verify/test-results.jsonl。
  */
-import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
@@ -22,6 +22,11 @@ import { applyBaselineClosureBatch } from '../src/lib/baseline-apply.js';
 import { classifyMergeFailureTier, describeMergeFailure, readMergeFailureDiskFacts } from '../src/lib/merge-failure-report.js';
 import { composeOpenLogosMarkdown } from '../src/lib/markdown-section-authority.js';
 import { runChangeLint } from '../src/lib/change-lint.js';
+
+// 本文件用例全部驱动真实子进程（git、CLI 入口、部署脚本 / 合并事务），单独运行单条 0.5～7.4s；全量 verify 与
+// S19 真实 npm pack / install 等重型用例并发时整体放慢 3～4 倍，超过全局 10s 而误报超时（proposal-default-environment
+// loop 1：UT-S42-12、ST-S42-01、UT-S09-442）。超时只放宽本文件，断言不变。
+vi.setConfig({ testTimeout: 60_000 });
 
 afterAll(cleanupFixtureRoots);
 

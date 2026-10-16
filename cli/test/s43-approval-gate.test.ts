@@ -417,6 +417,15 @@ describe('S43 openlogos approve 与审批门 — 单元测试（environment-prom
     const names = ['no-registry', 'registry-without-gates', 'deploy-enabled-without-gates'];
     expect(Object.keys(current)).toEqual(names);
     for (const name of names) {
+      // proposal-default-environment（spec/environments.md §13.1、§13.3）：env show 对配置了 deploy 的环境在 environment 中
+      // 新增 deploy（唯一声明的加法）。先断言其等于登记表经校验的配置，剥离后其余输出仍须与引入前基线逐字一致。
+      for (const step of current[name].steps) {
+        const env = step.stdout?.data?.environment;
+        if (typeof step.args !== 'string' || !step.args.startsWith('env show') || !env || !('deploy' in env)) continue;
+        expect(name, '只有配置了 deploy 的夹具出现 environment.deploy').toBe('deploy-enabled-without-gates');
+        expect(env.deploy).toMatchObject({ mode: 'script', script: `deploy/${env.id}.sh`, plan_section: null });
+        delete env.deploy;
+      }
       // 输出、退出码、账本字节与提案目录文件与引入本提案前（0.16.4）的基线逐字一致
       expect(current[name], `${name} 与引入前基线逐字一致`).toEqual(baseline[name]);
       const text = JSON.stringify(current[name]);

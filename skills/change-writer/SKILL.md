@@ -673,7 +673,7 @@ defaults: []
 - `none`：无需本次用户选择；可能没有影响，也可能已有事实/政策唯一确定。
 - `required`：仍存在必须由用户选择的高影响方案，必须建立或匹配 `source:user` 决定。
 
-部署不在 impacts 重复声明；从 proposal“是否需要部署”派生。需要部署时必须加入 deployment 类用户决定，内容至少覆盖目标环境、部署方式、回滚和成功/smoke 证据。
+部署不在 impacts 重复声明；从 proposal“是否需要部署”派生。需要部署时必须加入 deployment 类决定，内容至少覆盖目标环境、部署方式、回滚和成功/smoke 证据。目标环境可由环境登记表的 `proposal_default_env` 提供（`source: policy`），其余三项须有用户回答或覆盖实际情况的已批准依据，规则见第 3 节「部署决定与提案默认部署环境」。
 
 ### 3. 高影响分类与必问触发
 
@@ -691,13 +691,37 @@ deployment, release, external_commitment, acceptance
 | `data=required` | `category:data, source:user` |
 | `compatibility=required` | `category:compatibility, source:user` |
 | `security_privacy=required` | `category:security_privacy, source:user` |
-| proposal 需要部署 | `category:deployment, source:user` |
+| proposal 需要部署 | `category:deployment, source:user`；目标环境可按下文「部署决定与提案默认部署环境」取登记表默认值（`source:policy`） |
 | `public_release=required` | `category:release, source:user` |
 | `external_commitment=required` | `category:external_commitment, source:user` |
 
-产品目标/成功信号、责任归属/唯一 writer/跨模块契约、验收证据/明确不做范围虽然不在固定 impacts 五类中，出现真实歧义时同样必须进入 unresolved。不得用 `--auto`、recommendation、policy/repository_fact 来源或低风险 defaults 代替 required 的 user 决定。
+产品目标/成功信号、责任归属/唯一 writer/跨模块契约、验收证据/明确不做范围虽然不在固定 impacts 五类中，出现真实歧义时同样必须进入 unresolved。不得用 `--auto`、recommendation、policy/repository_fact 来源或低风险 defaults 代替 required 的 user 决定。唯一例外是部署决定中的目标环境与已有已批准依据的部署事项，见下文。
 
 本地部署与公开发布必须分开：确认安装到本机或生产环境，不等于允许 npm publish、Git tag、GitHub Release、官网开放或 push；反向亦然。
+
+#### 部署决定与提案默认部署环境（proposal-default-environment）
+
+登记表 `logos/environments.yaml` 顶层的 `proposal_default_env` 是用户事先做出的部署目标决定（D15）。proposal 需要部署时按以下步骤形成 deployment 决定：
+
+1. **先判断是否需要部署**：按变更内容判断，默认值不参与。纯文档、纯规格类变更仍判为无需部署。
+2. **读结构化事实**（只读、不要求活跃提案、不进入部署前置检查）：先执行 `openlogos env list --format json` 取得 `proposal_default_env`；目标环境确定后再执行 `openlogos env show <id> --format json`，取 `environment.deploy`（该环境配置了 `deploy` 时出现，即登记表实际引用：`mode`、`script`、`provider`、`workflow`、`trigger_script`、`status_script`、`plan_section` 等）、`current_ref`，以及配置了门禁时的 `promote_from`、`require_approval`。只用这些 JSON 字段，不解析登记表原文；`environment.deploy` 不存在即该环境未配置 `deploy`。
+3. **目标环境**（按顺序取第一个成立的）：
+   - 用户在本次需求中明确说了目标环境，或明确说「这次不部署」：按用户原话，`source: user`；
+   - JSON 含 `proposal_default_env`：目标环境取该值，`source: policy`，reason 写明「登记表 proposal_default_env」，**不再询问目标环境**；
+   - 无该字段、无登记表，或命令报 `ENV_REGISTRY_INVALID`：维持必问（登记表非法时同时提示用户先修复）。
+   有登记表时，proposal「部署影响」的「影响环境」写环境 id。
+4. **部署方式、回滚、smoke 证据逐项判断**。依据只认已合并规格与结构化配置（它们合并时已经过 plan-exit 人工批准）；本提案自己新写或要实质修改的部署方案、smoke 命令**不算依据**，该项视为缺依据：
+
+   | 事项 | 有依据（可免问）的条件 | 必须提问的情况 |
+   |---|---|---|
+   | 部署方式 | `environment.deploy.mode` 为 script：`environment.deploy.script` 所指受保护脚本；为 ci：`environment.deploy.workflow`（或 `trigger_script` / `status_script`）所指受保护工作流或脚本；为 agent：`environment.deploy.plan_section` 所写标题在已合并部署方案（`logos/resources/prd/3-technical-plan/3-deployment/`）中有同名章节；`environment.deploy` 不存在：已合并部署方案有该环境的部署步骤 | agent 方式的 `environment.deploy.plan_section` 在已合并部署方案中没有同名章节；未配置 `deploy` 且已合并方案没有该环境的部署步骤 |
+   | 回滚 | `environment.deploy` 存在且 `current_ref` 非 null：本次部署成功后可用 `openlogos deploy --rollback` 回到该版本；`environment.deploy` 存在而 `current_ref` 为 null：已合并部署方案写明首次部署失败处置；`environment.deploy` 不存在：已合并部署方案有该环境的实际回滚或失败处置步骤 | 配置了 `deploy` 但 `current_ref` 为 null 且没有首次部署失败处置；**未配置 `deploy`（即使 `current_ref` 非 null）且已合并方案没有该环境的回滚步骤**——`openlogos deploy` 对未配置 `deploy` 的环境报 `DEPLOY_NOT_CONFIGURED`，不得以 `current_ref` 推导 CLI 回滚 |
+   | smoke 证据 | `logos/logos.config.json` 配置了 `smoke.command`，或存在默认 dispatcher `scripts/run-smoke.js`：以 `openlogos smoke --env <id>` 实际运行的结果为证据 | 两者都没有（smoke 只会汇总已有结果，不产生本次新结果） |
+
+   有依据的项在 decision 的 reason 中逐项写明引用（`environment.deploy` 中的实际引用、对应的已合并部署方案章节标题、`current_ref` 值、smoke 命令来源）；缺依据的项**合并为一个问题**，按第 5 节「一次只问一个决定」提问，回答以 `source: user` 记录。四项都有依据时整条部署决定零提问。
+5. **门禁提示**（取自 `env show` 的 `require_approval`、`promote_from`）：目标环境 `require_approval` 为 true 时，在「部署影响」注明部署会停在等待审批；配置了 `promote_from` 时，注明需先在上游以同一 commit 通过 smoke，否则部署停在晋级未满足。不得为通过门禁而改选环境。
+6. **授权边界不变**：默认值不构成部署执行授权，也不构成公开发布授权（release 仍单独判定）。
+7. **不得改动该字段**：change-writer 不写入、不修改、不删除 `proposal_default_env`；用户想设置或修改默认环境时，提示其直接编辑登记表（不需立案）。
 
 ### 4. 构造依赖有序的未决队列
 
@@ -739,7 +763,7 @@ proposal 是唯一事实源。每次事实扫描、用户回答或队列变化�
 1. impacts 结构完整合法；
 2. 每个 required 类别都有匹配 `source:user` 决定；
 3. 每个尚未满足的 required 类别恰有一个内容完整的同类别 unresolved；
-4. 需要部署时已有 deployment/user 决定；
+4. 需要部署时已有完整的 deployment 决定：目标环境来自用户回答或登记表 `proposal_default_env`，部署方式、回滚与 smoke 证据来自用户回答或按第 3 节「部署决定与提案默认部署环境」判定为有依据；
 5. unresolved 为空且 decisions 无冲突；
 6. proposal 已明确目标、范围、契约、部署影响、回滚和验收证据；
 7. 可逆实现细节已记录 defaults；
@@ -765,6 +789,7 @@ OpenLogos 定义 proposal 结构、完成谓词、CLI JSON、fail-closed 和测�
 - [ ] 每个 required 类别均有匹配 user 决定或当前 unresolved。
 - [ ] 每个未满足 required 类别恰有一个同类别完整 unresolved；不存在 required+空队列或重复类别项。
 - [ ] deployment 与 release 分开判定。
+- [ ] 需要部署且登记表有 `proposal_default_env` 时，目标环境未向用户重复询问；部署方式、回滚、smoke 证据逐项核对了依据，表中「必须提问的情况」均未被免问；未改动 `proposal_default_env`。
 - [ ] CXX 唯一、依赖存在且无环；队列已稳定拓扑排序，队首依赖全部已确认。
 - [ ] 每个 unresolved 有影响、推荐和理由，当前仅展示一项。
 - [ ] complete 时 unresolved 为空且必选类别全满足。

@@ -16,6 +16,7 @@
 
 ```yaml
 schema_version: 1
+proposal_default_env: test   # 可选：需要部署的提案默认部署到哪个环境（§13）
 environments:
   - id: test
     name: 测试环境
@@ -37,6 +38,7 @@ environments:
 |---|---|---|---|
 | `schema_version` | 是 | 整数 | 只接受 `1` |
 | `environments` | 是 | 数组 | 可为空数组 |
+| `proposal_default_env` | 否 | 字符串 \| null | 提案默认部署环境（来源变更 proposal-default-environment，§13）：必须等于登记表中某个环境的 `id`（不接受 alias，不做大小写归一）；缺省或 `null` 表示未配置；对所指环境的其他配置不加限制 |
 | `environments[].id` | 是 | 字符串 | `^[a-z0-9][a-z0-9-]*$`，全表唯一 |
 | `environments[].name` | 是 | 字符串 | 非空，显示名 |
 | `environments[].tier` | 是 | 字符串 | `dev` \| `test` \| `staging` \| `prod` |
@@ -49,9 +51,9 @@ environments:
 | `environments[].promote_from` | 否 | 字符串 | 晋级上游（来源变更 environment-promotion-approval，§12.1）：必须等于登记表中另一个环境的 `id`（不接受 alias），不得等于自身，各环境的 `promote_from` 不得成环；只在配置了 `deploy` 的环境上合法；须以普通键名书写（§12.1） |
 | `environments[].require_approval` | 否 | 布尔 | 审批门禁（§12.1）：为 `true` 时部署须有未使用的审批；只在配置了 `deploy` 的环境上合法；须以普通键名书写（§12.1） |
 
-- **未知字段**（顶层或环境项内，含 `deploy` 内未知的子字段）只产生 warning `ENV_UNKNOWN_FIELD`，不报错。`deploy` 本身不再是未知字段，按 §11.2 校验；`promote_from`、`require_approval` 自 environment-promotion-approval 起不再是未知字段，按 §12.1 校验。
+- **未知字段**（顶层或环境项内，含 `deploy` 内未知的子字段）只产生 warning `ENV_UNKNOWN_FIELD`，不报错。`deploy` 本身不再是未知字段，按 §11.2 校验；`promote_from`、`require_approval` 自 environment-promotion-approval 起不再是未知字段，按 §12.1 校验。顶层 `proposal_default_env` 自 proposal-default-environment 起不再是未知字段，按 §13.2 校验。
 - **`deploy` 不承载可执行命令**（决策 D13）：只允许引用仓库内脚本路径与 CI 工作流名，以及参数、超时等非执行性配置；出现命令字符串类字段（如 `run`、`command`、`shell`）按 `ENV_FIELD_INVALID` 拒绝，不按未知字段放行。
-- **校验失败**（YAML 无法解析、顶层不是映射、`schema_version` 不为 1、必填字段缺失、字段类型或取值非法、id / alias 冲突、`deploy` 不合法、`promote_from` 引用非法或成环）统称 `ENV_REGISTRY_INVALID`，并在 `env check` 中逐条点名（`ENV_FIELD_INVALID`、`ENV_DUPLICATE_ID_OR_ALIAS`）。登记表存在但非法时 **fail-closed**：`deploy-done`、`smoke`、`deploy` 与 `approve` 拒绝执行（退出码 1，不写 marker、不写账本、不执行任何部署），不回落为「未启用」；`status` 不崩溃，输出 `environment_registry_error`（见 §7.3）。
+- **校验失败**（YAML 无法解析、顶层不是映射、`schema_version` 不为 1、必填字段缺失、字段类型或取值非法、id / alias 冲突、`deploy` 不合法、`promote_from` 引用非法或成环、`proposal_default_env` 非法）统称 `ENV_REGISTRY_INVALID`，并在 `env check` 中逐条点名（`ENV_FIELD_INVALID`、`ENV_DUPLICATE_ID_OR_ALIAS`）。登记表存在但非法时 **fail-closed**：`deploy-done`、`smoke`、`deploy` 与 `approve` 拒绝执行（退出码 1，不写 marker、不写账本、不执行任何部署），不回落为「未启用」；`status` 不崩溃，输出 `environment_registry_error`（见 §7.3）。
 
 ### 2.3 与 `deployment_gates.<module>.environments` 的关系
 
@@ -243,8 +245,8 @@ smoke 记录的 `verified` 为 `true` 当且仅当同时满足：`result=pass`�
 
 ### 7.2 命令
 
-- `openlogos env list`：列出全部环境的 EnvView（另含 `aliases`）；登记表不存在时返回空数组，退出码 0。
-- `openlogos env show <id|alias>`：单个环境的登记表配置、EnvView 字段与最近 20 条历史（新到旧）；登记表不存在报 `ENV_REGISTRY_NOT_FOUND`，解析不到报 `ENV_UNKNOWN`。
+- `openlogos env list`：列出全部环境的 EnvView（另含 `aliases`）；登记表不存在时返回空数组，退出码 0。登记表配置了 `proposal_default_env` 时，data 顶层另输出 `proposal_default_env`（环境 id），文本模式在该环境行后标注「（提案默认）」/「(proposal default)」；未配置时不输出该键（§13.3）。
+- `openlogos env show <id|alias>`：单个环境的登记表配置、EnvView 字段与最近 20 条历史（新到旧）；该环境配置了 `deploy` 时，JSON 的 `environment` 另含经校验的 `deploy` 配置（§11.2 字段，不含命令与密钥值，来源变更 proposal-default-environment，§13.3）；登记表不存在报 `ENV_REGISTRY_NOT_FOUND`，解析不到报 `ENV_UNKNOWN`。
 - `openlogos env check [<id|alias>]`：校验格式、id / alias 冲突、`deployment_gates` 引用、`secrets` 声明的变量名在当前进程环境中是否存在（只报名字与是否存在，不读取、不输出值）；加 `--probe` 时对指定范围内环境的 `health` 与 `version` 发 HTTP GET（超时 5 秒，不跟随到非 http(s) 协议）；不加 `--probe` 不发起任何网络请求。登记表不存在报 `ENV_REGISTRY_NOT_FOUND`。存在任一 error 时退出码 1。
 - 三个命令都只读，不要求活跃提案，都支持 `--format json`（合同见 `spec/cli-json-output.md`）。
 
@@ -258,7 +260,7 @@ smoke 记录的 `verified` 为 `true` 当且仅当同时满足：`result=pass`�
 |---|---|---|---|
 | `ENV_REGISTRY_NOT_FOUND` | error | `env show` / `env check` / `deploy` / `approve` 时登记表不存在 | 1 |
 | `ENV_REGISTRY_INVALID` | error | 登记表存在但非法（§2.2） | 1 |
-| `ENV_FIELD_INVALID` | error | `env check` 中单个字段非法（含 `deploy` 子字段，§11.2；`promote_from` / `require_approval`，§12.1） | 1 |
+| `ENV_FIELD_INVALID` | error | `env check` 中单个字段非法（含 `deploy` 子字段，§11.2；`promote_from` / `require_approval`，§12.1；顶层 `proposal_default_env`，§13.2，此时不带 `environment`） | 1 |
 | `ENV_DUPLICATE_ID_OR_ALIAS` | error | id / alias 不区分大小写冲突 | 1 |
 | `ENV_GATE_REFERENCE_UNKNOWN` | error | `deployment_gates.<module>.environments` 引用未登记环境 | 1 |
 | `ENV_SECRET_MISSING` | error | `secrets` 声明的变量名在当前进程环境中不存在 | 1 |
@@ -310,12 +312,13 @@ smoke 记录的 `verified` 为 `true` 当且仅当同时满足：`result=pass`�
 
 ## 10. 追溯
 
-- 需求：`core-01-requirements.md`「S41: 环境登记与查询」「S42: 按环境执行部署与回滚」「S43: 环境晋级与部署审批」、S21、S19、S11 验收条件。
+- 需求：`core-01-requirements.md`「S41: 环境登记与查询」「S42: 按环境执行部署与回滚」「S43: 环境晋级与部署审批」（S41 含提案默认部署环境的验收条件）、S21、S19、S11 验收条件。
 - 功能规格：§2.93、§2.94、§2.95、§2.11。
+- Skill：`skills/change-writer/SKILL.md`（澄清协议的部署触发项）、`skills/deployment-designer/SKILL.md`（Step 5.1）。
 - 架构：「五十三、环境登记表与部署账本」「五十四、环境部署执行器」「五十五、环境晋级与审批门」。
 - 场景：`core-S41-environment-registry.md`、`core-S42-environment-deploy.md`、`core-S43-environment-promotion-approval.md`、`core-S21-deploy-done-marker.md`、`core-S19-smoke-gate.md`、`core-S11-status-progress.md`。
-- 决策：`core-D13-deploy-runs-only-protected-scripts.md`、`core-D14-deploy-approval-human-only.md`。
-- 测试：`core-S41-test-cases.md`、`core-S42-test-cases.md`、`core-S43-test-cases.md`、`core-S09-test-cases.md`、`core-S21-test-cases.md`、`core-S19-test-cases.md`、`core-S11-test-cases.md` 中 environment-registry、environment-deploy 与 environment-promotion-approval 新增用例。
+- 决策：`core-D04-deployment-plan-user-decision.md`（提案默认部署环境例外）、`core-D13-deploy-runs-only-protected-scripts.md`、`core-D14-deploy-approval-human-only.md`、`core-D15-proposal-default-environment.md`。
+- 测试：`core-S41-test-cases.md`、`core-S42-test-cases.md`、`core-S43-test-cases.md`、`core-S09-test-cases.md`、`core-S21-test-cases.md`、`core-S19-test-cases.md`、`core-S11-test-cases.md` 中 environment-registry、environment-deploy、environment-promotion-approval 与 proposal-default-environment 新增用例。
 
 ## 11. 部署执行（`openlogos deploy`）
 
@@ -465,3 +468,52 @@ openlogos approve --env <id|alias> --ref <revision> [--note <文字>] [--format 
 
 - 账本只新增 `approval` 记录类型与 deploy 记录的三个可选字段，旧记录原样有效；0.16.4 及更早的读取方把审批记录计为坏行并跳过。
 - 已写了这两个字段的项目此前只得 `ENV_UNKNOWN_FIELD` 警告，升级后开始生效（§2.2 预留时的约定语义）。
+
+## 13. 提案默认部署环境
+
+> 来源变更：proposal-default-environment（决策 C01～C09，D15）。功能规格 §2.93.1、§2.93.6、场景 S41「提案默认部署环境（proposal-default-environment）」与 `spec/cli-json-output.md`「`env list`（data）」引用本节，不另立口径。
+
+### 13.1 语义
+
+- 登记表顶层 `proposal_default_env: <环境 id>` 表示「需要部署的提案未另行指定目标环境时，默认部署到这个环境」。它是用户事先做出的部署目标决定（D15），只决定**部署到哪里**：
+  - 不决定提案是否需要部署——是否部署仍由 change-writer 按变更内容判断（决策 C02）；
+  - 不决定部署方式、回滚与 smoke 证据——这三项仍须有用户确认的依据（§13.4）；
+  - 不构成部署执行授权或公开发布授权——执行授权仍按半自动 / `--auto` 的既有规则，发布另以 `category: release` 判定；
+  - 不改变晋级与审批：所指环境配置了 `promote_from` / `require_approval` 时，部署照常经过 §12.3、§12.4 的检查。
+- 未配置该字段的项目，所有命令的输出、退出码与写入与引入前逐字一致；唯一的加法是 `env show --format json` 对配置了 `deploy` 的环境在 `environment` 中输出 `deploy`（§13.3），与是否配置本字段无关。
+
+### 13.2 校验
+
+- 缺省或 `null`：未配置。
+- 配置时必须为字符串，且与登记表中某个环境的 `id` 完全相等（不接受 alias，不做大小写归一），与 `promote_from` 的引用口径一致（§12.1）。
+- 对所指环境的其他配置不加限制：可以未配置 `deploy`，也可以配置 `promote_from` / `require_approval`（决策 C05）。
+- 不要求以普通键名书写：该字段不是门禁策略来源，不参与 guard 的文本识别（§9）。
+- 任一不满足时 `env check` 报 `ENV_FIELD_INVALID`（`field=proposal_default_env`，不带 `environment`；写成 alias 或大小写不一致时，原因中提示应写的环境 id），登记表按非法处理（§2.2）：`deploy-done`、`smoke`、`deploy`、`approve` fail-closed，`status` 输出 `environment_registry_error`。
+
+### 13.3 输出
+
+- `env list --format json`：配置时 data 顶层输出 `proposal_default_env`（字符串）；未配置时不输出该键。
+- `env list` 文本模式：在该环境行后标注「（提案默认）」/「(proposal default)」，文案走 i18n。
+- `env show --format json`：该环境配置了 `deploy` 时，`environment` 对象新增 `deploy`，内容为经 §11.2 校验后的配置（`mode`、`script`、`args`、`workdir`、`timeout_sec`、`provider`、`workflow`、`workflow_ref`、`inputs`、`poll_interval_sec`、`trigger_script`、`status_script`、`plan_section`，未适用的字段为 null 或默认值）；未配置 `deploy` 时不输出该键。它让提案阶段无需解析登记表原文即可取得实际部署引用（proposal delta-r1 F1）。`deploy` 按 D13 不承载命令，`secrets` 仍只有变量名，输出不含任何密钥值。
+- `env show` 不输出 `proposal_default_env`；`env check` 的 data 与 `status` 不新增字段（决策 C06）。
+
+### 13.4 与 change-writer 的关系
+
+- 提案需要部署时，change-writer 先执行只读命令 `openlogos env list --format json` 取得 `proposal_default_env`，目标环境确定后再执行 `openlogos env show <id> --format json` 取得 `environment.deploy`、`current_ref`、`promote_from`、`require_approval`；两者都只读、不要求活跃提案、不进入部署前置检查。以结构化输出为准，不解析登记表原文。
+- 目标环境：用户在本次需求中明确指定（含「这次不部署」）时按用户原话（`source: user`）；否则配置了 `proposal_default_env` 时取该值（`source: policy`），不再询问；未配置、无登记表或登记表非法时维持既有必问。有登记表时提案「影响环境」写环境 id。
+- 部署方式、回滚与 smoke 证据逐项判断，只认已合并规格与结构化配置（合并时已经过人工批准），本提案自己新写的部署方案不算；只有依据覆盖实际情况时才免问，缺项合并为一次提问。判据（权威写在 `skills/change-writer/SKILL.md` 澄清协议）：
+  - 部署方式：`environment.deploy.mode` 为 script / ci 时以 `environment.deploy` 中的 `script`、`workflow`、`trigger_script`、`status_script` 所指受保护脚本或工作流为依据；为 agent 时 `environment.deploy.plan_section` 所写标题须在已合并部署方案中有同名章节；`environment.deploy` 不存在（未配置 `deploy`）时已合并部署方案须有该环境的部署步骤。
+  - 回滚：`environment.deploy` 存在且 `current_ref` 非 null 时以 `openlogos deploy --rollback` 回到该版本为依据；`environment.deploy` 存在而 `current_ref` 为 null 时须有已合并的首次部署失败处置；`environment.deploy` 不存在时 `openlogos deploy` 不适用（`DEPLOY_NOT_CONFIGURED`），无论 `current_ref` 如何，都须引用已合并部署方案中该环境的回滚或失败处置步骤。
+  - smoke 证据：配置了 `smoke.command` 或存在默认 dispatcher `scripts/run-smoke.js` 时，以 `openlogos smoke --env <id>` 实际运行的结果为依据。
+  - 本提案要实质修改其中某项时，该项视为缺依据。
+- 所指环境 `require_approval` 为 true 时，提案「部署影响」注明部署会停在等待审批；配置了 `promote_from` 时注明需先在上游以同一 commit 通过 smoke。
+
+### 13.5 修改方式
+
+- 该字段不受 guard 保护（决策 C03）：登记表照旧适用内置默认豁免（§9），人或 RunLogos 可直接编辑、不需立案。它不改变「已配置门禁的登记表不适用豁免」的既有规则（§9，environment-promotion-approval 决策 C11）：任一环境配置了 `promote_from` / `require_approval` 时，登记表整体仍按门禁策略来源保护。
+- AI 不得自行写入、修改或删除该字段（决策 C08）：deployment-designer 产出或更新登记表时只向用户说明其作用，由用户明确指定环境或选择不设；change-writer 填写提案时不改动它。
+
+### 13.6 兼容性
+
+- 0.16.5 及更早版本读取写有该字段的登记表时，只多一条 `ENV_UNKNOWN_FIELD` 警告（`field=proposal_default_env`），其余行为不变；change-writer 旧规则仍逐案询问目标环境。
+- 账本格式与记录字段不变，无数据迁移。

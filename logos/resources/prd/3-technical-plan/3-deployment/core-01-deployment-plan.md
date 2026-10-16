@@ -4658,3 +4658,81 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 - 场景：S43、S42、S41、S21、S09。
 - 测试：见「构建与 Tarball 冻结」第 1 条；安装态 smoke：SMOKE-core-258～SMOKE-core-262。
 - 来源提案：environment-promotion-approval（决策 C01～C11，D14）。
+
+## OpenLogos 0.16.6 发布方案（提案默认部署环境，本地全局）
+
+### 部署目标与授权边界
+
+把登记表顶层字段 `proposal_default_env` 的校验与 `env list` 输出，以及配套改动的 change-writer / deployment-designer 两个 Skill（来源提案 `proposal-default-environment`，功能规格 §2.93.1、§2.93.6）装进本机全局安装态。change-writer 的新规则只有在全局 `openlogos` 升级、本仓执行 `openlogos sync` 后，才会在真实填写提案时生效。
+
+- **目标环境**：本机 npm 全局 prefix（计划时为 `/opt/homebrew`，入口 `/opt/homebrew/bin/openlogos`，当前为本机全局 `0.16.5`）。
+- **授权来源**：用户 2026-10-15 对提案决策 C04 的回答「要，按推荐方案发布 0.16.6 到本机全局」（`category: deployment`, `source: user`）；全自动运行中以本次 `next --auto` 的 deliver-entry 门 `gate_auto_passed=true` 为执行依据。本仓没有登记表，本方案不涉及晋级与审批门禁。
+- **本仓 sync**：本次改动 change-writer 与 deployment-designer 两个 Skill，本仓执行一次 `openlogos sync`，使本仓托管的 Skill 副本与新装的全局包同源。
+- 本方案**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`；merge、verify、部署执行、smoke、archive 仍按项目执行门。**不改写其他仓库**（包括 runlogos），不在其项目根运行任何命令。
+- **版本号边界**：0.16.6 只作本机全局版本，不进入 npm registry；后续公开发布另立 release 提案。
+
+### 部署前置与冻结事实
+
+1. 本提案 delta 已 merge，`[code]` 切片实现完成，`openlogos verify` PASS。
+2. **版本事实复核**：读取 `cli/package.json` 当前版本（计划时为 `0.16.5`），候选为下一 patch `0.16.6`；执行 `npm view @miniidealab/openlogos@0.16.6 version`，应返回 E404。若实施前已有其他提案升版或 registry 已存在候选版本号，候选改为「当时版本与 registry 最高版本中较大者的下一 patch」，回滚版本改为「当前本机全局版本」，并在部署记录写明实际值。
+3. **冻结当前本机全局**：记录 `command -v openlogos`、入口 realpath、`npm prefix -g`、`openlogos --version`；实际值在部署前重新读取，不在测试或脚本中硬编码。
+4. **先有回滚制品，再动版本号**：
+   1. **来源**：在 `$(npm prefix -g)/lib/node_modules/@miniidealab/openlogos` 执行 `npm pack --ignore-scripts`，产出 `cli/rollback/miniidealab-openlogos-0.16.5.tgz`。**禁止**从当前工作树打包。
+   2. **内容身份**：解包后逐文件计算 SHA-256，与全局安装目录中同名文件比对，全部一致；另确认包内 `skills/change-writer/SKILL.md` 不含 `proposal_default_env`（0.16.5 不认识该字段）。
+   3. **旧行为验证**：在一次性隔离 prefix 中试装该制品：`--version` 为 `0.16.5`；对写有 `proposal_default_env` 的登记表执行 `env check --format json`，`warnings` 含 `ENV_UNKNOWN_FIELD`（`field=proposal_default_env`）。
+   4. **记录**：来源安装路径、制品字节数与 SHA-256、内容比对结果与旧行为证据写入部署记录。任一项不满足即判发布前检查失败，不得进入升版。
+
+### 0.16.6 版本与制品身份
+
+执行 `node cli/scripts/bump-version.mjs 0.16.6`，由脚本一次更新全部版本载体（以脚本 `VERSION_CARRIERS` 为准）与 `cli/src/lib/local-release-candidate.ts` 的候选 / 回滚版本（→ `0.16.6` / `0.16.5`），并调用既有生成器重算 `cli/asset-manifest.json`。asset-manifest 的变化只能由生成器写出，**禁止手改**；预期 change-writer、deployment-designer 两个 Skill 与随包规范（`spec/environments.md`、`spec/cli-json-output.md`）的 hash 变化。
+
+在 `CHANGELOG.md` 的 `## [Unreleased]` 之后新增 `## [0.16.6]` 条目，注明「本机全局发布（未发布到 npm）」，不改既有条目：Added（登记表 `proposal_default_env`、`env list` 输出该字段）、Changed（change-writer 需要部署时以默认环境为目标、不再逐案询问目标环境，部署方式 / 回滚 / smoke 依据不全时只问缺项；deployment-designer 不自行设置默认环境）、升级提示（已写了该字段的登记表此前只得 `ENV_UNKNOWN_FIELD` 警告，升级后开始校验；指向不存在的环境、alias 或非字符串值会使登记表判为非法）。
+
+### 构建与 Tarball 冻结
+
+1. 升版后复跑 `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`，必须全绿，范围包括 `core-S41-test-cases.md` 中 UT-S41-20～UT-S41-23、ST-S41-06，以及既有 S41 全部用例；`npm run build` 通过。
+2. 执行真实 `npm pack`，产出 `cli/miniidealab-openlogos-0.16.6.tgz`，记录字节数与 SHA-256，并在部署记录中标为本次**唯一候选制品**。之后的隔离验证、全局安装与回滚演练都只用这个文件。
+3. 解包核对制品带有本次行为：`--version` 与包内 asset-manifest 为候选版本且自洽；包内 `skills/change-writer/SKILL.md` 与 `skills/deployment-designer/SKILL.md` 与源文件一致且含 `proposal_default_env` 规则。
+
+### 隔离 Prefix 行为矩阵
+
+用 `mktemp -d` 建一次性 npm prefix，安装固定 tarball，从绝对入口执行。全部项目态都在一次性临时 git 项目内构造，**不得触碰本机全局 prefix、本仓活跃提案与用户其他仓库**，不触达任何真实服务。
+
+| 类别 | 必须证明 |
+|---|---|
+| candidate identity | version、entry realpath、package / asset hash 全部来自固定 tarball，无 workspace link |
+| 默认环境校验 | `proposal_default_env: test`（已登记 id）时 `env check` 无 error、无 `ENV_UNKNOWN_FIELD`；指向配置了 `promote_from` / `require_approval` 的环境同样通过；指向未登记环境、alias、大小写不一致的 id 或非字符串时 `ENV_FIELD_INVALID`，`deploy-done --env` 与 `smoke --env` 按登记表非法拒绝 |
+| `env list` / `env show` 输出 | 配置时 `env list` data 顶层 `proposal_default_env` 为该 id，文本模式含「（提案默认）」标注；未配置时 data 不含该键；`env show` 对配置了 `deploy` 的环境输出 `environment.deploy`（实际引用），对未配置的环境不输出该键 |
+| 未配置零回归 | 无登记表、有登记表但未配置该字段两种夹具：`env` / `status` / `deploy-done` / `smoke` 的退出码与关键字段和 0.16.5 回滚制品上同一夹具的输出一致 |
+| 全局零触碰 | 矩阵执行前后 `command -v openlogos` 指向同一路径，`--version` 逐字一致 |
+| 回滚演练 | 在隔离 prefix 用 `cli/rollback/miniidealab-openlogos-0.16.5.tgz` 回装（SHA-256 与冻结记录一致），`--version` 回到 `0.16.5`，含该字段的登记表回到 `ENV_UNKNOWN_FIELD` 警告 |
+
+### 本机全局部署与本仓 sync
+
+隔离矩阵与回滚演练通过后，按以下顺序执行：
+
+1. 用**同一** tarball 执行 `npm install -g <绝对路径>/cli/miniidealab-openlogos-0.16.6.tgz` 覆盖本机全局，在新 shell 中复核 entry realpath、`--version`、package.json、asset-manifest 全部同源于候选版本。
+2. 在本仓项目根执行 `openlogos sync`，随后逐字节比对：`logos/skills/change-writer/SKILL.md`、`logos/skills/deployment-designer/SKILL.md` 与全局包内同名 Skill 一致。sync 若再次向 `.claude/settings.json` 重复加入 SessionStart hook，按既有先例（提交 `bf61f6f`）还原。sync 产生的托管文件变化随部署记录一起由流程提交，不 push。
+3. 写部署记录 `logos/resources/verify/deployment-report.md`（追加一节）：部署身份（版本、tarball 路径与 SHA-256、入口 realpath）；回滚入口（`cli/rollback/miniidealab-openlogos-0.16.5.tgz` 的路径与 SHA-256）；源码回归证据与安装态证据分开写。
+4. 经 `openlogos deploy-done` 受控落标（本仓无登记表，不带 `--env`），再按流程进入 smoke（SMOKE-core-263～SMOKE-core-267）。
+
+### 失败处置与回滚边界
+
+1. 发布前检查、构建、隔离矩阵或回滚演练任一失败：不安装全局、不执行本仓 sync、不写 `DEPLOY_DONE`，输出失败点与修复建议；删除隔离 prefix 即可回滚隔离环境。
+2. 已全局安装后发现问题：用 `cli/rollback/miniidealab-openlogos-0.16.5.tgz` 执行 `npm install -g`（绝对路径）回装，新 shell 复核 `--version` 为 `0.16.5`；若已执行本仓 sync，用回装后的 0.16.5 再执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件。
+3. 本次无数据迁移，账本格式不变。回装 0.16.5 后，登记表中的 `proposal_default_env` 恢复为 `ENV_UNKNOWN_FIELD` 警告，change-writer 回到每案询问目标环境。
+4. 回滚不以手改 asset-manifest 作为修复手段，也不以放宽 verify / smoke 判定「让矩阵变绿」。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`。
+- 不改写其他仓库（包括 runlogos），不在其项目根运行任何命令（含 `openlogos sync`）。
+- 不在本仓配置 `logos/environments.yaml` 或 `proposal_default_env`；本仓自身的发布仍按本方案执行。
+
+### 追溯
+
+- 功能规格：§2.93.1、§2.93.6。
+- 根规范：`spec/environments.md` §2.2、§7.2、§13；`spec/cli-json-output.md`「`env list`（data）」。
+- 场景：S41。
+- 测试：见「构建与 Tarball 冻结」第 1 条（含 UT-S41-23）；安装态 smoke：SMOKE-core-263～SMOKE-core-267。
+- 来源提案：proposal-default-environment（决策 C01～C09，D15）。

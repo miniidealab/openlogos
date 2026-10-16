@@ -1,6 +1,6 @@
 {
   "schema": "openlogos/asset-manifest@1",
-  "version": "0.16.5",
+  "version": "0.16.6",
   "planContractVersion": "1.4.0",
   "skills": [
     {
@@ -9,7 +9,7 @@
     },
     {
       "path": "skills/change-writer/SKILL.md",
-      "sha256": "74d919e9c9717894d9726b01cd91a476858c6608b6fef7fe87163ac5cd563e39"
+      "sha256": "6041eae6dfd82b2d1e47694e916f8ae3d34960f7300564bb3c25c5e2aaa91778"
     },
     {
       "path": "skills/change-writer/SKILL.en.md",
@@ -29,7 +29,7 @@
     },
     {
       "path": "skills/deployment-designer/SKILL.md",
-      "sha256": "cd6fd7b981c8abba15d170e00c90f25ed6a132b0994effb637d9b87e288773c7"
+      "sha256": "111156d4728c990ab8bf4df755eaf90e833087f2e4d099d78a9afdc3de82b121"
     },
     {
       "path": "skills/deployment-executor/SKILL.md",
@@ -47,7 +47,7 @@
   "templates": [
     {
       "path": "dist/i18n.js",
-      "sha256": "6c61e21d3bd894b1ff60c2a693843ee9c38d1ec771a9ba1bfa1efc0e63868a00"
+      "sha256": "a39211dbffbd01db5d982f70012162c5f4bb0aecceff57a76081a57f01fd8afb"
     }
   ],
   "schemas": [
@@ -71,7 +71,7 @@
   "plugins": [
     {
       "path": "claude-plugin-template/.claude-plugin/plugin.json",
-      "sha256": "f17fb5f936098d3e956d40e36208aded2e893d9c70daea3d15780be4b6203d74"
+      "sha256": "843690181d3597eb023c1b855b326314a1495542db6a7e5ab040dd0d12e65d71"
     },
     {
       "path": "claude-plugin-template/bin/guard-check",
@@ -99,7 +99,7 @@
     },
     {
       "path": "claude-plugin-template/skills/deployment-designer/SKILL.md",
-      "sha256": "8373e5789c8df3aebe32c5d6c9954bf5d023e5f4eff3e3ee121e6e62cdbd7920"
+      "sha256": "638a08ae6da2cc5cb8648d9b42dfbc54a0f19c3ba2fd537555c6e6b9deec5466"
     },
     {
       "path": "claude-plugin-template/skills/deployment-executor/SKILL.md",
@@ -114,5 +114,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "5d7ec398a2051775bbc525de242e267d8e2a0e78a7f407c389bdcf9231087993"
+  "payloadHash": "5f4bd8c395f2cef3c6474afe8b04844e167f63dccbfdcde7a5f7045adfd8d01e"
 }

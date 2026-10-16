@@ -46,8 +46,10 @@ interface ProbeOut {
 }
 
 function issueMessage(locale: Locale, issue: RegistryIssue): string {
+  // 顶层字段（如 proposal_default_env，spec/environments.md §13.2）没有所属环境，使用不带环境名的文案
+  const key = issue.code === 'ENV_FIELD_INVALID' && issue.environment === undefined ? 'env.issue.ENV_FIELD_INVALID_TOP' : `env.issue.${issue.code}`;
   const where = issue.environment ? ` (${issue.environment})` : '';
-  return t(locale, `env.issue.${issue.code}`, {
+  return t(locale, key, {
     environment: issue.environment ?? '', field: issue.field ?? '', value: issue.value ?? '', reason: issue.reason, where,
   });
 }
@@ -69,7 +71,7 @@ function fail(command: string, format: OutputFormat, code: string, message: stri
   process.exitCode = 1;
 }
 
-type Loaded = { environments: EnvironmentDef[]; warnings: RegistryIssue[] };
+type Loaded = { environments: EnvironmentDef[]; warnings: RegistryIssue[]; proposalDefaultEnv: string | null };
 
 /**
  * 供 list / show 使用：登记表必须存在且合法。absent 时 list 返回 null 由调用方输出空视图；
@@ -93,7 +95,7 @@ function requireValidRegistry(
     fail(command, format, 'ENV_REGISTRY_INVALID', t(locale, 'env.error.registryInvalid', { path: ENV_REGISTRY_REL, reason }));
     return undefined;
   }
-  return { environments: reg.environments, warnings: reg.warnings };
+  return { environments: reg.environments, warnings: reg.warnings, proposalDefaultEnv: reg.proposalDefaultEnv };
 }
 
 function ensureProject(root: string, command: string, format: OutputFormat, locale: Locale): boolean {
@@ -104,8 +106,10 @@ function ensureProject(root: string, command: string, format: OutputFormat, loca
 
 const shortRef = (ref: string | null, locale: Locale) => (ref ? ref.slice(0, 12) : t(locale, 'env.view.unknownRef'));
 
-function printView(view: EnvView & { aliases?: string[] }, locale: Locale): void {
-  console.log(`  ${view.id}  ${view.name}  [${view.tier}]`);
+function printView(view: EnvView & { aliases?: string[] }, locale: Locale, proposalDefault = false): void {
+  // 提案默认部署环境标注（spec/environments.md §13.3）；未配置时文本输出逐字不变
+  const mark = proposalDefault ? t(locale, 'env.view.proposalDefault') : '';
+  console.log(`  ${view.id}  ${view.name}  [${view.tier}]${mark}`);
   if (view.aliases && view.aliases.length > 0) console.log(`      ${t(locale, 'env.view.aliases', { aliases: view.aliases.join(', ') })}`);
   console.log(`      ${t(locale, 'env.view.currentRef', { ref: view.last_deploy ? shortRef(view.current_ref, locale) : t(locale, 'env.view.never') })}`);
   if (view.last_deploy) {
@@ -157,6 +161,8 @@ export function envList(format: OutputFormat = 'text', root: string = process.cw
     console.log(JSON.stringify(makeEnvelope('env list', {
       registry_path: ENV_REGISTRY_REL,
       registry_present: loaded !== null,
+      // 仅登记表配置了 proposal_default_env 时输出（spec/environments.md §13.3）；未配置时字段集逐字不变
+      ...(loaded?.proposalDefaultEnv ? { proposal_default_env: loaded.proposalDefaultEnv } : {}),
       environments,
       ledger: ledgerOut(ledger),
       warnings,
@@ -169,7 +175,7 @@ export function envList(format: OutputFormat = 'text', root: string = process.cw
   }
   console.log(`\n${t(locale, 'env.list.title', { path: ENV_REGISTRY_REL })}\n`);
   if (environments.length === 0) console.log(`  ${t(locale, 'env.list.empty')}`);
-  for (const view of environments) printView(view, locale);
+  for (const view of environments) printView(view, locale, view.id === loaded.proposalDefaultEnv);
   for (const w of warnings) console.log(`  ⚠ ${w.message}`);
   printLedgerCorrupt(ledger, locale);
 }
@@ -202,6 +208,8 @@ export function envShow(input: string | undefined, format: OutputFormat = 'text'
       environment: {
         id: env.id, name: env.name, tier: env.tier, aliases: env.aliases, description: env.description,
         health: env.health, version: env.version, secrets: env.secrets,
+        // 配置了 deploy 时输出经 §11.2 校验的配置（实际部署引用，不含命令与密钥值，spec/environments.md §13.3）；未配置时不输出该键
+        ...(env.deploy ? { deploy: env.deploy } : {}),
       },
       current_ref: view.current_ref,
       ...(deployEnabled

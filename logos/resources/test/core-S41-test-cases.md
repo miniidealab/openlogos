@@ -96,3 +96,30 @@
 - 审批使用推导（failed / unknown 不使用、reconcile 补记成功后使用、成功使用后 abandon 不撤销、不同 commit 不使用）：UT-S41-18。
 - EnvView 新字段与 status schema：UT-S41-19。
 - 未配置门禁零回归与旧读取方兼容：ST-S41-05。
+
+## 七、提案默认部署环境测试（proposal-default-environment）
+
+> 覆盖场景 `core-S41-environment-registry.md`「提案默认部署环境（proposal-default-environment）」、EX-41.19～EX-41.24（EX-41.21 的成对夹具见 UT-S41-23），`spec/environments.md` §2.2、§7.2、§13，决策 C01～C09。既有 UT-S41-01～UT-S41-19、ST-S41-01～ST-S41-05 不变。测试实现必须写入 OpenLogos reporter，`scenario_id="S41"`；全部在一次性临时项目中执行。change-writer 的提问行为由 Skill 文本承载，本节以 UT-S41-22 校验根 Skill 与 sync 部署的中文副本含相同规则；真实填写提案的行为不做自动化断言。
+
+### 单元测试（UT）
+
+| ID | 描述 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|---------|----------|---------|
+| UT-S41-20 | `proposal_default_env` 校验 | 登记表含 test、staging、prod（aliases 含「测试」），staging 与 prod 配置 `deploy`，prod 另配置 `promote_from: staging`、`require_approval: true`。分别构造顶层：① `proposal_default_env: test`；② `proposal_default_env: prod`；③ `proposal_default_env: null`；④ 不写该字段；⑤ `proposal_default_env: stage`（未登记）；⑥ `proposal_default_env: 测试`（alias）；⑦ `proposal_default_env: Test`（大小写不一致）；⑧ `proposal_default_env: 3`；⑨ `proposal_default_env: [test]` | 加载登记表并执行 `env check` 的校验逻辑 | ①～④ 无 error，且不出现 `field=proposal_default_env` 的 `ENV_UNKNOWN_FIELD`（① 指向未配置 `deploy` 的环境、② 指向配置了晋级与审批门禁的环境均为合法配置）；⑤～⑨ 各报一条 `ENV_FIELD_INVALID`（`field=proposal_default_env`，不带 `environment`，⑥⑦ 的原因提示应写环境 id），登记表判为非法 |
+| UT-S41-21 | `env list` 输出 | 登记表合法，顶层 `proposal_default_env: test`；另一夹具不写该字段 | `env list --format json` 与文本模式（中、英 locale） | 配置时 data 顶层 `proposal_default_env` 为 `"test"`，文本模式在 test 行后标注「（提案默认）」/「(proposal default)」，其他环境行不标注；未配置时 data 不含 `proposal_default_env` 键，文本输出无标注；两种夹具下 `env show test --format json`、`env check --format json` 的 data 与 `status --format json` 均不含 `proposal_default_env` |
+| UT-S41-22 | change-writer 含默认环境规则与必须提问的负例 | 读取根 `skills/change-writer/SKILL.md` 与 `skills/deployment-designer/SKILL.md`；在一次性中文（`locale: zh`）临时项目中执行 `openlogos sync`，读取其部署的 `logos/skills/change-writer/SKILL.md` 与 `logos/skills/deployment-designer/SKILL.md` | 按章节提取澄清协议的部署规则与 Step 5.1 | change-writer 写明：需要部署时先读 `openlogos env list --format json`，目标环境确定后读 `openlogos env show <id> --format json` 的 `environment.deploy`、`current_ref`，不解析登记表原文；用户指定优先，其次 `proposal_default_env`（`source: policy`），无默认时维持必问；四种必须提问的负例逐条在场——agent 方式 `plan_section` 在已合并部署方案中缺失、配置了 `deploy` 但 `current_ref` 为 null 且无首次部署失败处置、未配置 `deploy` 且已合并方案无回滚步骤（不以 `current_ref` 推导 CLI 回滚）、既无 `smoke.command` 也无默认 dispatcher；默认值不决定是否部署、不构成执行或发布授权；不得自行写入该字段。deployment-designer 写明只在用户明确指定时写入 `proposal_default_env`。sync 部署的两个副本与根文件逐字节一致（英文版 `SKILL.en.md` 不含澄清协议，不在本用例范围） |
+| UT-S41-23 | `env show` 输出实际部署引用（成对夹具） | 三份登记表除下列差异外逐字节相同（同一默认环境 prod、同一账本、同一其他配置）：① prod `deploy: {mode: agent, plan_section: 生产环境发布步骤}`，夹具已合并部署方案含同名章节；② prod `deploy: {mode: agent, plan_section: 不存在的章节}`；③ prod `deploy: {mode: script, script: deploy/prod.sh}`；另有 test 未配置 `deploy` | 分别执行 `env show prod --format json`；执行 `env show test --format json` | ① ② 的 `environment.deploy.mode` 均为 `agent`，`plan_section` 分别等于各自登记表所写的标题（两份输出可区分），据此在夹具部署方案中查验：① 有同名章节、② 没有；③ `environment.deploy.script` 为 `deploy/prod.sh`；test 的 `environment` 不含 `deploy` 键，与引入前一致；三份输出均不含命令字段与密钥值 |
+
+### 场景测试（ST）
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S41-06 | 默认环境端到端与未配置零回归、0.16.5 读取兼容 | 提案默认部署环境：字段校验、`env list` 输出；EX-41.19、EX-41.24② | 真实 CLI；夹具 A：没有登记表；夹具 B：有登记表但未写该字段，且所有环境都未配置 `deploy`；夹具 C：写有合法 `proposal_default_env`；夹具 D：写有指向未登记环境的 `proposal_default_env`，并存在活跃提案 | ① A、B 分别执行 `env list` / `env show` / `env check` / `status` / `deploy-done` / `smoke --format json`；② C 执行 `env check`、`env list --format json`；③ D 执行 `env check`、`deploy-done --env test`、`smoke --env test`；④ 以「只认 0.16.5 顶层字段集」的兼容夹具加载 C 的登记表 | ① 输出、退出码与账本字节与引入本提案前的基线逐字一致；② `env check` 退出码 0，`env list` 含 `proposal_default_env`；③ `env check` 报 `ENV_FIELD_INVALID`（`field=proposal_default_env`），`deploy-done` 与 `smoke` 报 `ENV_REGISTRY_INVALID`、零副作用（不写 marker、不写账本、不运行 `smoke.command`）；④ 只产生一条 `ENV_UNKNOWN_FIELD`（`field=proposal_default_env`），其余结果与 ② 一致 |
+
+### 覆盖度校验（proposal-default-environment 增量）
+
+- 字段校验（合法 / null / 缺省 / 未登记 / alias / 大小写 / 类型；指向有门禁或无 `deploy` 的环境合法）：UT-S41-20、ST-S41-06。
+- `env list` 输出与其他命令不输出 `proposal_default_env`：UT-S41-21。
+- `env show` 输出实际部署引用、成对夹具可区分已合并章节存在与否：UT-S41-23。
+- change-writer 与 deployment-designer 规则及四种负例：UT-S41-22。
+- 未配置零回归、非法时 fail-closed、0.16.5 读取兼容：ST-S41-06。

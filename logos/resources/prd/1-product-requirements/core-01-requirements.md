@@ -3237,12 +3237,49 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 - **WHEN** AI 或 RunLogos 界面 Edit / Write `logos/environments.yaml`
 - **THEN** guard 不阻断、事后检查不报警（内置默认豁免，决策 C07）；已显式配置 `guard.exempt` 的项目需经保护范围命令手动添加该路径后才获得同等行为
 
+#### 正常：配置提案默认部署环境（来源变更 proposal-default-environment，决策 C01、C05、C06）
+- **GIVEN** 登记表顶层写有 `proposal_default_env: test`，test 是已登记环境的 id
+- **WHEN** 用户执行 `openlogos env check` 与 `openlogos env list --format json`
+- **THEN** `env check` 无 error、无 `ENV_UNKNOWN_FIELD`；`env list` 的 data 顶层含 `proposal_default_env: "test"`，文本模式在 test 后标注「（提案默认）」；未配置该字段时 data 不含该键，所有命令输出逐字不变（唯一加法见下条：`env show` 对配置了 `deploy` 的环境输出部署配置，与是否配置本字段无关）
+
+#### 正常：查看环境的实际部署引用（proposal delta-r1 F1）
+- **GIVEN** 登记表中 prod 配置了 `deploy`（如 `mode: agent`、`plan_section: 生产环境发布步骤`），test 未配置 `deploy`
+- **WHEN** 用户或 change-writer 执行 `openlogos env show prod --format json` 与 `openlogos env show test --format json`
+- **THEN** prod 的 `environment` 含经校验的 `deploy` 配置，`plan_section` 等于登记表实际所写标题；test 的 `environment` 不含 `deploy` 键，输出与引入前一致；输出不含任何命令与密钥值
+
+#### 正常：默认环境可以配置晋级与审批门禁（决策 C05）
+- **GIVEN** `proposal_default_env: prod`，prod 配置了 `promote_from: staging` 与 `require_approval: true`
+- **WHEN** 用户执行 `openlogos env check`，随后按提案部署到 prod
+- **THEN** `env check` 无 error；部署照常经过既有晋级与审批检查，上游未以同一 commit 通过 smoke 或缺审批时停在 `DEPLOY_PROMOTION_UNVERIFIED` / `DEPLOY_APPROVAL_REQUIRED`
+
+#### 异常：默认环境非法（决策 C05）
+- **GIVEN** `proposal_default_env` 指向未登记的环境、写成 alias 或大小写不一致的 id，或值不是字符串
+- **WHEN** 用户执行 `env check`、`deploy-done --env`、`smoke --env`、`deploy` 或 `approve`
+- **THEN** `env check` 报 `ENV_FIELD_INVALID`（`field=proposal_default_env`）；其余命令按登记表非法（`ENV_REGISTRY_INVALID`）零副作用拒绝；`status` 输出 `environment_registry_error`
+
+#### 正常：需要部署的提案采用默认环境（决策 C02、C07）
+- **GIVEN** 登记表配置了 `proposal_default_env: test`，用户的变更需求需要部署且没有指定目标环境
+- **WHEN** change-writer 填写提案
+- **THEN** change-writer 先读取 `openlogos env list --format json`，目标环境取 test（`source: policy`，reason 写明依据），不向用户询问目标环境；再读取 `openlogos env show test --format json` 取得实际部署引用与 `current_ref`，不解析登记表原文；「影响环境」写 `test`；用户在需求中明确指定环境或「这次不部署」时按用户原话；默认值不决定是否需要部署，也不构成部署执行或发布授权
+
+#### 正常：部署依据不全时只问缺项（决策 C07、C09）
+- **GIVEN** 提案采用默认环境，且出现以下任一情况：目标环境为 agent 方式而 `env show` 返回的 `environment.deploy.plan_section` 在已合并部署方案中没有同名章节；目标环境配置了 `deploy` 但 `current_ref` 为 null 且已合并部署方案没有首次部署失败处置；目标环境未配置 `deploy`（即使 `current_ref` 非 null）且已合并部署方案没有该环境的回滚步骤；既未配置 `smoke.command` 也没有默认 dispatcher `scripts/run-smoke.js`；或本提案要实质修改部署方式、回滚或 smoke 中的某项
+- **WHEN** change-writer 填写部署决定
+- **THEN** 只就缺少依据的项合并一次提问，其余项引用已合并部署方案、登记表 `deploy`、账本 `current_ref` 或 smoke 命令配置；依据齐全时整条部署决定不提问
+
+#### 正常：AI 不自行设置默认环境（决策 C03、C08）
+- **GIVEN** deployment-designer 产出或更新登记表，或 change-writer 填写提案
+- **WHEN** 用户没有明确指定提案默认部署环境
+- **THEN** AI 不写入、不修改、不删除 `proposal_default_env`；该字段不受 guard 保护，人或 RunLogos 可直接编辑登记表，修改不需立案
+
 ### 非目标
 
 - 不执行部署（`openlogos deploy`）、不提供版本通道与回滚（提案 B）；不做晋级顺序与审批门禁（提案 C）。
 - 不提供 `env add` / `env remove` 写命令：登记表由 RunLogos 或人直接编辑，CLI 只读取与校验。
 - 不存储或注入密钥值；不做团队共享的部署状态（决策 C02）。
 - `openlogos init` 不默认生成 `logos/environments.yaml`。
+- 不做按模块的提案默认部署环境；默认值不决定提案是否需要部署（来源变更 proposal-default-environment，决策 C02）。
+- 不在 change-lint 中校验提案「影响环境」必须是登记表 id；不为 `proposal_default_env` 增加 guard 保护（决策 C03）。
 
 ### 追溯
 
@@ -3250,6 +3287,7 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 - 功能规格：§2.93；架构：「五十三、环境登记表与部署账本」。
 - 场景：`core-S41-environment-registry.md`；相关场景 S21、S19、S11。
 - 测试：`core-S41-test-cases.md`。
+- 决策：`core-D04-deployment-plan-user-decision.md`（例外）、`core-D15-proposal-default-environment.md`（提案默认部署环境）。
 
 ## S42: 按环境执行部署与回滚
 

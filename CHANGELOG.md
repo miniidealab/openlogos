@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.6] - 2026-10-16
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- **提案默认部署环境**（proposal-default-environment）：`logos/environments.yaml` 顶层可写 `proposal_default_env: <环境 id>`，表示需要部署的提案未另行指定目标环境时默认部署到该环境。`env check` 校验它必须等于某个已登记环境的 id（不接受 alias、大小写须一致）；对所指环境的其他配置不加限制，部署时照常经过晋级与审批检查。
+- `env list --format json` 在配置了该字段时输出顶层 `proposal_default_env`，文本模式在该环境行后标注「（提案默认）」/「(proposal default)」。
+- `env show --format json` 对配置了 `deploy` 的环境在 `environment` 中输出经校验的 `deploy` 配置（脚本、工作流、方案章节等实际引用，不含命令与密钥值）。
+
+### Changed
+
+- change-writer：提案需要部署且用户未指定目标环境时，以 `proposal_default_env` 为目标（`source: policy`），不再逐案询问目标环境；部署方式、回滚与 smoke 证据按已合并部署方案与配置逐项核对，依据不全时只问缺项。默认值不决定是否部署，也不构成部署执行或发布授权（D15，D04 增加例外）。
+- deployment-designer：只在用户明确指定时写入 `proposal_default_env`，不得自行设置、修改或删除。
+
+### 升级提示
+
+- 已在登记表中写了 `proposal_default_env` 的项目，此前只得到 `ENV_UNKNOWN_FIELD` 警告，升级后开始校验；指向未登记环境、alias 或非字符串值会使登记表判为非法。
+- 该字段不受 guard 保护，修改登记表仍不需立案。
+
 ## [0.16.5] - 2026-10-15
 
 本机全局发布（未发布到 npm）。

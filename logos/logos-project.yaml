@@ -647,6 +647,8 @@ resource_index:
     desc: environment-promotion-approval 创建的 scenario 基线
   - path: logos/resources/test/core-S43-test-cases.md
     desc: environment-promotion-approval 创建的 test 基线
+  - path: logos/resources/decisions/core-D15-proposal-default-environment.md
+    desc: proposal-default-environment 创建的 decision 基线
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号
   - "存量项目接入统一写入 bootstrap: adopted，读取时兼容历史 skipped"

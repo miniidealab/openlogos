@@ -754,3 +754,121 @@ runner `scripts/smoke-environment-promotion-approval-0-16-5.js` 以正式模式�
 | SMOKE-core-260 | **pass**：未审批零执行并给出审批命令；审批幂等；审批后部署成功并使用，再次部署重新要求审批 | `local-global-temp-project` |
 | SMOKE-core-261 | **pass**：dry-run 给出将用的审批且零写入、不使用审批；回滚仍要求审批；`deploy-done` 对受门环境零写入拒绝 | `local-global-temp-project` |
 | SMOKE-core-262 | **pass**：未配置门禁的环境部署记录与视图不含晋级与审批字段 | `local-global-temp-project` |
+
+# 部署报告：proposal-default-environment / OpenLogos 0.16.6 本机全局发布（2026-10-16，**已部署：本机全局**）
+
+## 一、授权与目标
+
+- 依据：
+  - 部署方案「OpenLogos 0.16.6 发布方案（提案默认部署环境，本地全局）」；
+  - 提案决策 C04（`category: deployment`, `source: user`）：用户 2026-10-15 原话「要，按推荐方案发布 0.16.6 到本机全局」；
+  - 本次 `openlogos next --auto` 的 deliver-entry 门 `gate_auto_passed=true`（`GATE_AUTO_PASSED` 2026-10-16T03:12:06.467Z）。
+- 内容：登记表顶层 `proposal_default_env` 的校验、`env list` 输出与文本标注、`env show` 输出 `environment.deploy`，以及改动后的 change-writer / deployment-designer 两个 Skill，装进本机全局安装态。
+- 范围：只做本机全局安装与本仓 `openlogos sync`。
+  - 未执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`。
+  - 未改写其他仓库（含 runlogos）；未在本仓配置 `logos/environments.yaml` 或 `proposal_default_env`；未修改 `logos/logos.config.json`。
+
+## 二、冻结事实（部署前）
+
+| 项 | 值 |
+|---|---|
+| `command -v openlogos` | `/opt/homebrew/bin/openlogos` |
+| 入口 realpath | `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` |
+| `npm prefix -g` | `/opt/homebrew` |
+| 全局 `--version` | `0.16.5` |
+| 仓内 `cli/package.json` | `0.16.5`（升版前） |
+| registry 版本复核 | `npm view @miniidealab/openlogos@0.16.6 version` 返回 E404；registry 已有版本最高为 `0.16.2`。候选版本 `0.16.6`、回滚版本 `0.16.5`，均与计划值一致 |
+
+## 三、回滚制品（先于升版冻结）
+
+- 来源：在全局安装目录 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos` 执行 `npm pack --ignore-scripts`（`--pack-destination cli/rollback`），未从工作树打包。
+- 产物：`cli/rollback/miniidealab-openlogos-0.16.5.tgz`，2,755,206 字节，SHA-256 `1bab99415bfc993928c4bd42f4ae4662a9696fb3cf7f1140fc8a4e6983026847`（与 0.16.5 部署记录中的唯一候选制品字节一致，全局正是由它安装）。
+- 内容身份：解包后 867 个文件（其中 `dist/` 下 396 个）与全局安装目录同名文件逐个比对 SHA-256，**0 个不一致、0 个缺失**；包内 `skills/change-writer/SKILL.md` 不含 `proposal_default_env`。
+- 旧行为：一次性隔离 prefix 试装后，`--version` 为 `0.16.5`；对写有 `proposal_default_env: test` 的登记表执行 `env check --format json`，`ok=true`，`warnings` 为一条 `ENV_UNKNOWN_FIELD`（`field=proposal_default_env`）。
+
+## 四、版本与制品身份
+
+- 升版：`node cli/scripts/bump-version.mjs 0.16.6` 一次写全版本载体：
+  - `cli/package.json`、lockfile 根包、`cli/asset-manifest.json`、5 份 plugin manifest；
+  - `local-release-candidate.ts`：候选 `0.16.5 → 0.16.6`，回滚 `0.16.4 → 0.16.5`；
+  - asset-manifest 由生成器重算，未手改。
+- `CHANGELOG.md` 新增 `## [0.16.6] - 2026-10-16`（Added / Changed / 升级提示），注明「本机全局发布（未发布到 npm）」，既有条目未改。
+
+## 五、源码回归证据
+
+- 升版后依次执行，全部通过：
+  - `cd cli && npm run lint`：0 error；
+  - `npx tsc --noEmit`：通过；
+  - `npm run build`：通过；
+  - `npm test`：**197 个文件、2815 个用例通过、1 个 skipped**。
+- 覆盖范围（验收账本中均为 pass）：
+  - 本提案 `core-S41-test-cases.md` 中 UT-S41-20～UT-S41-23、ST-S41-06；
+  - 受本提案影响而适配的零回归用例 ST-S41-05、UT-S43-14（`env show` 对配置了 `deploy` 的环境新增 `environment.deploy`，断言其正确后剥离，其余逐字比对基线）；
+  - `UT-S19-46` / `UT-S19-49`（版本身份与 manifest 自洽）；
+  - smoke 基线离线组装的隔离断言（`cli/test/smoke-offline-baseline.test.ts`，code-r1 F1）。
+- 来源说明：候选制品构建自当前工作区。本提案的规格合并与代码改动在部署时尚未提交，制品内容即该工作区状态，以第六节的 SHA-256 为准。
+
+## 六、构建与 Tarball 冻结（唯一候选制品）
+
+- 产物：`cli/miniidealab-openlogos-0.16.6.tgz`，2,771,166 字节，SHA-256 `eca16ea223ff0843b0b5e5757cfbbccc4c2e4b46d74d81a8f9a528085f6652a0`（真实 `npm pack`，867 个文件）。
+- 解包核对：
+  - `package.json` 与 asset-manifest 版本均为 `0.16.6`；manifest 自洽，payloadHash `5f4bd8c395f2cef3c6474afe8b04844e167f63dccbfdcde7a5f7045adfd8d01e`，与仓内 `cli/asset-manifest.json` 一致；
+  - 包内 `skills/change-writer/SKILL.md`、`skills/deployment-designer/SKILL.md` 与仓库源文件逐字节一致，change-writer 含「部署决定与提案默认部署环境」章节；
+  - 包内 `claude-plugin-template/skills/deployment-designer/SKILL.md` 与 `plugin/skills/deployment-designer/SKILL.md` 一致；
+  - `dist/lib/environments.js` 含 `proposal_default_env` 校验，`dist/i18n.js` 含「提案默认」标注文案。
+- 之后的隔离验证与全局安装只使用这一个文件。
+
+## 七、隔离 Prefix 行为矩阵（安装态证据）
+
+| 类别 | 结果 |
+|---|---|
+| candidate identity | 一次性 prefix 安装成功；`--version` 为 `0.16.6`；包目录为真实目录（无 workspace link）；安装后 867 个文件与 tarball 解包内容逐字节一致 |
+| 默认环境校验 | runner `scripts/smoke-proposal-default-environment-0-16-6.js` 自测模式（注入该 prefix 入口）SMOKE-core-264、SMOKE-core-266 **pass**：合法值与指向配置了 `promote_from` / `require_approval` 的环境均通过；另在该入口上手工核对 `Test`（大小写不一致）、`3`（非字符串）均报 `ENV_FIELD_INVALID`（`field=proposal_default_env`）、exit 1，`test` 通过 |
+| 非法默认环境 fail-closed | SMOKE-core-265 **pass**：`stage`（未登记）与 `测试`（alias）使 `env check` 报 `ENV_FIELD_INVALID`；`deploy-done` 与 `smoke` 以 `ENV_REGISTRY_INVALID` 拒绝，项目文件快照前后一致，未运行 `smoke.command`，未写账本 |
+| `env list` / `env show` 输出 | SMOKE-core-264 / 266 **pass**：`env list` 输出 `proposal_default_env` 与「（提案默认）」标注；`env show` 对配置了 `deploy` 的环境输出 `environment.deploy`（`script=deploy/run.sh`）；`env show` / `status` 不含 `proposal_default_env` |
+| 受门环境仍受门 | SMOKE-core-266 **pass**：默认环境 prod 上游未验证时 `deploy` 报 `DEPLOY_PROMOTION_UNVERIFIED`，发布目录无痕迹、账本无 deploy 记录 |
+| 未配置零回归 | SMOKE-core-267 **pass**：无登记表、有登记表但未写该字段两种夹具，`env list` / `env check` / `status` 与 0.16.5 回滚制品的隔离安装逐项一致 |
+| 版本与制品身份 | SMOKE-core-263 ①～③ **pass**；④（本仓托管副本同源）在全局安装与 sync 后复核，见第八节、第十一节 |
+| 全局零触碰 | 矩阵前后 `command -v openlogos` 与 `--version` 均为 `/opt/homebrew/bin/openlogos` / `0.16.5` |
+| 回滚演练 | 回滚制品 SHA-256 与冻结记录一致；隔离 prefix 回装后 `--version` 为 `0.16.5`，含该字段的登记表回到 `ENV_UNKNOWN_FIELD` 警告 |
+
+## 八、本机全局部署与本仓 sync
+
+- 安装：`npm install -g <绝对路径>/cli/miniidealab-openlogos-0.16.6.tgz`（同一候选文件），exit 0。
+- 新 shell 复核：
+  - `command -v openlogos` = `/opt/homebrew/bin/openlogos`；
+  - 入口 realpath = `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`（真实目录，非链接）；
+  - `--version` = `0.16.6`；全局包 `package.json` 与 asset-manifest 版本均为 `0.16.6`，manifest 自洽，payloadHash 与候选一致；
+  - 全局包 867 个文件与 tarball 逐字节一致。
+- 本仓 sync：在项目根执行 `openlogos sync`（v0.16.6），exit 0。之后逐字节比对：
+  - `logos/skills/change-writer/SKILL.md`、`logos/skills/deployment-designer/SKILL.md` 与全局包内同名 Skill **一致**（SHA-256 前缀 `6041eae6dfd8` / `111156d4728c`）；
+  - `logos/spec/cli-json-output.md`、`logos/spec/environments.md` 与根规范一致；`CLAUDE.md` / `AGENTS.md` 本次无变化。
+- sync 产生的托管文件变化：`.claude/settings.json` 再次被重复加入一条 SessionStart `openlogos-phase` hook 并去掉末尾换行，与提交 `bf61f6f` 记载的现象相同，按该先例还原为 HEAD 内容。
+
+## 九、回滚入口
+
+- 回滚制品：`cli/rollback/miniidealab-openlogos-0.16.5.tgz`，SHA-256 `1bab99415bfc993928c4bd42f4ae4662a9696fb3cf7f1140fc8a4e6983026847`。
+- 回滚命令：`npm install -g <绝对路径>/cli/rollback/miniidealab-openlogos-0.16.5.tgz`，新 shell 复核 `--version` 为 `0.16.5`；必须使用绝对路径（相对路径会被 npm 解析为 GitHub 简写）。
+- 若已在本仓执行 sync：用回装后的 0.16.5 再执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件。
+- 无数据迁移，账本格式不变。回装 0.16.5 后，登记表中的 `proposal_default_env` 恢复为 `ENV_UNKNOWN_FIELD` 警告，change-writer 回到每案询问目标环境。
+
+## 十、提示与后续
+
+- 本仓未登记环境（无 `logos/environments.yaml`），本次 `openlogos deploy-done` 不带 `--env`，不写部署账本。
+- 下一步按流程运行 `openlogos smoke`（SMOKE-core-263～267 由 `scripts/smoke-proposal-default-environment-0-16-6.js` 执行；候选 tarball 未经环境变量给出时，runner 按候选版本取本仓 `cli/miniidealab-openlogos-0.16.6.tgz`，并要求本记录已写明其 SHA-256）。
+- 已知约束：SMOKE-core-267 的回滚基线以离线方式组装（不调用 npm），依赖从候选安装包目录内的 `node_modules` 复制。全局安装（`npm install -g`）的包目录带嵌套 `node_modules`，满足该前提（已以本机全局安装与回滚制品实测组装成功，基线 `--version` 为 `0.16.5`，子进程只有 `tar`）；runner 正式模式只接受全局安装入口，非全局的扁平安装布局不在适用范围内。
+
+## 十一、全局安装后的补充安装态证据
+
+runner `scripts/smoke-proposal-default-environment-0-16-6.js` 以正式模式运行：
+- 未设置 `OPENLOGOS_DEFAULT_ENV_TARBALL` / `OPENLOGOS_TARBALL`，runner 按候选版本回落取本仓 `cli/miniidealab-openlogos-0.16.6.tgz`，并核对本记录已写明候选版本与该 tarball 的 SHA-256；回滚制品 `cli/rollback/miniidealab-openlogos-0.16.5.tgz` 与本仓托管副本（两个 Skill）在场。
+- 入口为 PATH 中、位于 `npm prefix -g` 包目录内的 `openlogos`。
+- 结果写入独立文件，未写正式 smoke 账本，不代替 `openlogos smoke`。
+
+| 用例 | 结果 | environment |
+|---|---|---|
+| SMOKE-core-263 | **pass**：安装态身份同源（0.16.6），manifest 自洽，包内 Skill 含默认环境规则与四种必须提问的负例，本仓托管副本与全局包一致 | `local-global-temp-project` |
+| SMOKE-core-264 | **pass**：合法默认环境通过校验；`env list` 输出并标注「（提案默认）」；`env show` / `status` 不输出该字段 | `local-global-temp-project` |
+| SMOKE-core-265 | **pass**：未登记与 alias 两种非法值使登记表判为非法，`deploy-done` 与 `smoke` 零副作用拒绝 | `local-global-temp-project` |
+| SMOKE-core-266 | **pass**：默认环境指向受门环境合法，部署仍被晋级检查拦截；`env show` 输出 `environment.deploy` | `local-global-temp-project` |
+| SMOKE-core-267 | **pass**：未配置该字段的项目与 0.16.5 回滚基线一致；基线离线组装（`baseline_mode=offline-assembled`、`npm_invocations=0`） | `local-global-temp-project` |

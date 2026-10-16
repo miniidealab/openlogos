@@ -146,3 +146,25 @@
 
 - 让未配置门的环境的 deploy 记录或输出也带 `approval_id` / `promoted_from` / `promotion_override_reason` →
   ③ 的 `deploy` 输出与账本字节不一致，UT-S43-14 变红。
+
+---
+
+# `s41-proposal-default-env-baseline.json`（proposal-default-environment）
+
+**提案默认部署环境引入之前**（提交 `3ea21ff`，0.16.5）的实测输出，用于 ST-S41-06 ④ 的旧读取方兼容举证：
+登记表顶层写有合法 `proposal_default_env: test`（prod 另配置 `deploy` 与晋级、审批门禁）时，`env check` 与
+`env list` 的 JSON 输出与退出码。0.16.5 不认识该字段，两条命令各只多一条 `ENV_UNKNOWN_FIELD`（`field=proposal_default_env`），
+退出码 0，其余输出照常。
+
+## 生成方式（可追溯，一次性）
+
+1. `git archive 3ea21ff cli spec skills plugin` 导出变更前源码到一次性目录，`cli/node_modules` 以符号链接复用；
+2. 在该目录 `cli/` 下执行 `npx tsc` 得到**变更前** `dist`（`package.json` 版本 0.16.5）；
+3. 执行 `node cli/test/golden/s41-proposal-default-env-fixture.mjs <变更前 dist/index.js> cli/test/golden/s41-proposal-default-env-baseline.json`。
+
+`s41-proposal-default-env-fixture.mjs` 是夹具与规范化规则的唯一定义点。
+
+## 反证（确认断言会失败）
+
+- 让当前 CLI 对合法 `proposal_default_env` 仍报 `ENV_UNKNOWN_FIELD` → ST-S41-06 ④ 中「当前无该警告」断言变红。
+- 让 0.16.5 基线的警告数不为 1 或退出码非 0 → ST-S41-06 ④ 的旧读取方断言变红。

@@ -5083,6 +5083,9 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 - 环境项可选的 `promote_from`（上游环境 id）与 `require_approval`（布尔）声明晋级顺序与审批门禁（来源变更 environment-promotion-approval，§2.95）：只在配置了 `deploy` 的环境上合法；`promote_from` 只接受登记表中已存在的环境 id（不接受 alias），不得指向自身，各环境之间不得成环；两个字段须以普通键名书写（不得用 YAML 转义等写法，否则 CLI 认定的门禁可能逃过 guard 识别）；非法时 `env check` 与 `deploy` 以 `ENV_FIELD_INVALID` / `ENV_REGISTRY_INVALID` 拒绝。
 - 登记表由 deployment-designer 按部署方案产出，RunLogos 或人可直接编辑；它属于 `guard.exempt` 内置默认，修改不需立案（决策 C07）。例外：只要任一环境配置了 `promote_from` 或 `require_approval`，该文件就是门禁策略来源，不再适用默认豁免或 `guard.exempt`、不以活跃提案放行，AI 对它的直接修改与删除须经宿主原生审批由人批准（来源变更 environment-promotion-approval，决策 C11，§2.95.5）。`openlogos init` 不默认生成该文件。
 - `deployment_gates.<module>.environments` 保留原语义，登记表存在时由 `env check` 校验其引用均已登记。
+- 登记表顶层可选的 `proposal_default_env: <环境 id>` 声明**提案默认部署环境**（来源变更 proposal-default-environment，决策 C01、C05）：必须为字符串且等于登记表中某个环境的 `id`（不接受 alias，大小写须一致），非法时 `env check` 以 `ENV_FIELD_INVALID`（`field=proposal_default_env`）报告、登记表按非法处理。对所指环境的其他配置不加限制：所指环境可以未配置 `deploy`，也可以配置 `promote_from` / `require_approval`，部署时照常经过既有晋级与审批检查。缺省或 `null` 表示未配置，全部既有行为不变。
+- **对提案的作用**（决策 C02、C07，D15）：change-writer 经 `env list --format json` 取得默认环境，再经 `env show <id> --format json` 取得其实际部署引用与 `current_ref`，不解析登记表原文。需要部署的提案未另行指定目标环境时，change-writer 以该环境为部署目标（`source: policy`），不再逐案询问目标环境；部署方式、回滚与 smoke 证据仍逐项判断，只有已合并部署方案、登记表 `deploy`、账本 `current_ref`（仅对配置了 `deploy` 的环境作为 CLI 回滚依据）与 smoke 命令配置覆盖实际情况时才免问，缺项合并一次提问。默认值不决定提案是否需要部署，也不构成部署执行或发布授权。
+- **修改方式**（决策 C03、C08）：`proposal_default_env` 不受 guard 保护，登记表照旧适用内置默认豁免，人或 RunLogos 可直接编辑、不需立案；它不改变已配置门禁时登记表的既有保护（environment-promotion-approval 决策 C11）。AI（deployment-designer、change-writer）不得自行写入、修改或删除该字段，只在用户明确指定环境时写入。
 
 ### 2.93.2 `--env` 解析
 
@@ -5118,7 +5121,8 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 ### 2.93.6 查询命令与 status 视图
 
 - `openlogos env list`：全部环境与 `current_ref`、`previous_ref`、`deploy_mode`、`deploy_in_progress`、`last_deploy`、`last_smoke`（后三个新增字段来源变更 environment-deploy，只在部署执行已启用时输出；未启用时视图字段与原来逐字一致）；无登记表返回空数组。配置了 `promote_from` 或 `require_approval` 的环境另输出 `promote_from`、`require_approval`、`open_approvals`（未使用的审批）与 `promotion`（`{from, candidate_ref}`，`candidate_ref` 为上游环境最近一条已验证 smoke 记录的版本），来源变更 environment-promotion-approval，只在该环境配置了任一字段时输出，未配置的项目输出逐字不变。
-- `openlogos env show <id|alias>`：单个环境配置与最近 20 条历史。
+- 登记表配置了 `proposal_default_env` 时，`env list --format json` 的 data 顶层输出 `proposal_default_env`（环境 id），文本模式在该环境行后标注「（提案默认）」/「(proposal default)」；未配置时不输出该键；`env show`、`env check` 与 `status` 不输出该字段（来源变更 proposal-default-environment，决策 C06）。
+- `openlogos env show <id|alias>`：单个环境配置与最近 20 条历史。该环境配置了 `deploy` 时，`--format json` 的 `environment` 另含经校验的 `deploy` 配置（脚本、工作流、方案章节等实际引用，不含命令与密钥值），供提案阶段读取部署依据；未配置 `deploy` 时输出不变（来源变更 proposal-default-environment）。
 - `openlogos env check [<id|alias>] [--probe]`：校验格式、冲突、`deployment_gates` 引用、`promote_from` 引用与成环、密钥变量名是否存在（只报名字）；`--probe` 时 GET `health` / `version`（超时 5 秒）。
 - 三个命令只读、不要求活跃提案、支持 `--format json`；无登记表时 `show` / `check` 报 `ENV_REGISTRY_NOT_FOUND`。
 - `status --format json` 在有登记表时新增 `environments` 与 `environment_ledger`；`status` 不发起网络请求。RunLogos 环境面板只消费这些 JSON 字段。

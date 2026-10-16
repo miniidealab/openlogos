@@ -22,7 +22,9 @@ export type EnvTier = (typeof ENV_TIERS)[number];
 const ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 const SECRET_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const COMMIT_RE = /^[0-9a-f]{40}$/;
-const TOP_FIELDS = new Set(['schema_version', 'environments']);
+const TOP_FIELDS = new Set(['schema_version', 'environments', 'proposal_default_env']);
+/** 顶层「提案默认部署环境」字段（spec/environments.md §13，proposal-default-environment）。 */
+export const PROPOSAL_DEFAULT_ENV_FIELD = 'proposal_default_env';
 const ENV_FIELDS = new Set(['id', 'name', 'tier', 'aliases', 'description', 'health', 'version', 'secrets', 'deploy', 'promote_from', 'require_approval']);
 /** 晋级与审批门禁字段（spec/environments.md §12.1，environment-promotion-approval）。 */
 const GATE_FIELDS = ['promote_from', 'require_approval'] as const;
@@ -205,7 +207,11 @@ export type RegistryLoad =
   /** 无法加载：YAML 语法错误、顶层不是映射、schema_version 不为 1、environments 不是数组。 */
   | { state: 'unloadable'; error: RegistryIssue }
   /** 已加载：errors 为空才可用于 deploy-done / smoke / list / show；check 逐条报告。 */
-  | { state: 'loaded'; environments: EnvironmentDef[]; errors: RegistryIssue[]; warnings: RegistryIssue[] };
+  | {
+    state: 'loaded'; environments: EnvironmentDef[]; errors: RegistryIssue[]; warnings: RegistryIssue[];
+    /** 顶层 proposal_default_env（§13）：未配置或非法时为 null；非法时 errors 中另有一条 ENV_FIELD_INVALID。 */
+    proposalDefaultEnv: string | null;
+  };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -281,6 +287,7 @@ export function loadEnvironmentRegistry(root: string): RegistryLoad {
     });
   });
   validateGateReferences(environments, errors);
+  const proposalDefaultEnv = validateProposalDefaultEnv(doc, doc.environments, errors);
 
   // id 与 alias 不区分大小写全局唯一
   const seen = new Map<string, string>();
@@ -295,7 +302,7 @@ export function loadEnvironmentRegistry(root: string): RegistryLoad {
       }
     }
   }
-  return { state: 'loaded', environments, errors, warnings };
+  return { state: 'loaded', environments, errors, warnings, proposalDefaultEnv };
 }
 
 /**
@@ -319,6 +326,37 @@ function validateGateFields(
     promote_from: typeof raw.promote_from === 'string' ? raw.promote_from : null,
     require_approval: raw.require_approval === true,
   };
+}
+
+/**
+ * 顶层 proposal_default_env 校验（spec/environments.md §13.2）：缺省或 null 为未配置；配置时须为字符串且与某个环境 id
+ * 完全相等（不接受 alias、不做大小写归一）。对所指环境的其他配置不加限制。引用按登记表原始条目的 id 判断，
+ * 避免因所指环境自身另有字段错误而重复报「未登记」。非法时报一条不带 environment 的 ENV_FIELD_INVALID。
+ */
+function validateProposalDefaultEnv(doc: Record<string, unknown>, rawEnvironments: unknown[], errors: RegistryIssue[]): string | null {
+  if (!has(doc, PROPOSAL_DEFAULT_ENV_FIELD)) return null;
+  const value = doc[PROPOSAL_DEFAULT_ENV_FIELD];
+  if (value === null) return null;
+  const bad = (reason: string, shown?: string) => errors.push({
+    code: 'ENV_FIELD_INVALID', field: PROPOSAL_DEFAULT_ENV_FIELD, ...(shown !== undefined ? { value: shown } : {}), reason,
+  });
+  if (typeof value !== 'string' || value.trim() === '') {
+    bad('proposal_default_env must be the id of a registered environment');
+    return null;
+  }
+  const ids = rawEnvironments
+    .filter((raw): raw is Record<string, unknown> => isRecord(raw) && typeof raw.id === 'string')
+    .map(raw => raw.id as string);
+  if (ids.includes(value)) return value;
+  const needle = value.trim().toLowerCase();
+  const intended = rawEnvironments.find((raw): raw is Record<string, unknown> => isRecord(raw) && typeof raw.id === 'string' && (
+    (raw.id as string).toLowerCase() === needle
+    || (Array.isArray(raw.aliases) && raw.aliases.some(a => typeof a === 'string' && a.trim().toLowerCase() === needle))
+  ));
+  bad(intended
+    ? `proposal_default_env must be an environment id, not an alias or differently-cased id (did you mean ${intended.id as string}?)`
+    : `proposal_default_env references unregistered environment "${value}"`, value);
+  return null;
 }
 
 /** promote_from 引用校验（§12.1）：必须等于另一个环境的 id（不接受 alias）、不得指向自身、不得成环（环上每个环境各报一条）。 */

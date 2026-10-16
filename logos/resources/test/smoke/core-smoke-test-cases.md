@@ -2310,3 +2310,42 @@
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；**失败不得写 pass**。
 - 判据以 `--format json` 的结构化字段、退出码与命令实际输出为准，不解析人类可读文案。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-258～SMOKE-core-262 均被 runner 覆盖。
+
+## OpenLogos 0.16.6 提案默认部署环境安装态 smoke（SMOKE-core-263～267）
+
+> 这组用例验证登记表顶层字段 `proposal_default_env` 的校验与 `env list` 输出，以及配套改动的 change-writer / deployment-designer 两个 Skill（来源提案 proposal-default-environment，功能规格 §2.93.1、§2.93.6）确实进入了本机全局安装态与本仓托管副本。change-writer 的提问行为由 Skill 文本承载，安装态只核对 Skill 同源且含新规则，不驱动 AI 填写提案。
+>
+> 用例在 `mktemp -d` 一次性隔离 git 项目内执行（经全局 `openlogos init` 建立，`locale: zh`）。runner 以子进程直接调用 CLI，对全局安装态**只读**，不做安装或卸载，不触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态账本与用户其他仓库（包括 runlogos）；唯一读取本仓的是 SMOKE-core-263 ④ 对本仓托管副本的只读比对。判据用**行为断言**：全局 `--version` == 部署记录版本只证明装了新包。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-263 | 安装态版本、制品身份与本仓 sync 同源 | 本机全局已安装本次候选；部署记录中有候选版本与 tarball SHA-256；本仓已按部署方案执行 `openlogos sync` | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 检查全局包内 `skills/change-writer/SKILL.md` 含「`proposal_default_env`」与「`source: policy`」规则及四种必须提问的负例，`skills/deployment-designer/SKILL.md` 含「只在用户明确指定时写入」；④ 逐字节比对本仓 `logos/skills/change-writer/SKILL.md`、`logos/skills/deployment-designer/SKILL.md` 与全局包内同名文件 | ① `--version` 等于部署记录版本，入口无 workspace link；② `payloadHash` 自洽；③ 全部成立；④ 字节一致 | 保留读取结果。①～③ 任一不符 → 停止后续流程，按部署方案用 `cli/rollback/miniidealab-openlogos-0.16.5.tgz` 回装全局；④ 不一致 → 重新执行本仓 `openlogos sync` 后复核，仍不一致则回流本提案 |
+| SMOKE-core-264 | 安装态合法默认环境的校验与输出 | 本机全局已安装本次候选；临时项目登记表含 `test`（aliases 含「测试」）与 `prod`，顶层 `proposal_default_env: test` | ① `openlogos env check --format json`；② `openlogos env list --format json`；③ `openlogos env list`（文本模式）；④ `openlogos env show test --format json` 与 `openlogos status --format json` | ① 退出码 0，`errors` 为空，`warnings` 中无 `field=proposal_default_env`；② data 顶层 `proposal_default_env` 为 `"test"`；③ test 行后有「（提案默认）」，prod 行无标注；④ 两者 data 均不含 `proposal_default_env` | 同上；任一不成立表示字段校验或输出未进入安装态，回装旧版并回流本提案 |
+| SMOKE-core-265 | 安装态非法默认环境 fail-closed | 同上，但顶层依次改为 `proposal_default_env: stage`（未登记）、`proposal_default_env: 测试`（alias）；临时项目另有活跃提案处于 ready-to-deploy | 对每种写法：① `env check --format json`；② `deploy-done --env test --ref HEAD --format json`；③ `smoke --env test --format json`；记录执行前后 tasks.md、`DEPLOY_DONE`、smoke marker 与运行态账本的 SHA-256 | ① 退出码 1，`errors` 含 `ENV_FIELD_INVALID`（`field=proposal_default_env`）；② ③ 报 `ENV_REGISTRY_INVALID`、退出码 1；快照前后一致（零副作用） | 同上；任一不成立表示非法值未 fail-closed，回装旧版并回流本提案 |
+| SMOKE-core-266 | 安装态默认环境可指向受门环境，部署仍受门 | 同上；登记表中 staging 与 prod 均为 `deploy.mode: script`（部署脚本把版本标识写入另一个一次性目录），prod 配置 `promote_from: staging`、`require_approval: true`，顶层 `proposal_default_env: prod`；临时 git 项目含 tag `v1` | ① `env check --format json`；② `env list --format json`；③ `approve --env prod --ref v1` 后 `deploy --env prod --ref v1 --format json`（staging 未验证 `v1`）；④ `env show prod --format json` | ① 退出码 0，无 `field=proposal_default_env` 的 error；② `proposal_default_env` 为 `"prod"`；③ `DEPLOY_PROMOTION_UNVERIFIED`、退出码 1，发布目录无痕迹、账本无 deploy 记录；④ `environment.deploy.mode` 为 `script`，`environment.deploy.script` 等于登记表所写脚本路径，输出不含密钥值 | 同上；任一不成立表示默认环境误被禁止或绕过了既有门禁，回装旧版并回流本提案 |
+| SMOKE-core-267 | 安装态未配置零回归 | 本机全局已安装本次候选；两个临时项目：A 无登记表；B 登记表只有 `test`、未写该字段 | 对 A、B 分别执行 `env list --format json`、`env check --format json`（A 预期报 `ENV_REGISTRY_NOT_FOUND`）、`status --format json`；对同一夹具以 `cli/rollback/miniidealab-openlogos-0.16.5.tgz` 在一次性隔离 prefix 中执行同样命令作为基线 | 退出码一致；data 不含 `proposal_default_env`；除版本相关字段外，关键字段（`registry_present`、`environments[].id`、`errors`、`warnings`）与 0.16.5 基线一致 | 同上；任一不成立表示零回归被破坏，回装旧版并回流本提案 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目、一次性「发布目录」与一次性基线 prefix 内进行，结束即删除。**不得**触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态目录、用户其他仓库（包括 runlogos）或本机全局 prefix；本节对全局安装态只读，对本仓只做 SMOKE-core-263 ④ 的只读比对。
+- 不触发真实 CI、不访问任何远程服务。
+- 命令图中不得出现 `npm publish` / dist-tag / `git tag`（临时项目内为构造夹具创建的本地 tag 除外）/ `gh release` / `git push`。
+- 断言中不硬编码主机路径、墙上时钟或本机全局安装现值；commit 以临时仓库内 `git rev-parse` 的实际值比较。
+
+### 三、追溯与覆盖
+
+- 功能规格：§2.93.1、§2.93.6。
+- 根规范：`spec/environments.md` §2.2、§7.2、§13；`spec/cli-json-output.md`「`env list`（data）」。
+- 场景：S41「提案默认部署环境（proposal-default-environment）」。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.6 发布方案（提案默认部署环境，本地全局）」。
+- 仓库内对应用例：UT-S41-20～UT-S41-22、ST-S41-06。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-proposal-default-environment-0-16-6.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-263～SMOKE-core-267，不得依靠通配发现后无条件 PASS。runner 记录全局入口 realpath、安装态版本、每个隔离项目路径、每次命令的退出码与 JSON 摘要。
+- **适用性判定不得依赖自动流程不会设置的环境变量**：候选 tarball 先取显式环境变量，未设置时按候选版本取本仓 `cli/miniidealab-openlogos-<候选版本>.tgz`，并要求其 SHA-256 已写入部署记录；候选版本早于 0.16.6 时按缺候选制品处理。只有制品、部署记录、回滚制品或本仓 sync 确实缺失时才写显式 `skip` 并携带缺失项，不得标 `reason_code:"platform-unavailable"`。有 skip 时不得写 `SMOKE_PASS`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/evidence`；**失败不得写 pass**。
+- 判据以 `--format json` 的结构化字段、退出码与命令实际输出为准，不解析人类可读文案（SMOKE-core-264 ③ 的文本标注除外，它本身就是被测输出）。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-263～SMOKE-core-267 均被 runner 覆盖。

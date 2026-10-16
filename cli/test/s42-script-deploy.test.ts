@@ -9,7 +9,7 @@
  * 除 UT-S42-15（进程内调用 deploy 并注入写入失败）外，均走真实 CLI 入口 cli/dist/index.js。
  * 结果由全局 OpenLogos reporter 写入 logos/resources/verify/test-results.jsonl。
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
   chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync,
@@ -26,6 +26,11 @@ import { DEPLOY_LEDGER_REL, DEPLOY_LOCKS_REL, ENV_REGISTRY_REL } from '../src/li
 import { deploy, DEPLOY_WORK_REL, publishExclusive, staleLockGatePath } from '../src/commands/deploy.js';
 import { createStreamMasker } from '../src/lib/deploy-runner.js';
 import { writeDeployCompletion } from '../src/commands/deploy-done.js';
+
+// 本文件用例全部驱动真实子进程（git、CLI 入口、部署脚本 / 合并事务），单独运行单条 0.5～7.4s；全量 verify 与
+// S19 真实 npm pack / install 等重型用例并发时整体放慢 3～4 倍，超过全局 10s 而误报超时（proposal-default-environment
+// loop 1：UT-S42-12、ST-S42-01、UT-S09-442）。超时只放宽本文件，断言不变。
+vi.setConfig({ testTimeout: 60_000 });
 
 const CLI = resolve(dirname(fileURLToPath(import.meta.url)), '../dist/index.js');
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..');

@@ -1,0 +1,98 @@
+{
+  "steps": [
+    {
+      "args": "env check --format json",
+      "exit": 0,
+      "stdout": {
+        "command": "env check",
+        "data": {
+          "scope": null,
+          "ok": true,
+          "errors": [],
+          "warnings": [
+            {
+              "code": "ENV_UNKNOWN_FIELD",
+              "message": "Unknown field proposal_default_env (ignored).",
+              "field": "proposal_default_env"
+            }
+          ],
+          "secrets": [],
+          "probes": []
+        }
+      },
+      "stderr": null
+    },
+    {
+      "args": "env list --format json",
+      "exit": 0,
+      "stdout": {
+        "command": "env list",
+        "data": {
+          "registry_path": "logos/environments.yaml",
+          "registry_present": true,
+          "environments": [
+            {
+              "id": "test",
+              "name": "Test",
+              "tier": "test",
+              "current_ref": null,
+              "previous_ref": null,
+              "deploy_mode": null,
+              "deploy_in_progress": null,
+              "last_deploy": null,
+              "last_smoke": null,
+              "aliases": [
+                "测试"
+              ]
+            },
+            {
+              "id": "staging",
+              "name": "Staging",
+              "tier": "staging",
+              "current_ref": null,
+              "previous_ref": null,
+              "deploy_mode": "script",
+              "deploy_in_progress": null,
+              "last_deploy": null,
+              "last_smoke": null,
+              "aliases": []
+            },
+            {
+              "id": "prod",
+              "name": "Production",
+              "tier": "prod",
+              "current_ref": null,
+              "previous_ref": null,
+              "deploy_mode": "script",
+              "deploy_in_progress": null,
+              "last_deploy": null,
+              "last_smoke": null,
+              "promote_from": "staging",
+              "require_approval": true,
+              "open_approvals": [],
+              "promotion": {
+                "from": "staging",
+                "candidate_ref": null
+              },
+              "aliases": [
+                "生产"
+              ]
+            }
+          ],
+          "ledger": {
+            "path": "logos/.openlogos-runtime/deployments.jsonl",
+            "corrupt_lines": 0
+          },
+          "warnings": [
+            {
+              "code": "ENV_UNKNOWN_FIELD",
+              "message": "Unknown field proposal_default_env (ignored).",
+              "field": "proposal_default_env"
+            }
+          ]
+        }
+      },
+      "stderr": null
+    }
+  ]
+}

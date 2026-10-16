@@ -2930,6 +2930,7 @@ openlogos env check [<id|alias>] [--probe] [--format json]
 {
   "registry_path": "logos/environments.yaml",
   "registry_present": true,            // 登记表不存在时为 false，environments 为 []
+  "proposal_default_env": "test",      // 可选（来源变更 proposal-default-environment）：仅登记表配置了顶层 proposal_default_env 时输出，值为环境 id；未配置时不输出该键
   "environments": [
     { "id": "test", "name": "测试环境", "tier": "test", "aliases": ["测试", "qa"],
       "current_ref": "…", "last_deploy": { /* DeployRecord */ }, "last_smoke": { /* SmokeRecord */ } }
@@ -2939,13 +2940,22 @@ openlogos env check [<id|alias>] [--probe] [--format json]
 }
 ```
 
+- `proposal_default_env`（来源变更 proposal-default-environment，决策 C06）：权威定义见 `spec/environments.md` §13。只在登记表配置了该字段时出现；未配置（含无登记表）时 data 字段集与引入前逐字一致。`env show`、`env check` 的 data 与 `status` 不输出该字段（`env show` 另在 `environment.deploy` 输出部署配置，见下节）。登记表中该字段非法时登记表按非法处理，`env list` 使用错误 envelope `ENV_REGISTRY_INVALID`（退出码 1），`env check` 在 `data.errors` 中报 `ENV_FIELD_INVALID`（`field=proposal_default_env`）。
+
 ### `env show`（data）
 
 ```jsonc
 {
   "environment": {                     // 登记表中该环境的配置（只含规范字段；secrets 只有变量名）
     "id": "prod", "name": "生产环境", "tier": "prod", "aliases": ["生产"],
-    "description": null, "health": "https://…", "version": "https://…", "secrets": ["PROD_TOKEN"]
+    "description": null, "health": "https://…", "version": "https://…", "secrets": ["PROD_TOKEN"],
+    "deploy": {                        // 可选（来源变更 proposal-default-environment）：仅该环境配置了 deploy 时输出；经 spec/environments.md §11.2 校验后的配置，不含命令与密钥值
+      "mode": "agent",                 // "script" | "ci" | "agent"
+      "script": null, "args": [], "workdir": "worktree", "timeout_sec": 1800,
+      "provider": null, "workflow": null, "workflow_ref": null, "inputs": {}, "poll_interval_sec": 10,
+      "trigger_script": null, "status_script": null,
+      "plan_section": "生产环境发布步骤"  // 登记表实际写的章节标题
+    }
   },
   "current_ref": "…",
   "last_deploy": { /* DeployRecord */ },
@@ -2955,6 +2965,8 @@ openlogos env check [<id|alias>] [--probe] [--format json]
   "warnings": []
 }
 ```
+
+- `environment.deploy`（来源变更 proposal-default-environment，proposal delta-r1 F1）：权威定义见 `spec/environments.md` §13.3。该环境未配置 `deploy` 时不输出该键，此时 `environment` 字段集与引入前逐字一致。字段与登记表 `deploy`（§11.2）一一对应，未适用于当前 `mode` 的字段为 null 或默认值；`secrets` 仍只有变量名。用途：让提案阶段（change-writer）无需解析登记表原文即可取得该环境实际引用的脚本、工作流与方案章节。`env show` 不输出 `proposal_default_env`。
 
 ### `env check`（data）
 
