@@ -91,6 +91,9 @@ function buildProject(root, fixture) {
   git(root, ['commit', '-qm', 'fixture']);
 }
 
+/** 平台默认沙箱根的可能取值（sandbox.ts defaultSandboxRoot：darwin 为 /private/tmp，其余为 os.tmpdir()）。 */
+const DEFAULT_SANDBOX_ROOTS = new Set(['/private/tmp', tmpdir(), realpathSync(tmpdir())]);
+
 /** 规范化：去掉随调用或构建变化的值（时间、UUID、临时路径、CLI 版本、耗时、资产哈希），commit 按首次出现顺序编号。 */
 function normalizer(root) {
   const commits = new Map();
@@ -98,6 +101,8 @@ function normalizer(root) {
   return text => {
     let out = text;
     for (const r of roots) out = out.split(r).join('<ROOT>');
+    // 平台默认沙箱根（darwin 为 /private/tmp，其余为 os.tmpdir()）是宿主环境事实，不进基线
+    out = out.replace(/"root":"([^"]*)"/g, (m, v) => (DEFAULT_SANDBOX_ROOTS.has(v) ? '"root":"<SANDBOX_ROOT>"' : m));
     out = out.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, '<TIME>');
     out = out.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<UUID>');
     out = out.replace(/\b[0-9a-f]{64}\b/g, '<SHA256>');

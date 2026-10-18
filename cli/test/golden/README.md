@@ -168,3 +168,21 @@
 
 - 让当前 CLI 对合法 `proposal_default_env` 仍报 `ENV_UNKNOWN_FIELD` → ST-S41-06 ④ 中「当前无该警告」断言变红。
 - 让 0.16.5 基线的警告数不为 1 或退出码非 0 → ST-S41-06 ④ 的旧读取方断言变红。
+
+---
+
+# 跨平台补记：默认沙箱根占位（release-0-16-7 决策 C11）
+
+`s42-zero-regression-baseline.json`、`s41-gate-zero-regression-baseline.json`、`s43-gate-zero-regression-baseline.json`
+三份基线都是在 macOS 上录制的，smoke / verify JSON 的 `sandbox.root` 记成了平台默认沙箱根 `"/private/tmp"`。
+Linux 上同一字段为 `os.tmpdir()`（通常是 `"/tmp"`），这是宿主环境事实，不是被测行为。0.16.7 公开发布的门 ②
+（docker `node:20` 干净克隆）因此出现 ST-S41-05、ST-S41-06、UT-S42-16、UT-S43-14 四个误报。
+
+补记方式（不以新版 CLI 重录）：
+
+1. 三份夹具的 `normalizer` 增加一条规则：JSON 中 `"root"` 的值属于平台默认沙箱根（`/private/tmp`、`os.tmpdir()`
+   及其 realpath）时替换为 `<SANDBOX_ROOT>`；显式配置的其他沙箱根原样保留。
+2. 三份基线中原录得的 `"root": "/private/tmp"` 按同一规则替换为 `"root": "<SANDBOX_ROOT>"`（分别为 4、6、6 处），
+   其余字节不变。这等于对原录制结果补做同一条规范化，基线仍是各自「引入前」CLI 的实测输出。
+
+`s41-proposal-default-env-baseline.json` 不含该字段，不受影响。

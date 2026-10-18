@@ -370,7 +370,9 @@ describe('S42 script 方式部署 — 单元测试（environment-deploy 切片 3
   });
 
   it('UT-S42-05: 脚本失败与超时', async () => {
-    setup({ registry: registry({ timeout_sec: 2 }) });
+    // timeout_sec 同样约束开头那次应当成功的部署：2s 在全量 verify 负载下会被正常部署本身耗尽（release-0-16-7 重新验收误报），
+    // 放宽到 8s；sleep 夹具休眠 60s，② 的超时分支仍必然触发
+    setup({ registry: registry({ timeout_sec: 8 }) });
     expect(deployJson(['--env', 'prod', '--ref', 'v1']).status).toBe(0);
     const currentBefore = envShow('prod').current_ref;
     expect(currentBefore).toBe(tags.v1);

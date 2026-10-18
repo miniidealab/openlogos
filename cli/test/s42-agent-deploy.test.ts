@@ -7,7 +7,7 @@
  * asset-manifest，并在临时目录中重跑 scripts/build-plugin-skills.sh 比对生成结果。
  * 结果由全局 OpenLogos reporter 写入 logos/resources/verify/test-results.jsonl。
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,6 +18,10 @@ import { stringify as stringifyYaml } from 'yaml';
 import { captureConsole, makeTempRoot, mockCwd, mockProcessExit, scaffoldProject, takeExitCode, writeLoopPass } from './helpers.js';
 import { deploy } from '../src/commands/deploy.js';
 import { DEPLOY_LEDGER_REL, DEPLOY_PENDING_REL, ENV_REGISTRY_REL } from '../src/lib/environments.js';
+
+// 本文件 agent 用例串行驱动真实 CLI 入口 7～8 次（单独运行 3～5s）；全量 verify 在沙箱内整体放慢约一倍时超过全局 10s 而误报超时
+// （release-0-16-7 门② 后的重新验收：UT-S42-11）。与 s42-script-deploy.test.ts 同口径，超时只放宽本文件，断言不变。
+vi.setConfig({ testTimeout: 60_000 });
 
 const CLI = resolve(dirname(fileURLToPath(import.meta.url)), '../dist/index.js');
 const CLI_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
