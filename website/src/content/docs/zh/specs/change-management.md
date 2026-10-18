@@ -74,11 +74,27 @@ openlogos exempt add|remove|list <path>      # guard.exempt：无需立案的已
 
 `add` / `remove` 会改变 guard 的保护范围，因此**必须由用户在宿主的原生权限弹窗中批准**（`list` 不受限）。对话中的口头同意不算批准。若当前权限模式下宿主不会弹窗，请在终端自行执行（Claude Code 中用 `! <命令原文>`），或切换到默认权限模式后重试。`--auto` 的 standing 授权不覆盖这些命令。详见 [`openlogos ignore` / `openlogos exempt`](/zh/cli/ignore-exempt)。
 
+### 部署审批类命令只能由人执行
+
+[环境登记表](/zh/specs/environments)的两条部署命令以同样方式受限，在任何 lifecycle、任何提案状态下都受限（有活跃提案也不解除）：
+
+- `openlogos approve …`，任何参数形态（含 `--help`）——它会写入部署审批；
+- `openlogos deploy … --force-promote "<理由>"`——它会越过晋级检查。不带 `--force-promote` 的 `openlogos deploy` 不受限。
+
+两者都必须单独调用（只允许 `cd <目录> &&` 前缀），与其他命令组合一律阻断。Claude Code 在 `default` / `acceptEdits` 权限模式下由宿主对这一次调用弹出审批；其他权限模式或无人值守运行时直接阻断，请在终端自行执行。Cursor 经 `beforeShellExecution` 请求审批。RunLogos 等宿主 driver 不得代替用户批准这类审批。
+
+### 已配置门禁的环境登记表
+
+`logos/environments.yaml` 平时是内置默认豁免（运维配置）。一旦文件中出现 `promote_from` 或 `require_approval` 字段名，它就是门禁策略来源：豁免与 `guard.exempt` 都不再适用，活跃提案也不构成放行理由，AI 对该文件的修改、shell 写入、移动与删除都要经宿主原生审批（宿主无法弹窗时阻断）。详见 [`openlogos ignore` / `openlogos exempt`](/zh/cli/ignore-exempt)。
+
+已知限制：ZCode、Qoder、WorkBuddy 适配层目前尚未实施上述部署审批类命令限制与受门登记表保护；使用这些宿主时，请在自己的终端里执行审批。
+
 ## 两档授权
 
 - **半自动（默认）**——`openlogos merge`、`openlogos verify`、部署、`openlogos smoke`、`openlogos archive` 与 `git push` 是人类确认点。AI 只在用户明确要求时执行；「按流程走完」之类说法不构成授权。
 - **全自动（`openlogos next --auto`）**——选择 `--auto` 即对整个提案给出 standing 授权：可跳的 flow 门自动放行，verify、部署、smoke、archive 与 `git push` 无需逐步确认。每次自动放行都追加记录到 `GATE_AUTO_PASSED`。
 - **硬红线（任何模式）**——`gate:implement:loop-exhausted`：达到迭代上限仍未通过测试的代码绝不放行，`--auto` 也不例外。
+- **硬红线（任何模式）**——目标环境要求审批而该版本未获审批，或晋级检查未通过（`DEPLOY_APPROVAL_REQUIRED` / `DEPLOY_PROMOTION_UNVERIFIED`）：部署停在「等待审批」或「晋级未满足」，由人审批后重新驱动即可继续。AI 不得自行执行 `openlogos approve`、不得加 `--force-promote` 越过晋级、不得换环境或版本、不得改用手工部署或 `deploy-done`，也不得修改已配置门禁的 `logos/environments.yaml` 来关闭门禁。
 
 merge 之后、代码完成之后、归档之后，AI 都会自动提交（并告知用户）。详见 [`openlogos next`](/zh/cli/next)。
 

@@ -7,9 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.7] - 2026-10-17
+
+0.16.2 之后的首个公开版本：**环境登记与部署执行**——在 `logos/environments.yaml` 登记项目的部署环境，用 `openlogos deploy` 按登记的方式部署到指定环境并留下部署账本，用晋级顺序与审批门约束生产部署，并可为提案指定默认部署环境。0.16.3～0.16.6 只在本机安装过，其内容全部包含在本版中，从 0.16.2 升级的用户直接看本节即可。
+
+### 从 0.16.2 升级
+
+1. 更新全局 CLI：`npm install -g @miniidealab/openlogos@latest`，确认 `openlogos --version` 为 `0.16.7`。
+2. 在每个项目执行一次 `openlogos sync`：随包 guard 新增了受限命令（`openlogos approve`、带 `--force-promote` 的 `openlogos deploy`），不 sync 时项目仍运行旧版 guard。
+3. 环境能力是 **opt-in**：项目里没有 `logos/environments.yaml` 时，`deploy-done`、`smoke`、`status` 的输出与退出码与 0.16.2 相同，无需任何改动。需要时新建该文件登记环境，再用 `openlogos env check` 校验。
+4. 已显式配置 `guard.exempt` 的项目不会自动获得 `logos/environments.yaml` 的内置默认豁免；如需免立案编辑登记表，执行 `openlogos exempt add logos/environments.yaml`。
+5. 登记表一旦为某个环境配置了门禁（`promote_from` / `require_approval`），修改登记表须经宿主原生审批，不再适用默认豁免。
+
+### Added
+
+- **环境登记表与部署账本**：在 `logos/environments.yaml` 登记部署环境（id、名称、层级、别名、健康检查地址等）；新增 `openlogos env list | show | check [--probe]` 查看与校验。`openlogos deploy-done --env <id> --ref <revision>` 记录部署到的环境与版本；`openlogos smoke --env <id>` 校验部署环境一致性，向 runner 注入 `OPENLOGOS_SMOKE_ENV`，并按结果行的 `target_environment` 判定环境证据。本机部署账本 `logos/.openlogos-runtime/deployments.jsonl` 记录每次部署与 smoke；`status --format json` 新增 `environments` 视图。
+- **环境部署执行**：新增 `openlogos deploy --env <id>`，按登记表中该环境的 `deploy` 配置部署，支持三种方式——`script`（在请求版本的隔离工作树中以参数数组执行仓库内部署脚本）、`ci`（GitHub Actions 预设或触发 / 状态脚本适配，只认运行回报的实际部署提交）、`agent`（登记未决记录、返回部署方案位置，由执行者完成后 `--complete` 写入结果）。
+- 版本通道（`--ref`）与提案通道（提案 ready-to-deploy 时默认，执行后追加部署报告并落标 `DEPLOY_DONE`）；`--rollback` 重新部署上一个版本；`--dry-run` 只检查不执行、不写文件；结果未知的 ci 部署可用 `--reconcile` 补记终态、`--abandon` 显式放弃；同一环境同一时间只允许一次部署。
+- 部署日志写入 `logos/.openlogos-runtime/deploy-logs/<deploy_id>.log`，已声明密钥的值在日志、终端与 JSON 输出中一律替换为 `***`。
+- **环境晋级与审批**：配置了 `deploy` 的环境可写 `promote_from`（须先在上游环境以同一版本通过已验证的 smoke，否则以 `DEPLOY_PROMOTION_UNVERIFIED` 零执行结束）与 `require_approval: true`（部署前须有绑定该 commit 的审批，否则以 `DEPLOY_APPROVAL_REQUIRED` 零执行结束并给出可直接执行的 approve 命令）。
+- 新增 `openlogos approve --env <id> --ref <revision> [--note <文字>]` 写入审批记录，重复执行幂等（`created=false`）；`openlogos deploy --force-promote "<理由>"` 留痕越过晋级检查。
+- **提案默认部署环境**：登记表顶层可写 `proposal_default_env: <环境 id>`，需要部署的提案未另行指定目标环境时默认部署到该环境；`env list` 输出该字段并在该环境行后标注「（提案默认）」。
+- deployment-designer 产出部署脚本与登记表 `deploy` 条目；deployment-executor 改用 `openlogos deploy` 执行部署。
+
+### Changed
+
+- `--auto` 新增硬停点：目标环境要求审批而该版本未获审批，或晋级检查未通过时，任何模式都不自动放行；生成的 AGENTS.md / CLAUDE.md 硬红线同步新增该条。
+- `openlogos approve` 与带 `--force-promote` 的 `openlogos deploy` 进入 guard 受限命令清单，只能由人执行；`deploy-done --env` 对配置了门禁的环境以 `DEPLOY_DONE_GATED_ENV` 拒绝，改用 `openlogos deploy`。
+- change-writer：提案需要部署且用户未指定目标环境时，以 `proposal_default_env` 为目标，不再逐案询问；默认值不决定是否部署，也不构成部署执行或发布授权。
+- smoke 以部署账本核对部署身份：提案落标后同一环境又被部署时报 `SMOKE_DEPLOY_SUPERSEDED`。
+- `logos/environments.yaml` 加入 guard 内置默认豁免（配置了门禁时除外）。
+
+### Fixed
+
+- smoke 的 `SMOKE_DEPLOY_MARKER_INVALID` 在 JSON 下带 `error.details.problems`；smoke 先写账本、后写标记，账本写入失败报 `SMOKE_LEDGER_WRITE_FAILED`，失败时恢复标记并撤销本次账本行。
+- 账本追加改为临时文件加原子替换，追加失败不留残片；账本末行缺少换行时拒绝追加。
+- `spec/logos.config.schema.json` 恢复为合法 JSON，`guard.exempt` 默认值同步为 3 条。
+- deployment-designer / deployment-executor 两个 Skill 的插件分发与 asset-manifest 登记。
+
 ## [0.16.6] - 2026-10-16
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.7 公开发布。
 
 ### Added
 
@@ -29,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.5] - 2026-10-15
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.7 公开发布。
 
 ### Added
 
@@ -53,7 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.4] - 2026-10-15
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.7 公开发布。
 
 ### Added
 
@@ -77,7 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.3] - 2026-10-15
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.7 公开发布。
 
 ### Added
 
@@ -1160,7 +1198,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom vitest reporter outputting OpenLogos JSONL format
 - `openlogos verify` self-validation: Gate 3.5 PASS with 100% coverage, 25/25 design-time assertions, 21/21 acceptance criteria
 
-[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.13.21...HEAD
+[Unreleased]: https://github.com/miniidealab/openlogos/compare/v0.16.7...HEAD
+[0.16.7]: https://github.com/miniidealab/openlogos/releases/tag/v0.16.7
 [0.13.24]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.24
 [0.13.22]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.22
 [0.13.21]: https://github.com/miniidealab/openlogos/releases/tag/v0.13.21

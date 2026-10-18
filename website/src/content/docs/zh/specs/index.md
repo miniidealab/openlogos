@@ -34,7 +34,8 @@ OpenLogos 规格是所有 Skill、CLI 命令和 AI 指令文件都必须遵循�
 | [tasks.md 格式](/zh/specs/tasks-spec) | 变更提案任务文件的结构化格式——章节标记与状态检测 |
 | [TEST_SLICE_MANIFEST](/zh/specs/test-slice-manifest) | 由 `openlogos slice plan` 写出、供 verify 读取的 `[code]` 切片机读清单 |
 | [SQL 注释约定](/zh/specs/sql-comment-convention) | SQLite DDL 元数据注解的结构化注释格式 |
-| [CLI JSON 输出](/zh/specs/cli-json-output) | CLI 命令的结构化 JSON 输出规格（status、verify、smoke、detect） |
+| [环境登记表](/zh/specs/environments) | `logos/environments.yaml` 字段、`DEPLOY_DONE` 格式、本机部署账本、smoke 环境证据、部署执行、晋级与审批门禁 |
+| [CLI JSON 输出](/zh/specs/cli-json-output) | CLI 命令的结构化 JSON 输出规格（status、verify、smoke、detect、env、deploy、approve） |
 
 ## 平台集成
 

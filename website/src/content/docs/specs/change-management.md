@@ -74,11 +74,27 @@ openlogos exempt add|remove|list <path>      # guard.exempt: committed paths tha
 
 `add` / `remove` change what the guard protects, so they **must be approved by the user in the host's native permission prompt** (`list` is unrestricted). A verbal "yes" in the conversation is not approval. If the current permission mode cannot show a prompt, run the command yourself in the terminal (`! <command>` in Claude Code) or switch to the default permission mode. The standing authorization of `--auto` does not cover these commands. See [`openlogos ignore` / `openlogos exempt`](/cli/ignore-exempt).
 
+### Deployment approval commands are human-only
+
+Two deployment commands from the [environment registry](/specs/environments) are restricted in the same way, in every lifecycle and proposal state (an active proposal does not lift the restriction):
+
+- `openlogos approve …` in any form (including `--help`) — it writes a deployment approval;
+- `openlogos deploy … --force-promote "<reason>"` — it skips the promotion check. A plain `openlogos deploy` without `--force-promote` is not restricted.
+
+Each must be a standalone call (only a `cd <dir> &&` prefix is allowed); combined with any other command it is blocked. In Claude Code's `default` / `acceptEdits` mode the host shows its own prompt for that exact call; in other permission modes or unattended runs the call is blocked — run it yourself in the terminal. Cursor asks through `beforeShellExecution`. A driver such as RunLogos must never approve these prompts on the user's behalf.
+
+### A gated environment registry
+
+`logos/environments.yaml` is normally a built-in exemption (operations config). Once it contains a `promote_from` or `require_approval` field name it becomes the source of gate policy: the exemption and `guard.exempt` no longer apply, an active proposal is no reason to allow it, and an AI's edits, shell writes, moves or deletes of the file go through the host's native approval (blocked when the host cannot prompt). See [`openlogos ignore` / `openlogos exempt`](/cli/ignore-exempt#the-environment-registry-logosenvironmentsyaml).
+
+Known limitation: the ZCode, Qoder and WorkBuddy adapters do not enforce these deployment-approval restrictions or the gated-registry protection yet; with those hosts, keep approvals in your own terminal.
+
 ## Two-tier Authorization
 
 - **Semi-auto (default)** — `openlogos merge`, `openlogos verify`, deployment, `openlogos smoke`, `openlogos archive` and `git push` are human confirmation points. The AI runs them only when the user explicitly asks; "finish the flow" style phrasing is not authorization.
 - **Full-auto (`openlogos next --auto`)** — choosing `--auto` is a standing authorization for the whole proposal: skippable flow gates are auto-passed and verify, deployment, smoke, archive and `git push` run without step-by-step confirmation. Every auto-pass is appended to `GATE_AUTO_PASSED`.
 - **Hard red line (every mode)** — `gate:implement:loop-exhausted`: code that hit the iteration limit without passing tests is never released, even under `--auto`.
+- **Hard red line (every mode)** — the target environment requires approval and this version has not been approved, or its promotion check has not been met (`DEPLOY_APPROVAL_REQUIRED` / `DEPLOY_PROMOTION_UNVERIFIED`): the deployment stops at "waiting for approval" or "promotion not met" and continues once a person approves and the flow is driven again. The AI must not run `openlogos approve` itself, add `--force-promote` to skip the promotion check, switch environment or version, deploy by hand or with `deploy-done`, or edit a gated `logos/environments.yaml` to switch the gate off.
 
 The AI commits automatically (and tells the user) after merge, after code, and after archive. See [`openlogos next`](/cli/next).
 

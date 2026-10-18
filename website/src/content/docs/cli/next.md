@@ -48,7 +48,13 @@ The standing authorization does **not** cover changing the guard's protection sc
 
 ### Hard red line — loop-exhausted
 
-The one exit gate that **no mode, including `--auto`, ever auto-passes** is `gate:implement:loop-exhausted`: code that hit the iteration ceiling (`max_iters`) without passing tests. It stays blocked so that full-auto only ever ships verified work — **code that did not pass tests is never released**. The only opt-in is an explicit overlay `set-loop` with `set.exhausted_gate.skippable: true` (high-risk, off by default).
+Among flow gates, the one exit gate that **no mode, including `--auto`, ever auto-passes** is `gate:implement:loop-exhausted`: code that hit the iteration ceiling (`max_iters`) without passing tests. It stays blocked so that full-auto only ever ships verified work — **code that did not pass tests is never released**. The only opt-in is an explicit overlay `set-loop` with `set.exhausted_gate.skippable: true` (high-risk, off by default).
+
+### Hard red line — deployment approval and promotion
+
+The second stop that no mode, including `--auto`, passes on its own comes from the [environment registry](/specs/environments): the target environment requires approval and this commit has not been approved (`DEPLOY_APPROVAL_REQUIRED`), or its promotion check has not been met (`DEPLOY_PROMOTION_UNVERIFIED`). The deployment stops at "waiting for approval" or "promotion not met" with nothing executed. A person approves the commit with [`openlogos approve`](/cli/approve) (or first passes a verified smoke upstream), and the driver is simply run again.
+
+To get past it, the AI must not approve on its own, add `--force-promote`, switch to another environment or version, deploy by hand or record the deployment with `deploy-done`, or edit a gated `logos/environments.yaml` to switch the gate off. The standing `--auto` authorization covers none of these.
 
 ## JSON fields
 

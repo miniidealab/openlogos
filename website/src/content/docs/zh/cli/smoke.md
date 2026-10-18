@@ -17,7 +17,7 @@ openlogos smoke [--env <name>] [--format json]
 
 | 选项 | 说明 |
 |--------|-------------|
-| `--env <name>` | 为本次运行和报告打上环境标签，例如 `staging`、`production`。 |
+| `--env <name>` | 本次验证的环境，例如 `staging`、`production`。没有登记表时只是本次运行与报告的自由标签；存在 `logos/environments.yaml` 时必须是已登记的 id 或别名，且**必填**（见[环境证据](#环境证据)）。 |
 | `--format json` | 输出机器可读的 JSON 信封（包含 `sandbox` 诊断信息）。 |
 
 ## 前置检查
@@ -30,6 +30,11 @@ openlogos smoke [--env <name>] [--format json]
 | `SMOKE_DEPLOY_DECISION_CONFLICT` | `proposal.md` 与 `tasks.md` 的部署决策不一致 | 先修正部署决策 |
 | `SMOKE_DEPLOY_NOT_DONE` | 缺少 `DEPLOY_DONE` | 完成部署后运行 `openlogos deploy-done` |
 | `SMOKE_DEPLOY_TASKS_INCOMPLETE` | `[deploy]` 仍有未勾选条目 | 补齐 `[deploy]` 任务后运行 `openlogos deploy-done` |
+| `SMOKE_DEPLOY_MARKER_INVALID` | `DEPLOY_DONE` 非空但不是合法记录，或无法读取（`error.details.problems` 点名问题字段） | 重新执行 `openlogos deploy-done --env <id> [--ref <revision>]` 重写 |
+| `SMOKE_ENV_MISMATCH` | 有登记表，且 `DEPLOY_DONE` 记录的环境与 `--env` 不一致 | 对实际部署的环境执行 smoke |
+| `SMOKE_DEPLOY_SUPERSEDED` | 有登记表，且提案落标之后该环境又被部署过（账本中该环境最近一次部署不是 `DEPLOY_DONE` 记录的那一次） | 在提案通道重新部署后再 smoke |
+
+有登记表时还会先检查 `ENV_REGISTRY_INVALID`、`ENV_REQUIRED`、`ENV_UNKNOWN`。以上拒绝都不运行 `smoke.command`、不写 smoke marker、不写账本。
 
 ## 功能说明
 
@@ -102,6 +107,29 @@ openlogos smoke [--env <name>] [--format json]
 | `reason_code` | 否 | `platform-unavailable` | 门禁唯一识别的原因码 |
 | `duration_ms` | 否 | number | 执行时长 |
 | `timestamp` | 否 | ISO 8601 | 运行时间 |
+| `target_environment` | 否 | 环境 id | runner 实际验证的环境（见下文）。既有字段 `environment` 仍是 runner 自定义的执行环境标签，不参与该判定 |
+
+## 环境证据
+
+项目存在 `logos/environments.yaml` 登记表（见[环境登记表](/zh/specs/environments)）且传入 `--env` 时：
+
+1. `--env` 解析为环境 id（先匹配 id，再匹配别名，不区分大小写）。
+2. 以环境变量 `OPENLOGOS_SMOKE_ENV=<id>` 运行 `smoke.command`（沙箱内同样注入）。runner 应读取它，并在自己产生的每条结果行写回 `target_environment`。
+3. smoke 对计入门禁的结果行分类：
+
+   | `env_evidence` | 条件 | 影响 |
+   |----------------|------|------|
+   | `declared` | 每一行都有 `target_environment` 且等于本次环境 | 可以判为已验证 |
+   | `missing` | 有行缺少 `target_environment`，或没有任何结果行 | 门禁照旧计算（兼容旧 runner），但 `verified=false` |
+   | `mismatch` | 有行声明了其他环境 | 门禁 FAIL，`gate.reason: "SMOKE_ENV_EVIDENCE_MISMATCH"` |
+
+4. 向部署账本 `logos/.openlogos-runtime/deployments.jsonl` 追加一条 smoke 记录。只有同时满足门禁通过、`env_evidence` 为 `declared`、结果由本次运行产生（`fresh_results`）、部署环境已确认、部署版本已知时，记录才是**已验证**（`verified=true`）。晋级检查（`promote_from`）与 [`env`](/zh/cli/env) 中的「最近 smoke」只认已验证的记录。
+
+先写账本、后写 smoke marker；任一步失败时两者一起恢复，并以 `SMOKE_LEDGER_WRITE_FAILED` 结束。
+
+部署执行已启用（有环境配置了 `deploy`）时，smoke 还会核对部署身份：有活跃提案时，`DEPLOY_DONE` 必须是账本中该环境最近一次部署（否则 `SMOKE_DEPLOY_SUPERSEDED`）；没有活跃提案时，部署身份取自账本，smoke 结果照常记入账本。
+
+没有登记表时，`--env` 仍只是普通标签，smoke 行为与以前一致。
 
 ## 提案生命周期集成
 
@@ -175,6 +203,8 @@ Required smoke cases without evidence (skip):
 
 `gate.reason` 优先级：`failed_cases` → 预检诊断码 → `required_cases_skipped` → `incomplete_coverage`。详见 [CLI JSON 输出](/zh/specs/cli-json-output)。
 
+有登记表时，`data` 还包含 `environment_evidence`：`target`、`deploy_id`、`ref`、`deploy_env_confirmed`、`env_evidence`、`mismatched_case_ids`、`missing_case_ids`、`fresh_results`、`verified` 与 `ledger_written`。
+
 ## 错误
 
 | 错误 | 原因 | 解决方法 |
@@ -188,5 +218,6 @@ Required smoke cases without evidence (skip):
 
 - [`verify`](/zh/cli/verify)：测试验收（Gate 3.6，部署前运行）
 - [`deploy-done`](/zh/cli/deploy-done)：记录部署完成（Gate 3.7）
+- [`deploy`](/zh/cli/deploy) / [`env`](/zh/cli/env)：执行部署，查看各环境最近的部署与 smoke
 - [`status`](/zh/cli/status)：在提案生命周期中显示 smoke 门状态
 - [`archive`](/zh/cli/archive)：smoke 通过后归档提案

@@ -67,6 +67,18 @@ The Decision Clarification section records the choices only a human can make. Fi
 
 "No deployment" means no `[deploy]` section and no deployment tasks anywhere. "Deployment required" means a `[deploy]` section plus a deployment-plan update in `[delta]` — or a citation of an already-merged deployment plan section. change-lint L5 checks the two agree.
 
+### Default deployment environment (`proposal_default_env`)
+
+When the project's [environment registry](/specs/environments) `logos/environments.yaml` has a top-level `proposal_default_env`, that is a deployment-target decision you made in advance. For a proposal that needs deployment, the Skill:
+
+1. **Still decides whether to deploy from the change itself** — the default never turns a docs-only or spec-only change into a deployment.
+2. **Reads structured facts only**: `openlogos env list --format json` for `proposal_default_env`, then `openlogos env show <id> --format json` for the environment's `deploy` configuration, `current_ref`, `promote_from` and `require_approval`. It does not parse the registry file.
+3. **Picks the target environment**: your explicit words in this request win (`source: user`, including "don't deploy this time"); otherwise it takes `proposal_default_env` (`source: policy`) and **does not ask again**; with no default, no registry or an invalid registry, it asks as before. "Affected environments" in the proposal names the environment id.
+4. **Checks method, rollback and smoke evidence item by item** against merged specs and the registry configuration (e.g. the `deploy` script or workflow, a rollback via `openlogos deploy --rollback` when `current_ref` exists, a configured smoke command). A deployment plan the proposal itself is writing does not count. Anything still missing is asked in one combined question — when all four are covered, the deployment decision needs no questions at all.
+5. **Notes the gates**: if the environment has `require_approval: true` the proposal says the deployment will wait for approval; with `promote_from` it says the same commit must pass smoke upstream first. It never picks another environment to avoid a gate.
+
+The default is not authorization: it decides *where* to deploy, not *whether* the deployment may run, and it never authorizes a public release. change-writer never writes, changes or removes `proposal_default_env`; to change it, edit the registry yourself (no proposal needed).
+
 ## tasks.md
 
 ```markdown

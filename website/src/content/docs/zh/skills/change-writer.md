@@ -67,6 +67,18 @@ description: 编写带影响分析与决策澄清的变更提案，规划 [delta
 
 「无需部署」即不写 `[deploy]` 分节，任何地方都不写部署任务。「需要部署」即写 `[deploy]` 分节，并在 `[delta]` 中更新部署方案——或引用一节已合并的部署方案。change-lint L5 检查两者一致。
 
+### 提案默认部署环境（`proposal_default_env`）
+
+项目的[环境登记表](/zh/specs/environments) `logos/environments.yaml` 顶层写有 `proposal_default_env` 时，它是你事先做出的部署目标决定。对需要部署的提案，Skill：
+
+1. **仍按变更内容判断是否需要部署**——默认值不会让纯文档、纯规格的变更变成需要部署。
+2. **只读结构化事实**：先用 `openlogos env list --format json` 取 `proposal_default_env`，再用 `openlogos env show <id> --format json` 取该环境的 `deploy` 配置、`current_ref`、`promote_from` 与 `require_approval`，不解析登记表原文。
+3. **确定目标环境**：你在本次需求中明确说了目标（含「这次不部署」）就按你的原话（`source: user`）；否则取 `proposal_default_env`（`source: policy`），**不再询问**；没有默认值、没有登记表或登记表不合法时照旧询问。提案「影响环境」写环境 id。
+4. **逐项核对部署方式、回滚与 smoke 证据**，依据只认已合并规格与登记表配置（如 `deploy` 引用的脚本或工作流、`current_ref` 存在时可用 `openlogos deploy --rollback` 回滚、已配置 smoke 命令）；本提案自己新写的部署方案不算依据。仍缺的项合并为一次提问——四项都有依据时，整条部署决定零提问。
+5. **注明门禁**：环境 `require_approval: true` 时，提案注明部署会停在等待审批；配置了 `promote_from` 时，注明需先在上游以同一 commit 通过 smoke。不会为避开门禁而改选环境。
+
+默认值不构成授权：它只决定部署到*哪里*，不决定部署能否执行，也不构成公开发布授权。change-writer 不写入、不修改、不删除 `proposal_default_env`；需要修改时请直接编辑登记表（不需立案）。
+
 ## tasks.md
 
 ```markdown

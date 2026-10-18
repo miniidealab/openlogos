@@ -8,16 +8,19 @@ After `verify` passes (Gate 3.6) and a human has confirmed the deployment, `open
 ## Synopsis
 
 ```bash
-openlogos deploy-done [--env <name>] [--format json]
+openlogos deploy-done [--env <name>] [--ref <git revision>] [--format json]
 ```
 
 Must be run from the project root, with an active change proposal (guard file present).
+
+`deploy-done` records a deployment that was carried out by someone else (a person, a CI pipeline, a tag-driven release). If the environment has a `deploy` configuration in `logos/environments.yaml`, prefer [`openlogos deploy`](/cli/deploy): on the proposal channel it runs the deployment and records completion in one step.
 
 ## Options
 
 | Option | Description |
 |--------|-------------|
-| `--env <name>` | Target environment label recorded with the completion (for example `staging`). |
+| `--env <name>` | Target environment recorded with the completion (for example `staging`). Without a registry this is a free-form label; when `logos/environments.yaml` exists it must be an environment id or alias and is **required**. |
+| `--ref <git revision>` | The version that was actually deployed (tag, branch or commit). It is resolved to a full 40-character commit and recorded in `DEPLOY_DONE` and the deployment ledger. Omitted → the version is recorded as unknown (`null`); HEAD at call time is never used as a substitute. |
 | `--format json` | Output a structured JSON envelope for tools such as RunLogos. |
 
 ## What it does
@@ -31,6 +34,23 @@ Must be run from the project root, with an active change proposal (guard file pr
 - Reports `next_step`: `ready-to-smoke` (run `openlogos smoke`) or `deploy-done` (run `openlogos archive`)
 
 This is a human-triggered, one-shot command — it fails loud on any missing precondition rather than partially recording completion.
+
+## Environment registry and deployment ledger
+
+When the project has a `logos/environments.yaml` registry (see [Environment Registry](/specs/environments)):
+
+- `--env` is resolved against environment ids first, then aliases (case-insensitive); an unknown value fails with `ENV_UNKNOWN`, a missing one with `ENV_REQUIRED`. There is no "only one environment, so pick it" default.
+- `DEPLOY_DONE` is written as a single JSON line, rewritten on every run:
+
+  ```json
+  {"deploy_id":"6f1c…","environment":"prod","ref":"<40-char commit>","ref_source":"explicit","recorded_at":"2026-10-14T08:00:00.000Z"}
+  ```
+
+- A `deploy` record is appended to the local deployment ledger `logos/.openlogos-runtime/deployments.jsonl` (the same ledger used by `smoke --env`, `deploy` and `env`). The ledger is written first and `DEPLOY_DONE` last, so a marker on disk always has its ledger record; if any step fails, tasks, markers and the ledger line are restored and the command ends with `DEPLOY_DONE_WRITE_FAILED`.
+- `--format json` adds a `deployment` object (`deploy_id`, `environment`, `ref`, `ref_source`, `observed_head`, `ledger_written`).
+- Environments with promotion or approval gates (`promote_from`, or `require_approval: true`) cannot be recorded by hand: `deploy-done --env` refuses them with `DEPLOY_DONE_GATED_ENV`. Deploy those environments with [`openlogos deploy`](/cli/deploy), which checks the gates first.
+
+Without a registry, `deploy-done` behaves exactly as before: `--env` is stored as a plain label and no ledger is written.
 
 ## Example
 
@@ -63,11 +83,18 @@ If the proposal does not need smoke, the last line suggests `openlogos archive <
 | `DEPLOYMENT_NOT_REQUIRED` | The proposal does not require deployment | Archive after verify passes |
 | `DEPLOY_TASKS_MISSING` | No non-empty `[deploy]` section in `tasks.md` | Add the deployment tasks |
 | `DEPLOYMENT_REPORT_MISSING` | `logos/resources/verify/deployment-report.md` is missing | Write the deployment report (deployment-executor) |
+| `ENV_REGISTRY_INVALID` | `logos/environments.yaml` exists but is invalid | Fix it; `openlogos env check` lists every problem |
+| `ENV_REQUIRED` / `ENV_UNKNOWN` | Registry present but `--env` missing, or it matches no id / alias | Pass a registered id or alias |
+| `ENV_REF_UNRESOLVED` | `--ref` does not resolve to a commit | Pass an existing tag, branch or commit |
+| `DEPLOY_DONE_GATED_ENV` | The environment has `promote_from` or `require_approval: true` | Use `openlogos deploy --env <id>` |
+| `DEPLOY_DONE_WRITE_FAILED` | A write step failed after the checks passed | Read the message (it says what was restored) and re-run |
 
-No tasks are checked and no marker is written when any check fails.
+No tasks are checked, no marker is written and nothing is added to the ledger when any check fails.
 
 ## Related commands
 
 - [`verify`](/cli/verify) — Gate 3.6 acceptance (must pass first)
 - [`smoke`](/cli/smoke) — Post-deployment health check (Gate 3.8)
+- [`deploy`](/cli/deploy) — Run the configured deployment for an environment
+- [`env`](/cli/env) — See what each environment is running
 - [`archive`](/cli/archive) — Archive the completed proposal

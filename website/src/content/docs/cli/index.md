@@ -15,7 +15,7 @@ Verify:
 
 ```bash
 openlogos --version
-# 0.16.0
+# 0.16.7
 ```
 
 After upgrading the CLI, run `openlogos sync` in each existing project to refresh its guard, hooks and Skills.
@@ -26,7 +26,7 @@ After upgrading the CLI, run `openlogos sync` in each existing project to refres
 |--------|-------------|
 | `--help`, `-h` | Show the help message |
 | `--version`, `-v` | Show the version number |
-| `--format json` | Structured JSON output (supported by most read and gate commands, e.g. `status`, `next`, `verify`, `merge`, `change-lint`, `impact`) |
+| `--format json` | Structured JSON output (supported by most read and gate commands, e.g. `status`, `next`, `verify`, `merge`, `change-lint`, `impact`, `env`, `deploy`, `approve`) |
 
 Apart from `init` (and `detect`, which also works elsewhere), commands must be run from the project root (the directory containing `logos/logos.config.json`).
 
@@ -56,6 +56,16 @@ Apart from `init` (and `detect`, which also works elsewhere), commands must be r
 | [`deploy-done`](/cli/deploy-done) | Record controlled deployment completion (Gate 3.7) |
 | [`smoke`](/cli/smoke) | Verify post-deployment health against smoke specs (Gate 3.8) |
 | [`launch`](/cli/launch) | Activate change management after verification passes |
+
+### Environments & deployment
+
+These commands are opt-in: they only apply once the project has a `logos/environments.yaml` registry (see [Environment Registry](/specs/environments)).
+
+| Command | Description |
+|---------|-------------|
+| [`env list` / `env show` / `env check`](/cli/env) | List and inspect registered environments; validate the registry (read-only) |
+| [`deploy`](/cli/deploy) | Run the deployment configured for an environment (script / ci / agent), roll back, dry-run |
+| [`approve`](/cli/approve) | Approve one commit for an environment that requires approval (human-only) |
 
 ### Change management (Delta workflow)
 

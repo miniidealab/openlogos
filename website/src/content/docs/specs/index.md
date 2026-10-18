@@ -34,7 +34,8 @@ Conventions for project layout, configuration files, and data formats:
 | [tasks.md Format](/specs/tasks-spec) | Structured format for change proposal task files — section markers and status detection |
 | [TEST_SLICE_MANIFEST](/specs/test-slice-manifest) | Machine-readable `[code]` slice manifest written by `openlogos slice plan` and read by verify |
 | [SQL Comment Convention](/specs/sql-comment-convention) | Structured comment format for SQLite DDL metadata annotations |
-| [CLI JSON Output](/specs/cli-json-output) | Structured JSON output specification for CLI commands (status, verify, smoke, detect) |
+| [Environment Registry](/specs/environments) | `logos/environments.yaml` fields, `DEPLOY_DONE` format, the local deployment ledger, smoke environment evidence, deployment execution, promotion and approval gates |
+| [CLI JSON Output](/specs/cli-json-output) | Structured JSON output specification for CLI commands (status, verify, smoke, detect, env, deploy, approve) |
 
 ## Platform Integration
 

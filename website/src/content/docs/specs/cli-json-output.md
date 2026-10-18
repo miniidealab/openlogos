@@ -3,7 +3,7 @@ title: CLI JSON Output
 description: Structured JSON output specification for OpenLogos CLI commands (status, next, verify, smoke, merge, slice plan, detect, module list), including the contract version handshake.
 ---
 
-OpenLogos CLI supports `--format json` on its machine-facing commands — including `status`, `next`, `watch`, `verify`, `smoke`, `deploy-done`, `merge`, `slice plan`, `detect`, `flow show`, `change-lint` and `module list` — producing structured JSON for programmatic consumption by external tools like RunLogos.
+OpenLogos CLI supports `--format json` on its machine-facing commands — including `status`, `next`, `watch`, `verify`, `smoke`, `deploy-done`, `deploy`, `approve`, `env list` / `env show` / `env check`, `merge`, `slice plan`, `detect`, `flow show`, `change-lint` and `module list` — producing structured JSON for programmatic consumption by external tools like RunLogos.
 
 ## Common Conventions
 
@@ -99,6 +99,7 @@ Returns phase progress, module state, active proposals, and suggestions:
 | `current_phase` | First incomplete phase key (or `null` if all done) |
 | `lifecycle` | Project lifecycle derived from module states |
 | `yaml_diagnostics` | Parse recovery status if YAML has issues |
+| `environments`, `environment_ledger` | Only when `logos/environments.yaml` exists: one EnvView per environment (see [env](#env-list--env-show--env-check)) and `{path, corrupt_lines}` of the deployment ledger. An invalid registry yields `environments: []` plus `environment_registry_error: {code, message}` |
 
 ### Proposal steps
 
@@ -250,8 +251,55 @@ Returns post-deployment smoke verification results:
 | `sandbox` | Sandbox execution status |
 | `report_path` | Generated smoke report path |
 | `result_path` | Smoke results JSONL path |
+| `environment_evidence` | Only with a registry: `target`, `deploy_id`, `ref`, `deploy_env_confirmed`, `env_evidence` (`declared` / `missing` / `mismatch`), `mismatched_case_ids`, `missing_case_ids`, `fresh_results`, `verified`, `ledger_written` |
 
-`gate.reason` priority: `failed_cases` → precheck diagnostic code (`smoke_runner_missing` / `smoke_reporter_missing` / `smoke_cases_uncovered`) → `required_cases_skipped` → `incomplete_coverage`.
+`gate.reason` priority: `failed_cases` → precheck diagnostic code (`smoke_runner_missing` / `smoke_reporter_missing` / `smoke_cases_uncovered`) → `required_cases_skipped` → `incomplete_coverage`. With a registry, a result row whose `target_environment` differs from the environment fails the gate with `SMOKE_ENV_EVIDENCE_MISMATCH`.
+
+## deploy-done
+
+```bash
+openlogos deploy-done --env <id|alias> [--ref <git revision>] --format json
+```
+
+With a registry, `data.environment` is the resolved id and `data.deployment` carries `deploy_id`, `environment`, `ref` (40-character commit or `null`), `ref_source` (`explicit` / `unknown`), `observed_head` and `ledger_written`. A gated environment is refused with `DEPLOY_DONE_GATED_ENV`; registry problems use `ENV_REGISTRY_INVALID`, `ENV_REQUIRED`, `ENV_UNKNOWN`, `ENV_REF_UNRESOLVED`. See [`openlogos deploy-done`](/cli/deploy-done).
+
+## env list / env show / env check
+
+```bash
+openlogos env list --format json
+openlogos env show <id|alias> --format json
+openlogos env check [<id|alias>] [--probe] --format json
+```
+
+All three are read-only and need no active proposal.
+
+- **`env list`** — `registry_path`, `registry_present` (`false` and `environments: []` without a registry), `proposal_default_env` (only when configured), `environments[]`, `ledger` (`{path, corrupt_lines}`) and `warnings[]` (e.g. `ENV_UNKNOWN_FIELD`).
+- **EnvView** (each `environments[]` item, also used by `status`) — `id`, `name`, `tier`, `aliases`, `current_ref`, `last_deploy`, `last_smoke` (with `env_evidence`, `fresh_results`, `deploy_env_confirmed`, `verified`). Once deployment execution is enabled: `previous_ref`, `deploy_mode`, `deploy_in_progress`, and `last_deploy.result` / `channel` / `mode` / `ref_requested` / `failure_reason`. For environments with `promote_from` or `require_approval`: `promote_from`, `require_approval`, `open_approvals[]` and `promotion` (`{from, candidate_ref}`).
+- **`env show`** — `environment` (the registry entry; `secrets` lists variable names only, and `deploy` appears when configured — script, workflow or plan section references, never commands or secret values), the EnvView fields, `history[]` (up to 20 records, newest first, `kind` = `deploy` / `smoke` / `approval`), `ledger` and `warnings`.
+- **`env check`** — `scope`, `ok` (exit code 1 when `false`), `errors[]` (`ENV_FIELD_INVALID`, `ENV_DUPLICATE_ID_OR_ALIAS`, `ENV_GATE_REFERENCE_UNKNOWN`, `ENV_SECRET_MISSING`, `ENV_PROBE_FAILED`), `warnings[]`, `secrets[]` (`{environment, name, present}`, never values) and `probes[]` (empty unless `--probe`).
+
+See [`openlogos env`](/cli/env) and [Environment Registry](/specs/environments).
+
+## deploy
+
+```bash
+openlogos deploy --env <id|alias> [--ref <revision>] [--rollback] [--channel proposal|version] [--dry-run] --format json
+openlogos deploy --env <id|alias> --complete <deploy_id> --result done|failed --format json
+openlogos deploy --env <id|alias> --abandon <deploy_id> --format json
+openlogos deploy --env <id|alias> --reconcile --format json
+```
+
+On success `data` contains `status` (`done` / `dry-run` / `awaiting-agent` / `reconciled` / `still-running` / `abandoned`), `environment`, `deploy_id`, `channel`, `mode`, `ref_input`, `ref_requested`, `ref` (confirmed deployed version, or `null`), `ref_source` (`explicit` / `ci-reported` / `unknown`), `rollback`, `rollback_from`, `duration_ms`, `ci`, `log_path`, `output_tail` (secrets masked), `ledger_written`, `proposal` (proposal channel), `plan` (dry-run / agent) and `warnings` (e.g. `DEPLOY_REF_UNCONFIRMED`). For gated environments it adds `approval_id`, `promoted_from` and `promotion_override_reason`; a dry-run `plan` adds the approval and promotion basis it would use.
+
+Failures go to stderr. `DEPLOY_FAILED`, `DEPLOY_RESULT_UNKNOWN` and `DEPLOY_RECORD_FAILED` carry `error.details` with the deployment (`deploy_id`, `exit_code`, `failure_reason`, `log_path`, `output_tail`, `deployed`, …). `DEPLOY_PROMOTION_UNVERIFIED` details give `promote_from`, `requested`, `upstream_current_ref`, `upstream_candidate_ref`; `DEPLOY_APPROVAL_REQUIRED` details give `requested` and a ready-to-run `approve_command`. All other refusals happen before anything runs. See [`openlogos deploy`](/cli/deploy).
+
+## approve
+
+```bash
+openlogos approve --env <id|alias> --ref <revision> [--note <text>] --format json
+```
+
+On success `data` contains `environment`, `approval_id`, `created` (`false` when an unused approval for the same environment and commit already existed — nothing new was written), `ref`, `ref_input`, `approver` (display only), `note` and `recorded_at`. Errors: `ENV_REGISTRY_NOT_FOUND`, `ENV_REGISTRY_INVALID`, `ENV_REQUIRED`, `ENV_UNKNOWN`, `APPROVAL_NOT_REQUIRED`, `APPROVAL_REF_REQUIRED`, `ENV_REF_UNRESOLVED`, `APPROVAL_WRITE_FAILED`. When an AI host blocks the command (it is human-only), there is no output at all. See [`openlogos approve`](/cli/approve).
 
 ## merge
 

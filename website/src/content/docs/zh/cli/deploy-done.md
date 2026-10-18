@@ -8,16 +8,19 @@ description: 在 verify 通过且人工确认部署后，受控地记录部署�
 ## 命令格式
 
 ```bash
-openlogos deploy-done [--env <name>] [--format json]
+openlogos deploy-done [--env <name>] [--ref <git revision>] [--format json]
 ```
 
 必须在项目根目录下运行，且存在活跃变更提案（guard 文件存在）。
+
+`deploy-done` 记录的是由别处完成的部署（人工、CI 流水线、tag 驱动的发布）。环境在 `logos/environments.yaml` 中配置了 `deploy` 时，优先使用 [`openlogos deploy`](/zh/cli/deploy)：在提案通道下它会执行部署并一步完成落标。
 
 ## 选项
 
 | 选项 | 说明 |
 |--------|-------------|
-| `--env <name>` | 随完成记录一并保存的目标环境标签（例如 `staging`）。 |
+| `--env <name>` | 随完成记录一并保存的目标环境（例如 `staging`）。没有登记表时是自由标签；存在 `logos/environments.yaml` 时必须是环境 id 或别名，且**必填**。 |
+| `--ref <git revision>` | 实际部署的版本（tag、分支或 commit），解析为 40 位完整 commit 后写入 `DEPLOY_DONE` 与部署账本。不传时版本记为未知（`null`），不会用调用时的 HEAD 代替。 |
 | `--format json` | 输出结构化 JSON 信封，供 RunLogos 等工具使用。 |
 
 ## 功能说明
@@ -31,6 +34,23 @@ openlogos deploy-done [--env <name>] [--format json]
 - 报告 `next_step`：`ready-to-smoke`（运行 `openlogos smoke`）或 `deploy-done`（运行 `openlogos archive`）
 
 这是人工触发的一次性命令——任一前置条件缺失即 fail loud，绝不部分记录完成。
+
+## 环境登记表与部署账本
+
+项目存在 `logos/environments.yaml` 登记表时（见[环境登记表](/zh/specs/environments)）：
+
+- `--env` 先与环境 id、再与别名不区分大小写地匹配；匹配不到报 `ENV_UNKNOWN`，未传报 `ENV_REQUIRED`。不做「只有一个环境就默认选它」的推断。
+- `DEPLOY_DONE` 写为单行 JSON，每次运行整体重写：
+
+  ```json
+  {"deploy_id":"6f1c…","environment":"prod","ref":"<40 位 commit>","ref_source":"explicit","recorded_at":"2026-10-14T08:00:00.000Z"}
+  ```
+
+- 向本机部署账本 `logos/.openlogos-runtime/deployments.jsonl` 追加一条 deploy 记录（与 `smoke --env`、`deploy`、`env` 共用同一账本）。先写账本、最后写 `DEPLOY_DONE`，因此 marker 在场即意味着账本记录已写入；任一步失败时恢复任务勾选、marker 与本次账本行，并以 `DEPLOY_DONE_WRITE_FAILED` 结束。
+- `--format json` 新增 `deployment` 对象（`deploy_id`、`environment`、`ref`、`ref_source`、`observed_head`、`ledger_written`）。
+- 配置了晋级或审批门禁（`promote_from`，或 `require_approval: true`）的环境不能手工落标：`deploy-done --env` 以 `DEPLOY_DONE_GATED_ENV` 拒绝。这类环境请用 [`openlogos deploy`](/zh/cli/deploy) 部署，它会先检查门禁。
+
+没有登记表时，`deploy-done` 的行为与以前完全一致：`--env` 只作为普通标签保存，不写账本。
 
 ## 示例
 
@@ -65,11 +85,18 @@ OpenLogos deploy-done
 | `DEPLOYMENT_NOT_REQUIRED` | 当前提案不需要部署 | verify 通过后直接归档 |
 | `DEPLOY_TASKS_MISSING` | `tasks.md` 中没有非空 `[deploy]` section | 补充部署任务 |
 | `DEPLOYMENT_REPORT_MISSING` | 缺少 `logos/resources/verify/deployment-report.md` | 先生成部署报告（deployment-executor） |
+| `ENV_REGISTRY_INVALID` | `logos/environments.yaml` 存在但不合法 | 修正登记表；`openlogos env check` 会逐条列出问题 |
+| `ENV_REQUIRED` / `ENV_UNKNOWN` | 有登记表但未传 `--env`，或传入值匹配不到任何 id / 别名 | 传入已登记的 id 或别名 |
+| `ENV_REF_UNRESOLVED` | `--ref` 无法解析为 commit | 传入存在的 tag、分支或 commit |
+| `DEPLOY_DONE_GATED_ENV` | 目标环境配置了 `promote_from` 或 `require_approval: true` | 改用 `openlogos deploy --env <id>` |
+| `DEPLOY_DONE_WRITE_FAILED` | 检查通过后某个写入步骤失败 | 按消息确认已恢复的内容后重跑 |
 
-任一检查失败时，不勾选任务、不写标记。
+任一检查失败时，不勾选任务、不写标记、不写账本。
 
 ## 相关命令
 
 - [`verify`](/zh/cli/verify) — Gate 3.6 验收（须先通过）
 - [`smoke`](/zh/cli/smoke) — 部署后健康检查（Gate 3.8）
+- [`deploy`](/zh/cli/deploy) — 按环境配置执行部署
+- [`env`](/zh/cli/env) — 查看各环境当前运行的版本
 - [`archive`](/zh/cli/archive) — 归档已完成的提案

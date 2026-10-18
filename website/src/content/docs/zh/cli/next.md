@@ -48,7 +48,13 @@ standing 授权**不覆盖**修改 guard 保护范围（`openlogos ignore|exempt
 
 ### 硬红线——loop-exhausted
 
-**任何模式（含 `--auto`）都绝不自动放行**的唯一退出门是 `gate:implement:loop-exhausted`：迭代达到上限（`max_iters`）仍未通过测试的代码。它保持阻塞，保证全自动只交付经过验证的成果——**未通过测试的代码绝不放行**。唯一的 opt-in 是显式 overlay `set-loop` 并设置 `set.exhausted_gate.skippable: true`（高风险，默认关闭）。
+在 flow 门中，**任何模式（含 `--auto`）都绝不自动放行**的唯一退出门是 `gate:implement:loop-exhausted`：迭代达到上限（`max_iters`）仍未通过测试的代码。它保持阻塞，保证全自动只交付经过验证的成果——**未通过测试的代码绝不放行**。唯一的 opt-in 是显式 overlay `set-loop` 并设置 `set.exhausted_gate.skippable: true`（高风险，默认关闭）。
+
+### 硬红线——部署审批与晋级
+
+另一处任何模式（含 `--auto`）都不会自行放行的停点来自[环境登记表](/zh/specs/environments)：目标环境要求审批而该版本未获审批（`DEPLOY_APPROVAL_REQUIRED`），或晋级检查未通过（`DEPLOY_PROMOTION_UNVERIFIED`）。部署停在「等待审批」或「晋级未满足」，不执行任何部署。由人用 [`openlogos approve`](/zh/cli/approve) 批准该 commit（或先在上游环境通过已验证的 smoke）后，重新驱动即可继续。
+
+AI 不得为越过它而自行审批、加 `--force-promote`、改用其他环境或版本、改用手工部署或 `deploy-done` 落标，也不得修改已配置门禁的 `logos/environments.yaml` 来关闭门禁；`--auto` 的 standing 授权不覆盖其中任何一项。
 
 ## JSON 字段
 

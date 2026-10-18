@@ -2,6 +2,8 @@
 // 组装随包 cursor-plugin-template（cursor-adapter-parity）：
 // hooks/agents 取自 plugin-cursor；skills 取共享 skills（补 frontmatter，name==目录名）；
 // commands 由 plugin/commands/*.md 转换为 disable-model-invocation 显式命令 Skills。
+// 用法：node scripts/build-cursor-template.mjs [输出目录]——缺省输出到 cli/cursor-plugin-template（prepack 口径）；
+// 测试传入一次性目录，避免在真实 cli/ 下边删边建，与并发读取该目录的 init / sync 用例竞争。
 import {
   cpSync,
   existsSync,
@@ -12,12 +14,12 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const cliRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = join(cliRoot, '..');
-const target = join(cliRoot, 'cursor-plugin-template');
+const target = process.argv[2] ? resolve(process.argv[2]) : join(cliRoot, 'cursor-plugin-template');
 const source = join(repoRoot, 'plugin-cursor');
 
 rmSync(target, { recursive: true, force: true });

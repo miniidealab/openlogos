@@ -30,7 +30,7 @@ openlogos exempt list [--format json]
 | 对 git 的影响 | 写入 `.gitignore` 托管区块——这些路径不再进入版本控制 | 无——这些路径仍被跟踪、正常入库 |
 | 对 guard 的影响 | 被忽略且未跟踪的路径不受保护 | 这些路径下的写入无需立案 |
 | 典型用途 | `node_modules/`、`dist/`、`.cache/`、生成的报告 | 参考资料、仍想入库的草稿文档 |
-| 内置默认 | 固定包含 `logos/.openlogos-runtime/` | `logos/resources/reference/` 与 `logos/resources/verify/baseline-seed-runs/*/staging/` |
+| 内置默认 | 固定包含 `logos/.openlogos-runtime/` | `logos/resources/reference/`、`logos/resources/verify/baseline-seed-runs/*/staging/` 与 `logos/environments.yaml` |
 
 ## 审批：add 与 remove 须经宿主原生审批
 
@@ -103,6 +103,15 @@ dist/
 
 这些路径即使位于豁免目录之下也照样受保护：豁免 `docs/` 并不会豁免 `docs/.gitignore`。
 
+### 环境登记表 `logos/environments.yaml`
+
+[环境登记表](/zh/specs/environments)是运维配置而非业务逻辑，因此 `logos/environments.yaml` 属于内置默认豁免：修改它不需立案。有两点例外：
+
+- **显式 `guard.exempt` 不会自动获得新的默认项。** 已把 `guard.exempt` 写成显式数组的项目（例如曾执行过 `exempt add`）不会自动加入这一项；需要时执行 `openlogos exempt add logos/environments.yaml`。
+- **配置了门禁的登记表不适用豁免。** 文件中一旦出现 `promote_from` 或 `require_approval` 字段名（或出现任何反斜杠字符，guard 按文本保守识别），它就成为部署门禁的策略来源：内置默认与 `guard.exempt` 都不再适用，活跃提案也不构成放行理由。AI 对该文件的直接修改、shell 写入、移动与删除都要经宿主原生审批——交互模式下由你批准，其他模式阻断。不含门禁字段的登记表照常豁免。
+
+登记表 `deploy` 条目引用的部署脚本与工作流是普通的受跟踪文件，照常受保护，因此改变部署实际执行的内容仍须立案。
+
 ### `list`
 
 打印当前条目。对 `exempt`，尚未写入配置的内置默认项标注为（内置默认）：
@@ -112,6 +121,7 @@ $ openlogos exempt list
 免立案清单（guard.exempt）：
   logos/resources/reference/                                （内置默认）
   logos/resources/verify/baseline-seed-runs/*/staging/      （内置默认）
+  logos/environments.yaml                                   （内置默认）
 ```
 
 加 `--format json` 时输出 JSON 信封，每个条目含 `value` 与 `source`（`config` 或 `default`）：
@@ -119,12 +129,13 @@ $ openlogos exempt list
 ```json
 {
   "command": "exempt list",
-  "version": "0.16.0",
-  "timestamp": "2026-10-10T08:00:00.000Z",
+  "version": "0.16.7",
+  "timestamp": "2026-10-17T08:00:00.000Z",
   "data": {
     "entries": [
       { "value": "logos/resources/reference/", "source": "default" },
-      { "value": "logos/resources/verify/baseline-seed-runs/*/staging/", "source": "default" }
+      { "value": "logos/resources/verify/baseline-seed-runs/*/staging/", "source": "default" },
+      { "value": "logos/environments.yaml", "source": "default" }
     ]
   }
 }

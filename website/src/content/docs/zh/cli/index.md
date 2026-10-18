@@ -15,7 +15,7 @@ npm install -g @miniidealab/openlogos@latest
 
 ```bash
 openlogos --version
-# 0.16.0
+# 0.16.7
 ```
 
 升级 CLI 后，请在每个已有项目中运行 `openlogos sync`，刷新 guard、hooks 与 Skills。
@@ -26,7 +26,7 @@ openlogos --version
 |--------|-------------|
 | `--help`, `-h` | 显示帮助信息 |
 | `--version`, `-v` | 显示版本号 |
-| `--format json` | 结构化 JSON 输出（多数读取类与门禁类命令支持，如 `status`、`next`、`verify`、`merge`、`change-lint`、`impact`） |
+| `--format json` | 结构化 JSON 输出（多数读取类与门禁类命令支持，如 `status`、`next`、`verify`、`merge`、`change-lint`、`impact`、`env`、`deploy`、`approve`） |
 
 除 `init`（以及在任意目录都可运行的 `detect`）外，命令都必须在项目根目录（`logos/logos.config.json` 所在目录）下运行。
 
@@ -56,6 +56,16 @@ openlogos --version
 | [`deploy-done`](/zh/cli/deploy-done) | 受控记录部署完成（Gate 3.7） |
 | [`smoke`](/zh/cli/smoke) | 针对 smoke 规格验证部署后健康状况（Gate 3.8） |
 | [`launch`](/zh/cli/launch) | 在验证通过后激活变更管理 |
+
+### 环境与部署
+
+以下命令是 opt-in 的：项目有 `logos/environments.yaml` 登记表后才生效（见[环境登记表](/zh/specs/environments)）。
+
+| 命令 | 说明 |
+|---------|-------------|
+| [`env list` / `env show` / `env check`](/zh/cli/env) | 列出、查看已登记的环境，校验登记表（只读） |
+| [`deploy`](/zh/cli/deploy) | 按环境配置执行部署（script / ci / agent），支持回滚与 dry-run |
+| [`approve`](/zh/cli/approve) | 为要求审批的环境批准某个 commit（只能由人执行） |
 
 ### 变更管理（Delta 工作流）
 

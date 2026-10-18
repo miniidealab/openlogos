@@ -17,7 +17,7 @@ Run it from the project root.
 
 | Option | Description |
 |--------|-------------|
-| `--env <name>` | Tag the run and the report with an environment label, such as `staging` or `production`. |
+| `--env <name>` | The environment being verified, such as `staging` or `production`. Without a registry it is a free-form label for the run and the report; when `logos/environments.yaml` exists it must be a registered id or alias and is **required** (see [Environment evidence](#environment-evidence)). |
 | `--format json` | Output a machine-readable JSON envelope (includes `sandbox` diagnostics). |
 
 ## Preconditions
@@ -30,6 +30,11 @@ When there is an active change proposal, smoke first checks the proposal's lifec
 | `SMOKE_DEPLOY_DECISION_CONFLICT` | `proposal.md` and `tasks.md` disagree about deployment | Fix the deployment decision first |
 | `SMOKE_DEPLOY_NOT_DONE` | `DEPLOY_DONE` is missing | Finish the deployment, then run `openlogos deploy-done` |
 | `SMOKE_DEPLOY_TASKS_INCOMPLETE` | `[deploy]` still has unchecked items | Finish the `[deploy]` tasks, then run `openlogos deploy-done` |
+| `SMOKE_DEPLOY_MARKER_INVALID` | `DEPLOY_DONE` is non-empty but not a valid record, or cannot be read (`error.details.problems` names the problem fields) | Re-run `openlogos deploy-done --env <id> [--ref <revision>]` to rewrite it |
+| `SMOKE_ENV_MISMATCH` | Registry present and `DEPLOY_DONE` records a different environment than `--env` | Smoke the environment you actually deployed to |
+| `SMOKE_DEPLOY_SUPERSEDED` | Registry present and the environment was deployed again after the proposal recorded its deployment (the ledger's latest deploy is not the one in `DEPLOY_DONE`) | Redeploy on the proposal channel, then run smoke |
+
+When a registry exists, `ENV_REGISTRY_INVALID`, `ENV_REQUIRED` and `ENV_UNKNOWN` are also checked first. None of these refusals runs `smoke.command`, writes a smoke marker or touches the ledger.
 
 ## What it does
 
@@ -102,6 +107,29 @@ Skips of smoke cases that the current proposal did not touch are counted as befo
 | `reason_code` | No | `platform-unavailable` | The only reason code the gate recognizes |
 | `duration_ms` | No | number | Execution time |
 | `timestamp` | No | ISO 8601 | When the case ran |
+| `target_environment` | No | environment id | The environment the runner actually verified (see below). The existing `environment` field stays a free-form label of where the runner executed and is not used for this check |
+
+## Environment evidence
+
+When the project has a `logos/environments.yaml` registry (see [Environment Registry](/specs/environments)) and you pass `--env`:
+
+1. `--env` is resolved to an environment id (ids first, then aliases, case-insensitive).
+2. `smoke.command` runs with the environment variable `OPENLOGOS_SMOKE_ENV=<id>` (also inside the sandbox). Runners should read it and write it back as `target_environment` on every result row they produce.
+3. Smoke classifies the counted result rows:
+
+   | `env_evidence` | When | Effect |
+   |----------------|------|--------|
+   | `declared` | Every row has `target_environment` equal to the environment | Can count as verified |
+   | `missing` | Some row lacks `target_environment`, or there are no rows | Gate computed as before (old runners keep working), but `verified=false` |
+   | `mismatch` | Some row declares a different environment | Gate FAIL with `gate.reason: "SMOKE_ENV_EVIDENCE_MISMATCH"` |
+
+4. A `smoke` record is appended to the deployment ledger `logos/.openlogos-runtime/deployments.jsonl`. It is **verified** only when the gate passed, `env_evidence` is `declared`, the results were produced by this run (`fresh_results`), the deployed environment is confirmed and the deployed version is known. Only verified smoke records count for promotion checks (`promote_from`) and for "last smoke" in [`env`](/cli/env).
+
+The ledger is written before the smoke marker; if either step fails, both are restored and smoke ends with `SMOKE_LEDGER_WRITE_FAILED`.
+
+When deployment execution is enabled (some environment has a `deploy` configuration), smoke also checks the deployment identity: with an active proposal, `DEPLOY_DONE` must be the latest deploy of that environment in the ledger (otherwise `SMOKE_DEPLOY_SUPERSEDED`); without an active proposal, the identity is taken from the ledger and smoke still records its result there.
+
+Without a registry, `--env` stays a plain label and smoke behaves as before.
 
 ## Proposal lifecycle integration
 
@@ -175,6 +203,8 @@ With `--format json`, `data` includes `environment`, `summary`, `gate` (`result`
 
 `gate.reason` priority: `failed_cases` → precheck diagnostic code → `required_cases_skipped` → `incomplete_coverage`. See [CLI JSON Output](/specs/cli-json-output).
 
+With a registry, `data` also includes `environment_evidence`: `target`, `deploy_id`, `ref`, `deploy_env_confirmed`, `env_evidence`, `mismatched_case_ids`, `missing_case_ids`, `fresh_results`, `verified` and `ledger_written`.
+
 ## Errors
 
 | Error | Cause | Fix |
@@ -188,5 +218,6 @@ With `--format json`, `data` includes `environment`, `summary`, `gate` (`result`
 
 - [`verify`](/cli/verify): test acceptance (Gate 3.6, before deployment)
 - [`deploy-done`](/cli/deploy-done): record deployment completion (Gate 3.7)
+- [`deploy`](/cli/deploy) / [`env`](/cli/env): run deployments and see each environment's last deploy and smoke
 - [`status`](/cli/status): shows the smoke gate state in the proposal lifecycle
 - [`archive`](/cli/archive): archive the proposal after smoke passes

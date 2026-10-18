@@ -3,7 +3,7 @@ title: CLI JSON 输出
 description: OpenLogos CLI 命令的结构化 JSON 输出规格（status、next、verify、smoke、merge、slice plan、detect、module list），含契约版本握手。
 ---
 
-OpenLogos CLI 在面向机器的命令上支持 `--format json`——包括 `status`、`next`、`watch`、`verify`、`smoke`、`deploy-done`、`merge`、`slice plan`、`detect`、`flow show`、`change-lint` 与 `module list`——产出结构化 JSON，供 RunLogos 等外部工具以编程方式消费。
+OpenLogos CLI 在面向机器的命令上支持 `--format json`——包括 `status`、`next`、`watch`、`verify`、`smoke`、`deploy-done`、`deploy`、`approve`、`env list` / `env show` / `env check`、`merge`、`slice plan`、`detect`、`flow show`、`change-lint` 与 `module list`——产出结构化 JSON，供 RunLogos 等外部工具以编程方式消费。
 
 ## 通用约定
 
@@ -99,6 +99,7 @@ openlogos status --format json
 | `current_phase` | 第一个未完成的阶段 key（全部完成则为 `null`） |
 | `lifecycle` | 由模块状态推导出的项目生命周期 |
 | `yaml_diagnostics` | YAML 存在问题时的解析恢复状态 |
+| `environments`、`environment_ledger` | 仅当存在 `logos/environments.yaml` 时出现：每个环境一个 EnvView（见 [env](#env-list--env-show--env-check)），以及部署账本的 `{path, corrupt_lines}`。登记表不合法时 `environments` 为 `[]`，并新增 `environment_registry_error: {code, message}` |
 
 ### 提案步骤
 
@@ -250,8 +251,55 @@ openlogos smoke --env staging --format json
 | `sandbox` | 沙箱执行状态 |
 | `report_path` | 生成的 smoke 报告路径 |
 | `result_path` | smoke 结果 JSONL 路径 |
+| `environment_evidence` | 仅在有登记表时出现：`target`、`deploy_id`、`ref`、`deploy_env_confirmed`、`env_evidence`（`declared` / `missing` / `mismatch`）、`mismatched_case_ids`、`missing_case_ids`、`fresh_results`、`verified`、`ledger_written` |
 
-`gate.reason` 优先级：`failed_cases` → 预检诊断码（`smoke_runner_missing` / `smoke_reporter_missing` / `smoke_cases_uncovered`）→ `required_cases_skipped` → `incomplete_coverage`。
+`gate.reason` 优先级：`failed_cases` → 预检诊断码（`smoke_runner_missing` / `smoke_reporter_missing` / `smoke_cases_uncovered`）→ `required_cases_skipped` → `incomplete_coverage`。有登记表时，结果行的 `target_environment` 与本次环境不一致会使门禁以 `SMOKE_ENV_EVIDENCE_MISMATCH` 失败。
+
+## deploy-done
+
+```bash
+openlogos deploy-done --env <id|alias> [--ref <git revision>] --format json
+```
+
+有登记表时，`data.environment` 为解析后的 id，`data.deployment` 含 `deploy_id`、`environment`、`ref`（40 位 commit 或 `null`）、`ref_source`（`explicit` / `unknown`）、`observed_head` 与 `ledger_written`。受门环境以 `DEPLOY_DONE_GATED_ENV` 拒绝；登记表相关错误为 `ENV_REGISTRY_INVALID`、`ENV_REQUIRED`、`ENV_UNKNOWN`、`ENV_REF_UNRESOLVED`。详见 [`openlogos deploy-done`](/zh/cli/deploy-done)。
+
+## env list / env show / env check
+
+```bash
+openlogos env list --format json
+openlogos env show <id|alias> --format json
+openlogos env check [<id|alias>] [--probe] --format json
+```
+
+三个命令都只读，不要求活跃提案。
+
+- **`env list`**——`registry_path`、`registry_present`（无登记表时为 `false`，`environments` 为 `[]`）、`proposal_default_env`（仅在配置时出现）、`environments[]`、`ledger`（`{path, corrupt_lines}`）与 `warnings[]`（如 `ENV_UNKNOWN_FIELD`）。
+- **EnvView**（`environments[]` 的每一项，`status` 也使用）——`id`、`name`、`tier`、`aliases`、`current_ref`、`last_deploy`、`last_smoke`（含 `env_evidence`、`fresh_results`、`deploy_env_confirmed`、`verified`）。部署执行启用后另有 `previous_ref`、`deploy_mode`、`deploy_in_progress`，以及 `last_deploy.result` / `channel` / `mode` / `ref_requested` / `failure_reason`。配置了 `promote_from` 或 `require_approval` 的环境另有 `promote_from`、`require_approval`、`open_approvals[]` 与 `promotion`（`{from, candidate_ref}`）。
+- **`env show`**——`environment`（登记表条目；`secrets` 只有变量名，配置了 `deploy` 时含 `deploy`——只有脚本、工作流或方案章节的引用，不含命令与密钥值）、EnvView 字段、`history[]`（最多 20 条，新到旧，`kind` 为 `deploy` / `smoke` / `approval`）、`ledger` 与 `warnings`。
+- **`env check`**——`scope`、`ok`（为 `false` 时退出码 1）、`errors[]`（`ENV_FIELD_INVALID`、`ENV_DUPLICATE_ID_OR_ALIAS`、`ENV_GATE_REFERENCE_UNKNOWN`、`ENV_SECRET_MISSING`、`ENV_PROBE_FAILED`）、`warnings[]`、`secrets[]`（`{environment, name, present}`，永不含值）与 `probes[]`（未加 `--probe` 时为空）。
+
+详见 [`openlogos env`](/zh/cli/env) 与[环境登记表](/zh/specs/environments)。
+
+## deploy
+
+```bash
+openlogos deploy --env <id|alias> [--ref <revision>] [--rollback] [--channel proposal|version] [--dry-run] --format json
+openlogos deploy --env <id|alias> --complete <deploy_id> --result done|failed --format json
+openlogos deploy --env <id|alias> --abandon <deploy_id> --format json
+openlogos deploy --env <id|alias> --reconcile --format json
+```
+
+成功时 `data` 含 `status`（`done` / `dry-run` / `awaiting-agent` / `reconciled` / `still-running` / `abandoned`）、`environment`、`deploy_id`、`channel`、`mode`、`ref_input`、`ref_requested`、`ref`（已确认的部署版本，或 `null`）、`ref_source`（`explicit` / `ci-reported` / `unknown`）、`rollback`、`rollback_from`、`duration_ms`、`ci`、`log_path`、`output_tail`（已遮盖密钥）、`ledger_written`、`proposal`（提案通道）、`plan`（dry-run / agent）与 `warnings`（如 `DEPLOY_REF_UNCONFIRMED`）。受门环境另有 `approval_id`、`promoted_from`、`promotion_override_reason`；dry-run 的 `plan` 另给出将使用的审批与晋级依据。
+
+失败输出到 stderr。`DEPLOY_FAILED`、`DEPLOY_RESULT_UNKNOWN`、`DEPLOY_RECORD_FAILED` 在 `error.details` 中带本次部署信息（`deploy_id`、`exit_code`、`failure_reason`、`log_path`、`output_tail`、`deployed` 等）。`DEPLOY_PROMOTION_UNVERIFIED` 的 details 给出 `promote_from`、`requested`、`upstream_current_ref`、`upstream_candidate_ref`；`DEPLOY_APPROVAL_REQUIRED` 的 details 给出 `requested` 与可直接执行的 `approve_command`。其余拒绝都发生在执行任何部署之前。详见 [`openlogos deploy`](/zh/cli/deploy)。
+
+## approve
+
+```bash
+openlogos approve --env <id|alias> --ref <revision> [--note <文字>] --format json
+```
+
+成功时 `data` 含 `environment`、`approval_id`、`created`（已有同一环境同一 commit 的未使用审批时为 `false`，不写新记录）、`ref`、`ref_input`、`approver`（只作展示）、`note` 与 `recorded_at`。错误码：`ENV_REGISTRY_NOT_FOUND`、`ENV_REGISTRY_INVALID`、`ENV_REQUIRED`、`ENV_UNKNOWN`、`APPROVAL_NOT_REQUIRED`、`APPROVAL_REF_REQUIRED`、`ENV_REF_UNRESOLVED`、`APPROVAL_WRITE_FAILED`。AI 宿主阻断该命令时（它只能由人执行）不会产生任何输出。详见 [`openlogos approve`](/zh/cli/approve)。
 
 ## merge
 

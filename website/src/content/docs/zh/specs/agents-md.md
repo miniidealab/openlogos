@@ -67,6 +67,15 @@ Interaction Guidelines 章节包含阶段检测逻辑，帮助 AI 判断当前�
 | 以上全部完成 | Phase 3 Step 4 | code-implementor |
 | 代码存在，`verify/` 为空 | Phase 3 Step 5 | 运行测试 → `openlogos verify` |
 
+## Change Management 章节
+
+launched 项目生成的 **Change Management** 章节写明 guard 机制、提案流程（`change` → delta → `merge` → 代码 → `verify` → 部署 / `smoke` → `archive` → `git push`）与[两档授权](/zh/specs/change-management#两档授权)，最后列出任何模式（含 `openlogos next --auto`）都不会自行放行的硬红线：
+
+- **未收敛代码**——`gate:implement:loop-exhausted`：达到迭代上限仍未通过测试的代码绝不放行。
+- **部署审批与晋级**——目标环境要求审批而该版本未获审批，或晋级检查未通过（`DEPLOY_APPROVAL_REQUIRED` / `DEPLOY_PROMOTION_UNVERIFIED`）。部署停在「等待审批」或「晋级未满足」，由人审批后重新驱动即可继续。AI 不得自行执行 `openlogos approve`、不得加 `--force-promote`、不得换环境或版本、不得改用手工部署或 `deploy-done`，也不得修改已配置门禁的 `logos/environments.yaml` 来关闭门禁。
+
+旧版 CLI 生成的项目，升级后执行 `openlogos sync` 即获得第二条硬红线。
+
 ## Active Skills 章节
 
 Active Skills 章节根据 `logos.config.json` 中的 `aiTool` 字段动态生成：

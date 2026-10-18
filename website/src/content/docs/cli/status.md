@@ -195,6 +195,30 @@ Once a proposal has `SPEC_MERGED`, `openlogos status --format json` adds a read-
 
 The projection never writes files and does not change `proposal_step`. See [`openlogos merge`](/cli/merge#amending-an-already-merged-proposal).
 
+## Environments view
+
+When the project has a `logos/environments.yaml` registry (see [Environment Registry](/specs/environments)), `openlogos status --format json` adds three top-level fields. Without a registry none of them appear.
+
+| Field | Meaning |
+|-------|---------|
+| `environments` | One view per registered environment — the same object as [`openlogos env list`](/cli/env): `id`, `name`, `tier`, `current_ref` (last successfully deployed, confirmed version), `last_deploy`, `last_smoke` (with `verified`). When deployment execution is enabled it also carries `previous_ref` (rollback target), `deploy_mode` and `deploy_in_progress`; environments with promotion or approval gates also carry `promote_from`, `require_approval`, `open_approvals` and `promotion` |
+| `environment_ledger` | `{ "path": "logos/.openlogos-runtime/deployments.jsonl", "corrupt_lines": 0 }` — the local deployment ledger and how many unreadable lines were skipped |
+| `environment_registry_error` | Only when the registry exists but is invalid: `{ "code": "ENV_REGISTRY_INVALID", "message": "…" }`; `environments` is then `[]` and the exit code is unchanged |
+
+```jsonc
+"environments": [
+  {
+    "id": "test", "name": "Test", "tier": "test",
+    "current_ref": "0235570…", "previous_ref": null,
+    "deploy_mode": "script", "deploy_in_progress": null,
+    "last_deploy": { "deploy_id": "7652a96b…", "result": "done", "channel": "proposal", "mode": "script", "ref": "0235570…", … },
+    "last_smoke": { "result": "pass", "env_evidence": "declared", "verified": true, … }
+  }
+]
+```
+
+`status` reads the registry and the ledger only; it never makes network requests.
+
 ## Errors
 
 | Error | Cause | Fix |

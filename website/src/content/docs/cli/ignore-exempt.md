@@ -30,7 +30,7 @@ Run them from the project root (the directory that contains `logos/logos.config.
 | Effect on git | Written to the `.gitignore` managed block — the paths stop being versioned | None — the paths stay tracked and committed |
 | Effect on the guard | Ignored, untracked paths are not protected | Writes under these paths need no proposal |
 | Typical use | `node_modules/`, `dist/`, `.cache/`, generated reports | Reference material, scratch docs you still want in git |
-| Built-in default | Always contains `logos/.openlogos-runtime/` (fixed) | `logos/resources/reference/` and `logos/resources/verify/baseline-seed-runs/*/staging/` |
+| Built-in default | Always contains `logos/.openlogos-runtime/` (fixed) | `logos/resources/reference/`, `logos/resources/verify/baseline-seed-runs/*/staging/` and `logos/environments.yaml` |
 
 ## Approval: add and remove need the host's native prompt
 
@@ -103,6 +103,15 @@ dist/
 
 These stay protected even inside an exempt directory: exempting `docs/` does not exempt `docs/.gitignore`.
 
+### The environment registry `logos/environments.yaml`
+
+The [environment registry](/specs/environments) is operations config, not business logic, so `logos/environments.yaml` is a built-in default exemption: editing it needs no proposal. Two caveats:
+
+- **Explicit `guard.exempt` lists do not pick up new defaults.** A project that already wrote `guard.exempt` out (for example by an earlier `exempt add`) does not get this entry automatically. Run `openlogos exempt add logos/environments.yaml` if you want it.
+- **A gated registry is never exempt.** As soon as the file contains a `promote_from` or `require_approval` field name (or any backslash character, which the guard treats conservatively), it becomes the source of deployment gate policy: neither the built-in default nor `guard.exempt` applies, and an active proposal is not a reason to allow it either. An AI's direct edits, shell writes, moves and deletes of the file go through the host's native approval — approved by you in interactive mode, blocked otherwise. A registry without gate fields keeps the exemption.
+
+Deploy scripts and workflows referenced by the registry's `deploy` entries are ordinary tracked files and stay protected, so changing what a deployment actually executes still needs a proposal.
+
 ### `list`
 
 Prints the current entries. For `exempt`, built-in defaults that have not been written to the config are marked `(default)`.
@@ -112,6 +121,7 @@ $ openlogos exempt list
 Exempt from change proposals (guard.exempt):
   logos/resources/reference/                                (default)
   logos/resources/verify/baseline-seed-runs/*/staging/      (default)
+  logos/environments.yaml                                   (default)
 ```
 
 With `--format json`, the output is a JSON envelope; each entry has a `value` and a `source` (`config` or `default`):
@@ -119,12 +129,13 @@ With `--format json`, the output is a JSON envelope; each entry has a `value` an
 ```json
 {
   "command": "exempt list",
-  "version": "0.16.0",
-  "timestamp": "2026-10-10T08:00:00.000Z",
+  "version": "0.16.7",
+  "timestamp": "2026-10-17T08:00:00.000Z",
   "data": {
     "entries": [
       { "value": "logos/resources/reference/", "source": "default" },
-      { "value": "logos/resources/verify/baseline-seed-runs/*/staging/", "source": "default" }
+      { "value": "logos/resources/verify/baseline-seed-runs/*/staging/", "source": "default" },
+      { "value": "logos/environments.yaml", "source": "default" }
     ]
   }
 }

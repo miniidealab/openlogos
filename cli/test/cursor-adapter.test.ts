@@ -177,12 +177,10 @@ describe('Cursor Adapter — S01 三件套初始化', () => {
       expect(pkg.scripts.prepack).toContain('build:cursor-template');
       pkg.scripts = {};
       writeFileSync(join(packRoot, 'package.json'), JSON.stringify(pkg));
-      const built = join(cliRoot, 'cursor-plugin-template');
-      if (!existsSync(built)) {
-        const build = spawnSync(process.execPath, [join(cliRoot, 'scripts', 'build-cursor-template.mjs')], { encoding: 'utf8' });
-        expect(build.status, build.stderr).toBe(0);
-      }
-      cpSync(built, join(packRoot, 'cursor-plugin-template'), { recursive: true });
+      // 由组装脚本直接构建到一次性目录：不在真实 cli/ 下生成模板，避免与并发读取 cli/cursor-plugin-template 的
+      // init / sync 用例竞争（边删边建期间被选为模板源 → 「Cursor 模板缺少 agents/change-reviewer.md」）
+      const build = spawnSync(process.execPath, [join(cliRoot, 'scripts', 'build-cursor-template.mjs'), join(packRoot, 'cursor-plugin-template')], { encoding: 'utf8' });
+      expect(build.status, build.stderr).toBe(0);
       const packed = spawnSync('npm', ['pack', '--json', '--dry-run', '--ignore-scripts'], { cwd: packRoot, encoding: 'utf8' });
       expect(packed.status, packed.stderr).toBe(0);
       const packResult = JSON.parse(packed.stdout)[0];

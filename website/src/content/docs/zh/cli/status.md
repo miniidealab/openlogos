@@ -195,6 +195,30 @@ openlogos status --module admin
 
 该投影不写任何文件，也不改变 `proposal_step`。详见 [`openlogos merge`](/zh/cli/merge)。
 
+## 环境视图
+
+项目存在 `logos/environments.yaml` 登记表时（见[环境登记表](/zh/specs/environments)），`openlogos status --format json` 新增三个顶层字段；没有登记表时都不出现。
+
+| 字段 | 含义 |
+|------|------|
+| `environments` | 每个已登记环境一个视图，与 [`openlogos env list`](/zh/cli/env) 的对象相同：`id`、`name`、`tier`、`current_ref`（最近一次成功部署且已确认的版本）、`last_deploy`、`last_smoke`（含 `verified`）。部署执行已启用时另有 `previous_ref`（回滚目标）、`deploy_mode`、`deploy_in_progress`；配置了晋级或审批门禁的环境另有 `promote_from`、`require_approval`、`open_approvals`、`promotion` |
+| `environment_ledger` | `{ "path": "logos/.openlogos-runtime/deployments.jsonl", "corrupt_lines": 0 }`——本机部署账本路径与跳过的坏行数 |
+| `environment_registry_error` | 仅在登记表存在但不合法时出现：`{ "code": "ENV_REGISTRY_INVALID", "message": "…" }`；此时 `environments` 为 `[]`，退出码不变 |
+
+```jsonc
+"environments": [
+  {
+    "id": "test", "name": "测试环境", "tier": "test",
+    "current_ref": "0235570…", "previous_ref": null,
+    "deploy_mode": "script", "deploy_in_progress": null,
+    "last_deploy": { "deploy_id": "7652a96b…", "result": "done", "channel": "proposal", "mode": "script", "ref": "0235570…", … },
+    "last_smoke": { "result": "pass", "env_evidence": "declared", "verified": true, … }
+  }
+]
+```
+
+`status` 只读取登记表与账本，不发起任何网络请求。
+
 ## 错误
 
 | 错误 | 原因 | 解决方法 |

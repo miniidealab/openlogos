@@ -1,4 +1,16 @@
 export const RELEASE_SUMMARIES_EN = {
+  '0.16.7': {
+    valueSummaryEn: [
+      'First public release since 0.16.2 (0.16.3 through 0.16.6 were only installed locally; everything in them is included here). Register your deployment environments in `logos/environments.yaml` and inspect them with `openlogos env list | show | check`; `openlogos deploy-done --env --ref` and `openlogos smoke --env` record which version reached which environment in a local deployment ledger, and `status --format json` gains an `environments` view.',
+      'New `openlogos deploy --env <id>` runs the deployment configured for an environment: a repository script in an isolated worktree of the requested commit, a GitHub Actions workflow, or an agent-executed plan. It supports a version channel (`--ref`), a proposal channel, `--rollback`, `--dry-run`, and masks declared secrets in logs and JSON output.',
+      'Promotion and approval gates for production: `promote_from` requires the same commit to pass a verified smoke upstream first, and `require_approval: true` requires a human to run `openlogos approve --env --ref` before the deploy proceeds. A top-level `proposal_default_env` lets proposals default to one environment instead of asking every time.',
+      'Environments are opt-in: projects without `logos/environments.yaml` behave exactly as in 0.16.2. After upgrading, run `openlogos sync` in every project so the managed guard knows the new human-only commands.',
+    ],
+    fixSummaryEn: [
+      'Unattended `--auto` runs now stop at environments that require approval or whose promotion check fails; the AI cannot approve, force a promotion, switch environments or edit a gated registry to get past the gate.',
+      'The smoke ledger is written before the smoke markers and rolled back together on failure, ledger appends are atomic, and smoke rejects a deployment marker that has been superseded by a later deploy to the same environment (`SMOKE_DEPLOY_SUPERSEDED`).',
+    ],
+  },
   '0.16.2': {
     valueSummaryEn: [
       'First public release since 0.16.0 (0.16.1 was only installed locally; everything in it is included here). Sandbox reuse for `openlogos verify` and `openlogos smoke`: each project now keeps one persistent sandbox and only syncs what changed, so your build tool\'s incremental compilation works across runs instead of rebuilding everything from scratch. Enabled by default whenever `sandbox_mode` is `auto` or `always` — no configuration change needed.',
