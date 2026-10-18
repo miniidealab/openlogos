@@ -1,17 +1,63 @@
 {
   "packageName": "@miniidealab/openlogos",
-  "latestVersion": "0.16.2",
-  "updatedAt": "2026-10-14T01:09:31.583Z",
-  "generatedAt": "2026-10-14T01:09:31.583Z",
-  "versionCount": 85,
+  "latestVersion": "0.16.7",
+  "updatedAt": "2026-10-18T03:30:21.929Z",
+  "generatedAt": "2026-10-18T03:30:21.929Z",
+  "versionCount": 86,
   "distTags": {
     "old": "0.9.8",
-    "latest": "0.16.2"
+    "latest": "0.16.7"
   },
   "sourceUrl": "https://registry.npmjs.org/%40miniidealab%2Fopenlogos",
   "npmPackageUrl": "https://www.npmjs.com/package/@miniidealab/openlogos",
   "changelogUrl": "https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md",
   "versions": [
+    {
+      "version": "0.16.7",
+      "publishedAt": "2026-10-18T03:30:21.548Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.16.7",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.16.7",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.16.7.tgz",
+      "gitHead": null,
+      "size": 2799551,
+      "sizeLabel": "2.7 MB",
+      "unpackedSize": 10963284,
+      "unpackedSizeLabel": "10 MB",
+      "fileCount": 867,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3",
+        "pg-query-emscripten": "5.1.0",
+        "@hyperjump/json-schema": "1.17.7"
+      },
+      "distTags": [
+        "latest"
+      ],
+      "valueSummary": [
+        "环境登记表与部署账本：在 logos/environments.yaml 登记部署环境（id、名称、层级、别名、健康检查地址等）；新增 openlogos env list | show | check [--probe] 查看与校验。openlogos deploy-done --env <id> --ref <revision> 记录部署到的环境与版本；openlogos smoke --env <id> 校验部署环境一致性，向 runner 注入 OPENLOGOS_SMOKE_ENV，并按结果行的 target_environment 判定环境证据。本机部署账本 logos/.openlogos-runtime/deployments.jsonl 记录每次部署与 smoke；status --format json 新增 environments 视图。",
+        "环境部署执行：新增 openlogos deploy --env <id>，按登记表中该环境的 deploy 配置部署，支持三种方式——script（在请求版本的隔离工作树中以参数数组执行仓库内部署脚本）、ci（GitHub Actions 预设或触发 / 状态脚本适配，只认运行回报的实际部署提交）、agent（登记未决记录、返回部署方案位置，由执行者完成后 --complete 写入结果）。",
+        "版本通道（--ref）与提案通道（提案 ready-to-deploy 时默认，执行后追加部署报告并落标 DEPLOY_DONE）；--rollback 重新部署上一个版本；--dry-run 只检查不执行、不写文件；结果未知的 ci 部署可用 --reconcile 补记终态、--abandon 显式放弃；同一环境同一时间只允许一次部署。"
+      ],
+      "fixSummary": [
+        "smoke 的 SMOKE_DEPLOY_MARKER_INVALID 在 JSON 下带 error.details.problems；smoke 先写账本、后写标记，账本写入失败报 SMOKE_LEDGER_WRITE_FAILED，失败时恢复标记并撤销本次账本行。",
+        "账本追加改为临时文件加原子替换，追加失败不留残片；账本末行缺少换行时拒绝追加。",
+        "spec/logos.config.schema.json 恢复为合法 JSON，guard.exempt 默认值同步为 3 条。"
+      ],
+      "valueSummaryEn": [
+        "First public release since 0.16.2 (0.16.3 through 0.16.6 were only installed locally; everything in them is included here). Register your deployment environments in `logos/environments.yaml` and inspect them with `openlogos env list | show | check`; `openlogos deploy-done --env --ref` and `openlogos smoke --env` record which version reached which environment in a local deployment ledger, and `status --format json` gains an `environments` view.",
+        "New `openlogos deploy --env <id>` runs the deployment configured for an environment: a repository script in an isolated worktree of the requested commit, a GitHub Actions workflow, or an agent-executed plan. It supports a version channel (`--ref`), a proposal channel, `--rollback`, `--dry-run`, and masks declared secrets in logs and JSON output.",
+        "Promotion and approval gates for production: `promote_from` requires the same commit to pass a verified smoke upstream first, and `require_approval: true` requires a human to run `openlogos approve --env --ref` before the deploy proceeds. A top-level `proposal_default_env` lets proposals default to one environment instead of asking every time."
+      ],
+      "fixSummaryEn": [
+        "Unattended `--auto` runs now stop at environments that require approval or whose promotion check fails; the AI cannot approve, force a promotion, switch environments or edit a gated registry to get past the gate.",
+        "The smoke ledger is written before the smoke markers and rolled back together on failure, ledger appends are atomic, and smoke rejects a deployment marker that has been superseded by a later deploy to the same environment (`SMOKE_DEPLOY_SUPERSEDED`)."
+      ],
+      "summarySource": "bilingual",
+      "summaryFallbackReason": null
+    },
     {
       "version": "0.16.2",
       "publishedAt": "2026-10-14T01:09:31.190Z",
@@ -33,9 +79,7 @@
         "pg-query-emscripten": "5.1.0",
         "@hyperjump/json-schema": "1.17.7"
       },
-      "distTags": [
-        "latest"
-      ],
+      "distTags": [],
       "valueSummary": [
         "verify / smoke 沙箱复用（verify-sandbox-reuse-0-16-1）：sandbox_mode 为 auto / always 时默认每项目使用一份持久沙箱，运行前按同步清单增量同步工作区（两侧 ctime 指纹，指纹变化或处于 2 秒 racy 窗口的文件判定内容；保留 mtime 与权限），运行后保留，构建工具的增量编译跨运行生效。",
         "新增配置 sandbox_reuse（默认 true；false 时回到一次性临时沙箱）与 sandbox_cache_paths（声明归沙箱所有、跨运行留存的构建产物目录，如 src-tauri/target）。",

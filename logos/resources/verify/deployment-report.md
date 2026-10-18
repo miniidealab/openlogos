@@ -886,9 +886,12 @@ runner `scripts/smoke-proposal-default-environment-0-16-6.js` 以正式模式运
 - log_path: logos/.openlogos-runtime/deploy-logs/7652a96b-b340-4e6e-9f08-b5a7dec65d73.log
 - previous_ref: 无
 
-# 部署报告：release-0-16-7 / OpenLogos 0.16.7 公开发布（2026-10-17，**门② 未通过：未推送、未发布**）
+# 部署报告：release-0-16-7 / OpenLogos 0.16.7 公开发布（2026-10-18 UTC，**已发布**；首次门② 未通过、按决策 C11 本提案内修复后重走四道门；原 publish run 官网校验因 registry 处理延迟失败，按档 C 受控补做）
 
-按部署方案「OpenLogos 0.16.7 公开发布方案（npm / GitHub Release / 官网，含官网文档补齐）」执行到推 tag 前的门 ②，阶段一失败，按档 A 停止：未推送 master、未打 tag、未发布，未写 `DEPLOY_DONE`，公网无任何变化，无需回滚。
+public_release_version: 0.16.7
+public_release_commit: 3d851a71a17c86d081ce9d69adf2ea88331a94fe
+
+按部署方案「OpenLogos 0.16.7 公开发布方案（npm / GitHub Release / 官网，含官网文档补齐）」执行。第一次尝试（候选 `4ff1099`）停在推 tag 前的门 ② 阶段一，按档 A 停止，公网无变化（第一～五节）。用户决定在本提案内修复（决策 C11，第六节）后，第二次尝试（候选 `3d851a7`）四道门全过，推送 `v0.16.7`，npm、GitHub Release、官网三处已同源发布（第七～九节）。
 
 ## 一、冻结事实（2026-10-18T02:24:24Z）
 
@@ -923,3 +926,40 @@ runner `scripts/smoke-proposal-default-environment-0-16-6.js` 以正式模式运
 - 处置：按档 A，不推送、不打 tag；本提案停在部署前。
 - 修复方向（只改测试代码，不改 CLI 运行时）：在 `s42-zero-regression-fixture.mjs` 的 `normalizer` 中把 `realpathSync(tmpdir())` 与 `tmpdir()` 统一替换为占位符（如 `<TMPDIR>`），并按 `cli/test/golden/README.md` 的生成方式重新生成基线；用 docker `node:20` 非 root 与 macOS 各跑一遍 ST-S41-05、ST-S41-06、UT-S42-16、UT-S43-14 确认通过。
 - 修复后须重新 verify，并从门 ① 起重走四道门。按部署方案档 A，「需要改 CLI 代码的修复另立提案」。这次改的是测试代码，是在本提案内修复（与 0.16.2 决策 C08 同口径），还是另立提案，由用户决定。
+
+## 六、本提案内修复（决策 C11）
+
+- 用户 2026-10-17：「在本提案内修复，然后继续发布」。
+- 三份零回归夹具（`s42-zero-regression`、`s41-gate-zero-regression`、`s43-gate-zero-regression`）的规范化函数，把 JSON 中属于平台默认沙箱根的 `"root"` 值（`/private/tmp`、`os.tmpdir()` 及其 realpath）替换为 `<SANDBOX_ROOT>`。三份基线中录得的 `"root": "/private/tmp"` 按同一规则补做替换（分别为 4、6、6 处，不以新版 CLI 重录），`cli/test/golden/README.md` 补记。修复后四个用例在 macOS 与 docker `node:20` 非 root 下均通过。
+- 修复后第一次重新验收 FAIL：UT-S42-11 超过 10 秒默认超时，UT-S42-05 开头那次本应成功的部署被登记表 `timeout_sec: 2` 耗尽。这次 verify 在沙箱内的 `npm test` 用了 289 秒，平时约 150 秒，两者都是负载误报。处置：UT-S42-11 所在文件的用例超时设为 60 秒（与 `s42-script-deploy.test.ts` 同口径）；UT-S42-05 的 `timeout_sec` 改为 8 秒（sleep 夹具休眠 60 秒，超时分支仍必然触发）。断言均未改。
+- 第二次重新验收 PASS：executed 2393 / failed 0 / uncovered 0 / skipped 25。修复提交 `3d851a7`。
+
+## 七、第二次尝试（候选 `3d851a7`）：四道门
+
+- **门 ①**：本地 `npm run lint` 0、`tsc --noEmit` 0、`npm test` 2828 passed / 1 skipped、`npm run build` 0；官网 `npm ci` 0、`npm run build` 0（venv：fonttools 4.67.0 + brotli），构建后工作区无变化。
+- **门 ② 阶段一**（`openlogos-gate2:node20-sqlite3`，`sha256:4ef106618500c5819bee0a49eea485ee5caaf482e4dec7689d09efac31b770e0`）：uid 1000、Node v20.20.2、sqlite3 3.40.1、cc 12.2.0；容器内 `git clone` 并检出 `3d851a7`。
+  - `npm ci` 0；`npm test` 0（2810 passed / 19 skipped）；build 0；版本一致性 0（Release 正文 5442 字节，不含「未发布到 npm」）。
+  - `npm pack` 867 个文件，SHA-256 `d8cb1ddb1b9ee90ce00e481ae821319cbfbd03af57a3aac3ec2637b31f2b9997`；无孤儿 dist 产物，manifest 自洽，含 env / deploy / approve / deploy-done 命令与部署账本实现。
+  - lint 0；tsc 0。
+  - core-S41 / S42 / S43 的 80 个 UT / ST ID 在 reporter 账本中全部为 `pass`。全量 `skip` 仍为既有的 10 个能力探测用例（ST-S13-14、UT-S13-47～50、UT-S13-52～54、UT-S19-08、UT-S19-09）。
+  - 预演脚本的打包核对已改为 `--pack-destination` 指定输出目录。
+- **门 ② 阶段二**（`openlogos-gate2:node22-fonts`，`sha256:0afa15c7a62eb5f219f8814407e85a76fff65f978c107974fc0a354df961212e`）：uid 1000、Node v22.12.0、fonttools 4.38.0；检出 `3d851a7` 后官网 `npm ci` 0、`npm run build` 0，产物含中英文四个新页。
+- **门 ③**：以 `miniidealab` 推送 `d385895..3d851a7`；CI run 39092414450 的 `Lint & Test` 与 `Windows regression` 均 success。
+- **门 ④**：`NPM_TOKEN`、`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` 均已配置（只查存在性）；0.16.0 之后 publish.yml 无改动，档 C 演练不重做。
+
+## 八、tag 驱动发布与档 C 受控补做
+
+- 在 `3d851a7` 上创建 annotated tag `v0.16.7` 并推送。publish run 39093177249 依次完成 checkout → `npm ci` → 测试 → build → 版本校验 → Release 正文 → pack，**Publish success**：`+ @miniidealab/openlogos@0.16.7`，provenance 写入 sigstore 透明日志 logIndex 3305483762，npm 提示「Your package is being processed」。**Create GitHub Release success**。官网 `generate:releases --strict` 与 build 均 success，但「Verify website latest version matches tag」失败（registry 处理延迟，生成时 latest 仍为 0.16.2），Cloudflare 部署被跳过。原 run 不是全绿，以下为档 C 受控补做，未重跑原 run 或其 job。
+- 档 C 第 1 步（registry 身份）：registry 于 03:30:31Z 可见，`dist-tags` = `{"old":"0.9.8","latest":"0.16.7"}`，`version=0.16.7`，`dist.integrity=sha512-fOf2h1yaFDM/e5JZysxlvk7k0VIsgrwmnGfBfiaQ+PNjYQKFn9bVqTWcznoQOeN8AwS92JkXqKzXhXvKdVkHPg==`；无 `gitHead`（tarball 发布）。SLSA provenance 的 `resolvedDependencies[0]` 指向 `refs/tags/v0.16.7`，`gitCommit` 等于 tag 提交（`provenanceSourceProblems` 无问题项）。`npm pack @miniidealab/openlogos@0.16.7` 的 SHA-256 为 `d8cb1ddb1b9ee90ce00e481ae821319cbfbd03af57a3aac3ec2637b31f2b9997`，**与门 ② Linux 干净克隆打出的包逐字节相同**。
+- 档 C 第 2 步（Release）：`gh release view v0.16.7` 已存在，非 draft / prerelease，`releases/latest` 为 `v0.16.7`，正文与 `v0.16.7:CHANGELOG.md` 的 `## [0.16.7]` 一致，唯一附件 `miniidealab-openlogos-0.16.7.tgz` 的 SHA-256 与 registry tarball 相同。因此跳过 create，未 upload。
+- 档 C 第 3 步（官网）：在 `v0.16.7` 的干净检出中执行 `npm ci` → `generate:releases -- --strict`（latestVersion=0.16.7，共 86 个版本）→ `npm run build` → 以 publish.yml 同一脚本校验 latest（「Website latest version matches tag: 0.16.7」）→ 本机 wrangler（OAuth 登录）执行 `wrangler pages deploy dist --project-name openlogos --branch master`，部署 `71d38164`（https://71d38164.openlogos.pages.dev）。回滚目标为部署前的 Production `1bfaa52e`（源 `236f5a2`，0.16.2）。部署后 `https://openlogos.ai/releases` 与 `/zh/releases` 的 latest 均为 v0.16.7；`/cli/env/`、`/zh/cli/deploy/`、`/specs/environments/`、`/zh/cli/approve/` 均为 200。
+
+## 九、发布后同步与本机切换
+
+- 本地 `cd website && npm run generate:releases -- --strict` 更新 `website/src/data/releases.json`（latestVersion=0.16.7，共 86 个版本），作为「同步官网发布资源」提交入库。
+- 本机全局：`npm install -g @miniidealab/openlogos@0.16.7`（从 registry 安装）。新 shell 复核：`/opt/homebrew/bin/openlogos` → `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，包目录不是链接；`--version` 为 0.16.7；包内 asset-manifest 版本 0.16.7，`validateAssetManifest` 通过；全局包与 registry tarball 解包结果逐文件一致（`diff -rq` 无差异）。
+- 随包 guard 模板与本仓托管副本 `.claude/openlogos/bin/guard-check` 的 SHA-256 一致（`1861d44c…`），不在本仓执行 `openlogos sync`。
+- `test` 环境账本未追加记录（决策 C08）：本次切换装的是 registry 包，没有经过 `openlogos deploy --env test`（`scripts/deploy-local.mjs` 从提交构建本地 tarball，与 registry 字节不同源），所以 `test.current_ref` 仍为 `02355709cf742bfe095124ca2e285437f6153694`。下一次执行 `openlogos deploy --env test` 时，会以本地构建覆盖这次的 registry 安装。
+- 回滚制品仍为 `cli/rollback/miniidealab-openlogos-0.16.2.tgz`（SHA-256 `ceb8c0403cbdfbbe4764ad79f405a1d7bb884a930665478957ec1ef77008f3b5`）。
+- runlogos 需要用户授权后自行升级全局 CLI，才会获得环境能力的公网版本。
+- 之后以 `openlogos deploy-done --env prod --ref v0.16.7` 受控落标，再进入 smoke。
