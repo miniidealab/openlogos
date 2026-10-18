@@ -963,3 +963,53 @@ public_release_commit: 3d851a71a17c86d081ce9d69adf2ea88331a94fe
 - 回滚制品仍为 `cli/rollback/miniidealab-openlogos-0.16.2.tgz`（SHA-256 `ceb8c0403cbdfbbe4764ad79f405a1d7bb884a930665478957ec1ef77008f3b5`）。
 - runlogos 需要用户授权后自行升级全局 CLI，才会获得环境能力的公网版本。
 - 之后以 `openlogos deploy-done --env prod --ref v0.16.7` 受控落标，再进入 smoke。
+
+
+# 部署报告：module-scoped-verify / OpenLogos 0.16.8 本机全局发布（2026-10-18，**已部署：本机测试环境 test**）
+
+按部署方案「OpenLogos 0.16.8 本机测试环境发布（module-scoped-verify）」经 `openlogos deploy --env test` 提案通道部署（登记表 `test.deploy` = script，`scripts/deploy-local.mjs`，workdir: worktree）。不 npm publish、不打 tag、不 push。
+
+## 一、部署前置
+
+- `openlogos verify` PASS（`VERIFY_PASS` 在场）；请求提交已提交：`7ceb5e5` 规格合并、`23ed46c` 代码、`ef5e0db` 验收报告，工作区干净。
+- `openlogos env check --format json`：`ok=true`，`errors=[]`。
+- `openlogos deploy --env test --dry-run --format json`：`status=dry-run`，`channel=proposal`，`mode=script`，`ref_requested=ef5e0db175e3d68bc567880e8093c03b7e24a030`，`warnings=[]`。
+- 部署前全局：`openlogos --version` = 0.16.7（registry 安装，release-0-16-7），入口 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`。
+
+## 二、部署结果与安装态读回
+
+- `deploy_id` = `5f29414e-6871-4e35-a7eb-ce1b1d43c713`，`ref` = `ef5e0db175e3d68bc567880e8093c03b7e24a030`（`ref_source: explicit`），`result=done`，耗时 36.7 秒；`DEPLOY_DONE` 与账本 test 最近一条 deploy 记录的 `deploy_id` 一致，`[deploy]` 三项由提案通道勾选。
+- 回执 `logos/.openlogos-runtime/local-install/last-deploy.json`：`candidate_version=0.16.8`，`previous_version=0.16.7`，`restored=false`。
+- 新 shell 复核：`openlogos --version` = 0.16.8；入口 realpath 仍为全局包内 `dist/index.js`；其 SHA-256 `5b25f357876ae60f5b742233bbc8b5a264622eb27ee802e7ce645a7d5c8f1fdb` 等于回执 `candidate_entry_sha256`。
+- 候选 tarball SHA-256：`d686c495712ccadff91267d6753c89045789db48cae1e6431f4dee7723dc92c0`。
+- 回滚制品：`logos/.openlogos-runtime/local-install/rollback/5f29414e-6871-4e35-a7eb-ce1b1d43c713.tgz`，SHA-256 `7454cbde1d0a08fd18ae211a0eecbdb6ad55f0168ae3c7df4738d74a3d6e4417`，包内版本 0.16.7（部署前的 registry 安装）。
+- 环境视图：`test.current_ref` = `ef5e0db…`，`previous_ref` = `02355709cf742bfe095124ca2e285437f6153694`（0.16.6 的部署提交；0.16.7 当时从 registry 安装、未写 test 账本，见 release-0-16-7 决策 C08）。
+
+## 三、本仓 sync 与同源核对
+
+- 本仓执行 `openlogos sync`：退出码 0，`logos/spec/cli-json-output.md` 托管副本随本提案根规格更新。
+- 托管 guard `.claude/openlogos/bin/guard-check` 与全局包 `claude-plugin-template/bin/guard-check` SHA-256 一致（`1861d44c…`）；`logos/skills/` 与全局包 `skills/` 共有文件逐字节一致（差异只有本仓按 zh 部署而不含 `SKILL.en.md`、以及只在 adopt 场景部署的 `brownfield-adopter`）。
+- `sync` 再次向 `.claude/settings.json` 追加了一条重复的 SessionStart hook（与提交 `bf61f6f` 去除的同一缺陷），本次恢复为已提交版本、不提交该重复项；该 sync 缺陷建议另立提案修复。
+
+## 四、回滚
+
+- 回到 0.16.7 须用 `openlogos deploy --env test --ref v0.16.7`（按部署方案）。不要用 `--rollback`：账本中 test 的 `previous_ref` 是 0.16.6 的提交，`--rollback` 会退到 0.16.6。
+- 脚本失败时 `deploy-local.mjs` 自动以回滚制品回装（本次未触发）。
+
+## 五、后续
+
+- 安装态 smoke：`openlogos smoke --env test`（SMOKE-core-280～284，runner `scripts/smoke-module-scoped-verify-0-16-8.js`；SMOKE-core-284 以上述回滚制品安装 0.16.7 基线）。
+- runlogos 需由用户授权后自行升级全局 CLI 才会获得按模块 verify。
+
+## 部署记录 2026-10-18T10:12:08.335Z → test
+
+- 目标环境: test
+- 通道 / 执行方式: proposal / script
+- deploy_id: 5f29414e-6871-4e35-a7eb-ce1b1d43c713
+- ref_requested: ef5e0db175e3d68bc567880e8093c03b7e24a030（HEAD）
+- ref: ef5e0db175e3d68bc567880e8093c03b7e24a030
+- 执行脚本: scripts/deploy-local.mjs（workdir: worktree）
+- 耗时: 36706 ms
+- 结果: done
+- log_path: logos/.openlogos-runtime/deploy-logs/5f29414e-6871-4e35-a7eb-ce1b1d43c713.log
+- previous_ref: 02355709cf742bfe095124ca2e285437f6153694
