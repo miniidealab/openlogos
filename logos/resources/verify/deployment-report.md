@@ -885,3 +885,41 @@ runner `scripts/smoke-proposal-default-environment-0-16-6.js` 以正式模式运
 - 结果: done
 - log_path: logos/.openlogos-runtime/deploy-logs/7652a96b-b340-4e6e-9f08-b5a7dec65d73.log
 - previous_ref: 无
+
+# 部署报告：release-0-16-7 / OpenLogos 0.16.7 公开发布（2026-10-17，**门② 未通过：未推送、未发布**）
+
+按部署方案「OpenLogos 0.16.7 公开发布方案（npm / GitHub Release / 官网，含官网文档补齐）」执行到推 tag 前的门 ②，阶段一失败，按档 A 停止：未推送 master、未打 tag、未发布，未写 `DEPLOY_DONE`，公网无任何变化，无需回滚。
+
+## 一、冻结事实（2026-10-18T02:24:24Z）
+
+- npm：`dist-tags` = `{"old":"0.9.8","latest":"0.16.2"}`；`@0.16.3`～`@0.16.7` 均返回 E404。
+- git：待发布提交 `4ff109919e67699117b170a16db9d9c5aab289f4`（`95942c2` 规格合并、`fa43d77` 代码、`4ff1099` 验收报告）；`origin/master` = `d3858955`，本地超前 13 个提交；远端 `v0.16.*` tag 只有 `v0.16.0`、`v0.16.2`。
+- 本机全局：`/opt/homebrew/bin/openlogos` → `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，`npm prefix -g` = `/opt/homebrew`，`--version` = 0.16.6（本地构建，未切换）。
+- 回滚制品：`cli/rollback/miniidealab-openlogos-0.16.2.tgz`，2,574,234 字节，SHA-256 `ceb8c0403cbdfbbe4764ad79f405a1d7bb884a930665478957ec1ef77008f3b5`，与冻结值一致。
+- 环境：`proposal_default_env` = test；`test.current_ref` = `02355709cf742bfe095124ca2e285437f6153694`，`prod.current_ref` = null。
+- `git log v0.16.0..HEAD -- .github/workflows/publish.yml` 为空，档 C 演练不需重做。
+
+## 二、门 ①（通过）
+
+本地 macOS、Node v23.10.0，提交 `4ff1099`：`npm run lint` 0、`tsc --noEmit` 0、`npm test` 2828 passed / 1 skipped、`npm run build` 0；官网 `npm ci` 0、`npm run build` 0（字体工具取自独立 venv：Python 3.14.7、fonttools 4.67.0 + brotli），构建产物含中英文 `cli/env`、`cli/deploy`、`cli/approve`、`specs/environments`，构建后工作区无变化。
+
+## 三、门 ② 阶段一（未通过）
+
+- 环境：本地预演镜像 `openlogos-gate2:node20-sqlite3`（`sha256:4ef106618500c5819bee0a49eea485ee5caaf482e4dec7689d09efac31b770e0`，0.16.2 发布时基于 `node:20` 加装 sqlite3 构建），用户 `node`（uid 1000）、Node v20.20.2、sqlite3 3.40.1、cc（Debian 12.2.0）；容器内 `git clone` 后检出 `4ff1099`。
+- 结果：`npm ci` 0；**`npm test` 1**（4 failed / 2806 passed / 19 skipped）；`npm run build` 0；版本一致性 0（package / plugin 均 0.16.7，Release 正文 5442 字节，不含「未发布到 npm」）；lint 0；tsc 0。
+- 环境能力用例：core-S41 / S42 / S43 共 80 个 UT / ST ID 中，4 个为 `fail`，其余均 `pass`，无 `skip`。全量 `skip` 仍为既有的 10 个能力探测用例（ST-S13-14、UT-S13-47～50、UT-S13-52～54、UT-S19-08、UT-S19-09）。
+- 失败用例：ST-S41-05、ST-S41-06、UT-S42-16、UT-S43-14。
+- 打包核对未得出结论：预演脚本取 tarball 时误选了仓库中已跟踪的旧包 `cli/miniidealab-openlogos-0.10.10.tgz`。这是预演脚本自身的缺陷，与发布物无关，重走门 ② 时改为 `--pack-destination` 指定输出目录后再核对。
+- 阶段二（官网 `node:22.12.0`）、门 ③、门 ④ 均未执行。
+
+## 四、根因
+
+四个失败用例都是「未配置时零回归」类测试，用法相同：在一次性夹具项目里运行当前 CLI，再与落盘基线 `cli/test/golden/s42-zero-regression-baseline.json` 逐字比较。基线是在 macOS 上生成的，记录的 smoke / verify JSON 中 `sandbox.root` 为 `"/private/tmp"`，也就是 macOS 上 `os.tmpdir()` 的 realpath。Linux 上同一字段为 `"/tmp"`。夹具归一化函数（`cli/test/golden/s42-zero-regression-fixture.mjs` 的 `normalizer`）只替换了夹具项目根路径、时间、UUID、哈希与耗时，没有替换系统临时目录，因此基线把宿主环境事实固化进了期望值，违反部署方案「发布前检查通则：环境事实不入 verify 期断言」。差异只在这一字段，CLI 行为本身在 Linux 上与基线一致。
+
+这些用例来自 0.16.4～0.16.6 的三个本机发布提案，此前只在 macOS 上运行过；相关提交从未推送，GitHub CI 的 ubuntu runner 也从未执行过它们。门 ③ 在 CI 上同样会失败。
+
+## 五、处置与修复建议
+
+- 处置：按档 A，不推送、不打 tag；本提案停在部署前。
+- 修复方向（只改测试代码，不改 CLI 运行时）：在 `s42-zero-regression-fixture.mjs` 的 `normalizer` 中把 `realpathSync(tmpdir())` 与 `tmpdir()` 统一替换为占位符（如 `<TMPDIR>`），并按 `cli/test/golden/README.md` 的生成方式重新生成基线；用 docker `node:20` 非 root 与 macOS 各跑一遍 ST-S41-05、ST-S41-06、UT-S42-16、UT-S43-14 确认通过。
+- 修复后须重新 verify，并从门 ① 起重走四道门。按部署方案档 A，「需要改 CLI 代码的修复另立提案」。这次改的是测试代码，是在本提案内修复（与 0.16.2 决策 C08 同口径），还是另立提案，由用户决定。
