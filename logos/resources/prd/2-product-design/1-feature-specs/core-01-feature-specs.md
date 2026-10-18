@@ -5261,3 +5261,78 @@ Linux 以 `/proc/<pid>/environ` 读取进程初始环境。不可转储（non-du
 | 生成指令硬红线条目 | `cli/src/commands/init.ts` | `cli/test/s43-*.test.ts` |
 
 - 场景：S43（新增）、S42、S41、S21、S09；测试：`core-S43-test-cases.md` 全部用例与 `core-S41-test-cases.md`、`core-S09-test-cases.md` 中 environment-promotion-approval 新增用例；决策：D14。
+
+## 2.96 按模块限定 verify 范围
+
+> 来源变更：module-scoped-verify（决策 C01、C02；review F1、F2 处置）。权威格式与判据见 `spec/test-results.md`「按模块限定 verify 范围的运行约定（module-scoped-verify）」、`spec/test-slice-manifest.md` §7、`spec/cli-json-output.md` 与 `spec/schema/verify.schema.json`（`scope`）、`spec/logos-project.md` §modules、`spec/change-management.md`（guard `baseRef`）；本节描述用户可见行为。场景：S13（「S13 按模块限定范围的 verify」子场景）。
+
+### 2.96.1 配置
+
+- **模块代码目录**：`logos/logos-project.yaml` 的 `modules[]` 新增可选字段 `paths`，为 glob 字符串数组，相对项目根、以 `/` 分隔，支持 `**`（跨路径段）、`*`（段内）、`?`。不得以 `/` 开头、不得含 `..` 段、不得为空串。缺省或空数组表示该模块未声明代码目录。一个文件可以同时命中多个模块，命中者全部计入。
+- **模块测试命令**：`logos/logos.config.json` 新增可选 `verify.modules.<模块 id>`，含 `pre_run_command` / `regression_command` / `incremental_command`，与项目级同名字段同语义、同互斥与兼容规则。三者都缺省视为该模块未配置模块级命令，使用项目级命令。`<模块 id>` 未在 `logos-project.yaml` 登记时给出诊断警告 `verify_module_unknown` 并忽略该项，不影响门禁。
+
+### 2.96.2 启用条件（先于范围计算，review F1）
+
+按顺序取第一条成立的：
+
+1. 传入 `openlogos verify --all` → 全量，`scope.mode` 为 `"all"`，`modules` 为全部已登记模块。
+2. 项目只有一个模块，或没有任何模块声明非空 `paths` → **未启用**：走现有全量流程，不计算范围、不过滤用例与结果、只用项目级命令；verify JSON 不输出 `scope`，验收报告不出现「范围」行，与引入本能力前逐字节一致。这一条不看代码改动是否为空：纯规格提案的改动文件集合为空，不能靠「归不到模块就回落」兜底。
+3. 其余情况进入范围计算（§2.96.3），得到 `"module"` 或 `"fallback-full"`。
+
+只给部分模块声明 `paths` 的项目视为已启用；未声明 `paths` 的模块仍可经提案归属或 delta 前缀进入范围，但不会有代码文件归到它。
+
+### 2.96.3 范围 M 的计算（C01）
+
+M = 提案归属模块 ∪ delta 目标前缀模块 ∪ 改动文件归属模块。
+
+- **提案归属模块**：与 change-lint 同源的提案模块解析（`resolveProposalModuleContext`）。没有活跃提案时回落全量（`no_active_change`）。
+- **delta 目标前缀模块**：活跃提案 `deltas/**` 下每个 delta 文件名的 `<module>-` 前缀，按已登记模块 id 最长匹配。不带已登记模块前缀的 delta 不贡献模块，其合并目标的影响由改动文件分类判定。
+- **改动文件集合**：guard 的 `baseRef` 到工作区的差异，包括已提交与未提交的改动（重命名取旧、新两个路径，删除取原路径），以及未跟踪且未被忽略的文件。被 `.gitignore` 忽略的文件不计。
+- **改动文件分类**（review F2，不按 `logos/` 目录前缀整体跳过），按顺序取第一条成立的：
+  1. **流程产物**不参与判定。复用既有路径契约 `PATH_CLASSES_V1`（`cli/src/lib/impact-classify.ts`）的 lifecycle 集合：`logos/.openlogos-guard`，以及 `logos/changes/`、`logos/resources/verify/`、`logos/.runtime/` 下的文件。提案目录中的 delta 已按目标前缀计入 M。
+  2. **共享验收配置** `logos/logos.config.json`、`logos/logos-project.yaml` 被改动 → 回落全量（`shared_config_changed`）：它们决定测试命令与模块范围本身。
+  3. `logos/resources/` 下文件名带已登记模块前缀（`<module>-`，最长匹配）的**规格文件** → 计入该模块（依据 `source: "spec"`），与 delta 前缀同口径。
+  4. **其余文件**（含 `logos/` 下的其他内容，如 `logos/tools/**`）按 `modules[].paths` 归属（依据 `source: "path"`）；一个模块也命中不了 → 回落全量（`unmapped_file`）。
+- **起点不可用 → 回落全量**：guard 没有 `baseRef`（旧版 CLI 创建的提案）为 `base_ref_missing`；项目不是 git 仓库为 `not_git_repository`；`baseRef` 不可达（如历史被改写）为 `base_ref_unreachable`；差异计算失败为 `diff_failed`。
+- **`paths` 非法**（以 `/` 开头、含 `..` 段、空串或非字符串）→ 回落全量（`module_paths_invalid`）。宁可多跑，不因拼写错误少跑。
+- 回落全量时范围为全部已登记模块，命令选择与用例核对都按全部模块执行（§2.96.4）。这与「未启用」不同：会输出 `scope`，并可能执行多个模块级命令。
+
+### 2.96.4 执行与核对
+
+- **命令选择与去重**：按 `logos-project.yaml` 中的模块顺序，对范围内每个模块，有 `verify.modules.<id>` 就用它，否则用项目级命令。三个命令字段取值完全相同的模块合并为一个命令组，只执行一次，按首次出现的顺序执行。命令组内部沿用现有的两阶段优先规则（review F4）：`regression_command`、`incremental_command` 任一存在，就按 regression → incremental 执行已配置的阶段，同组的 `pre_run_command` 作为兼容配置记为跳过（`status: "skipped"`）；两阶段命令都不存在时才执行 `pre_run_command`。模块级命令组与回落使用的项目级命令组同一规则。
+- **执行结果**：所有命令组都执行完再判定。任一命令非零退出 → 既有 `pre_run_failed` 门禁失败；`pre_run.commands[]` 每条记录新增 `modules`（该命令组服务的模块 id），诊断点名失败的模块。
+- **结果收集**：每个阶段执行前清空其结果文件、执行后收集内容，全部命令组的内容按既有同 ID 去重全序规则合并——与现有两阶段合并同一机制。
+- **环境变量**：每条命令执行时注入 `OPENLOGOS_VERIFY_MODULES`（该命令组服务的模块 id，逗号分隔）。`OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 照旧注入，取值为与范围求交后的集合，runner 可据此只执行范围内用例。未启用时不注入新变量。
+- **用例归属**：测试规格文件按文件名 `<module>-` 前缀（已登记模块 id 最长匹配）归属模块。前缀在范围内的计入；不带已登记模块前缀的测试规格视为全局用例，始终计入。本提案修改的测试用例（`test_change_set` 的变更集合）一律计入范围，防止切片 owned / pending 用例被范围裁掉（`spec/test-slice-manifest.md` §7.1）。verify 的用例提取与切片 manifest 的用例提取同一口径。
+- **切片感知**：baseline、confirmed、attempted、eligible 都先与范围内用例求交，再按既有切片规则计算（`spec/test-slice-manifest.md` §7）。
+- **范围外结果**：ID 属于范围外模块用例的结果行被忽略（ID 不属于任何已定义用例的结果行不在此列，照旧按结果账本一致性判为未定义）：不判未定义（unknown）、不判 outside_eligible、不计入任何统计，只计入 `scope.out_of_scope_result_count`。runner 沿用全量执行、只靠 eligible 收窄结果时，范围外模块的偶发失败也不会阻断本提案。
+- `"all"` 与 `"fallback-full"` 模式下范围内用例即全部用例，`out_of_scope_result_count` 为 0。
+
+### 2.96.5 `openlogos verify --all`（C02）
+
+- 不计算范围，按全部模块执行与核对，`scope.mode` 为 `"all"`；命令选择同 §2.96.4。
+- 不改变 `VERIFY_PASS`、`VERIFY_FAIL`、`LOOP_ITERS` 等标记语义。提案 verify 一律按范围执行；archive 不要求做过全量 PASS，发版前或排查时由人手动执行 `--all`。
+
+### 2.96.6 提案起点 `baseRef`
+
+- `openlogos change <slug>` 写 guard 时，若项目是已有提交的 git 仓库，写入 `baseRef`（当时 `HEAD` 的 40 位提交号）；非 git 或尚无提交时不写该字段。
+- 目前只有 `openlogos change`（含 `openlogos next` 问即建时对它的调用）写 guard；它因提案已存在等原因拒绝创建时不重写 guard，已有 `baseRef` 原样保留。今后新增的 guard 写入者（含宿主）必须保留已有 `baseRef`。
+- 旧 guard 缺字段时，只在模块范围已启用的项目里有影响：回落全量（`base_ref_missing`）。
+
+### 2.96.7 JSON 与报告
+
+- verify JSON `data` 顶层新增 `scope`，只在启用或传 `--all` 时输出：
+  - `mode`：`"module"`、`"all"` 或 `"fallback-full"`；
+  - `modules`：范围内模块 id，按 `logos-project.yaml` 顺序；
+  - `reasons`：`mode` 为 `"module"` 时逐条给出 `{ module, source, ref }`（`source` 为 `proposal`、`delta`、`spec`、`path` 之一，`ref` 为提案 slug、delta 路径或改动文件路径），其余模式为空数组；
+  - `fallback_reason`：`"fallback-full"` 时为 `{ code, detail }`（`code` 为 `no_active_change`、`base_ref_missing`、`not_git_repository`、`base_ref_unreachable`、`diff_failed`、`shared_config_changed`、`unmapped_file`、`module_paths_invalid` 之一，`detail` 写明具体文件或原因，如 `unmapped_file` 的首个文件与总数），否则为 `null`；
+  - `out_of_scope_result_count`：被忽略的范围外结果行数。
+- 只新增字段、不改既有字段；`pre_run.commands[].modules` 同样只在启用或 `--all` 时输出。不读取 `scope` 的消费方（如 RunLogos）照常工作。
+- 验收报告 Summary 表新增一行「范围 / Scope」，如 `module（portal-web）`、`all`、`fallback-full（unmapped_file：scripts/release.sh 等 3 个文件）`；未启用时不出现该行。
+
+### 2.96.8 非目标与追溯
+
+- 非目标：不按模块限定 smoke；不做模块间依赖图；不在 archive 前强制全量；不改造已有项目的配置。
+- 需求：`core-01-requirements.md`「S13 按模块限定 verify 范围验收补充」。
+- 场景：`core-S13-verify-results.md`「S13 按模块限定范围的 verify」。
+- 测试：`core-S13-test-cases.md`「S13 按模块限定 verify 范围测试」——启用条件 UT-S13-104、105；范围计算 UT-S13-106～113；用例与结果 UT-S13-114、115；执行 UT-S13-116、117；切片 UT-S13-118；JSON 与报告 UT-S13-119；配置诊断 UT-S13-120；`baseRef` UT-S13-121；端到端 ST-S13-27～32。smoke：SMOKE-core-280～284。

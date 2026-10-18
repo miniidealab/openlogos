@@ -2454,3 +2454,44 @@
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；`target_environment` 取本次 `OPENLOGOS_SMOKE_ENV`（正式执行为 `prod`），skip 记录不声明 `target_environment`；evidence 记录 V、tag 提交号、registry tarball SHA-256、Release 附件 SHA-256、HTTP 状态码、隔离 prefix 路径与各步 JSON 摘要，SMOKE-core-275 另记镜像摘要与容器内 uid。**失败不得写 pass**。
 - 判据以 JSON 字段、退出码、SHA-256、HTTP 状态码与发布目录内容为准；页面与发布说明断言只针对版本号、固定路径、是否为回退提示与上表列出的关键字，不解析其余人类可读文案。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-272～SMOKE-core-279 均被 runner 覆盖。
+
+## OpenLogos 0.16.8 按模块限定 verify 范围安装态 smoke（SMOKE-core-280～284）
+
+> 这组用例验证按模块限定 verify 范围（来源提案 module-scoped-verify，功能规格 §2.96）确实进入了本机全局安装态：模块范围的启用条件、范围 M 的计算与回落全量、`openlogos verify --all`，以及 `openlogos change` 在 guard 中记录 `baseRef`。它们都是 CLI 运行时行为，只有全局 `openlogos` 升级后才对用户的各项目（含 runlogos 的 Team 版模块）生效。
+>
+> 用例在 `mktemp -d` 一次性隔离 git 项目内执行（经全局 `openlogos init` 建立，再写入多模块 `logos/logos-project.yaml`：`core` 的 `paths` 为 `["src/**"]`、`portal-web` 的 `paths` 为 `["portal-web/**"]`，测试规格 `core-S01-test-cases.md`、`portal-web-S50-test-cases.md` 与全局 `shared-S90-test-cases.md`；`verify.modules` 两个模块各配一条「记录型运行器」命令，项目级命令为同一运行器带参数 `project`，`verify.sandbox_mode` 为 `off`）。记录型运行器把自身参数与 `OPENLOGOS_VERIFY_MODULES` 逐行写入项目外一次性调用日志，并写入对应模块用例的本轮结果（全部 pass，除非用例另行说明）。运行器支持两个夹具开关（review F5，所有失败与范围外结果都由本轮运行器输出）：`MSV_EMIT_FOREIGN=1` 时被调用为 portal-web 的那次另输出一条 core 用例 UT-S01-01 的 fail 行；`MSV_CORE_FAIL=1` 时被调用为 core 的那次把 UT-S01-01 写为 fail。需要验证结果新鲜度的用例在 verify 前向结果文件预置一条「上一轮遗留」的 core 失败行。提案经全局 `openlogos change` 创建，因此 guard 带安装态写入的 `baseRef`。runner 以子进程直接调用全局 CLI，对全局安装态**只读**，不做安装或卸载，不触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态账本与用户其他仓库（包括 runlogos）；唯一读取本仓的是 SMOKE-core-280 ④ 对本仓托管副本的只读比对。判据用**行为断言**：全局 `--version` 等于部署记录版本只证明装了新包。版本以部署记录与 `cli/src/lib/local-release-candidate.ts` 的候选版本为准，断言写成关系式，不硬编码 `0.16.8`。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-280 | 安装态版本、制品身份与本仓 sync 同源 | 本机全局已安装本次候选；部署记录中有候选版本与 tarball SHA-256；本仓已按部署方案执行 `openlogos sync` | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 检查全局包内存在范围计算实现（`dist/lib/` 下的模块范围计算文件）、`dist/index.js` 注册 `verify --all`、`dist/commands/change.js` 写入 `baseRef`；④ 逐字节比对本仓 `.claude/openlogos/bin/guard-check` 与全局包内 `claude-plugin-template/bin/guard-check` | ① `--version` 等于部署记录候选版本，入口无 workspace link；② `payloadHash` 自洽；③ 全部成立；④ 字节一致 | 保留读取结果。①～③ 任一不符 → 停止后续流程，按部署方案以 `openlogos deploy --env test --rollback`（或部署方案指定的回滚制品）回到 0.16.7；④ 不一致 → 重新执行本仓 `openlogos sync` 后复核，仍不一致则回流本提案 |
+| SMOKE-core-281 | 安装态只改一个模块时只执行该模块命令 | 本机全局已安装本次候选；多模块临时项目已初始提交；`openlogos change msv-smoke` 创建归属 `portal-web` 的提案；工作区只改 `portal-web/app.ts`；设 `MSV_EMIT_FOREIGN=1`；verify 前向结果文件预置一条上一轮遗留的 core 失败行 | ① 读取 guard；② `openlogos verify --format json`；③ 读取调用日志与 `acceptance-report.md` | ① guard 的 `baseRef` 等于创建提案时的 `git rev-parse HEAD`；② 退出码 0，`gate.result=="PASS"`，`scope.mode=="module"`、`scope.modules==["portal-web"]`，`scope.reasons` 含 `source:"proposal"`，`summary.defined_count` 只含 portal-web 与全局用例，`scope.out_of_scope_result_count==1`（本轮 portal-web 运行器输出的 core 行），预置的遗留行已被执行前清空、不被采信；③ 调用日志只有 portal-web 命令一次，`OPENLOGOS_VERIFY_MODULES=="portal-web"`；报告 Summary 含「范围」行 | 同上；任一不成立表示范围计算或按模块执行未进入安装态，回装旧版并回流本提案 |
+| SMOKE-core-282 | 安装态改动归不到模块时回落全量 | 同 SMOKE-core-281 的临时项目，另新建 `scripts/release.sh`（不在任何 `paths` 内） | `openlogos verify --format json`；读取调用日志 | `scope.mode=="fallback-full"`、`scope.fallback_reason.code=="unmapped_file"`、`detail` 含 `scripts/release.sh`；调用日志 core、portal-web 命令各一次；defined 含全部用例 | 同上；任一不成立表示回落全量未进入安装态，回装旧版并回流本提案 |
+| SMOKE-core-283 | 安装态 `--all` 全量 | 同 SMOKE-core-281 的临时项目（只改 `portal-web/app.ts`），不设 `MSV_EMIT_FOREIGN`；verify 前向结果文件预置一条上一轮遗留的 core 失败行 | ① `openlogos verify --all --format json`；② 设 `MSV_CORE_FAIL=1` 后重跑 ①；每次读取调用日志 | ① `scope.mode=="all"`、`scope.modules==["core","portal-web"]`、`fallback_reason==null`；两个模块命令各执行一次；遗留行不被采信，`gate.result=="PASS"`；② 本轮 core 命令输出的 UT-S01-01 fail 进入 `failed_cases`，`gate.reason=="failed_cases"`（review F5） | 同上；任一不成立表示 `--all` 未进入安装态，回装旧版并回流本提案 |
+| SMOKE-core-284 | 安装态未启用零回归（单模块与无 `paths` 的多模块项目） | 本机全局已安装本次候选；两个临时项目：A 单模块项目（只登记 `core`）；B 多模块项目，两个模块都不写 `paths`；两者都以全局 `openlogos change` 创建提案并只写带模块前缀的 delta（纯规格提案）；对同一夹具以 0.16.7 回滚制品在一次性隔离 prefix 中执行同样命令作为基线 | 对 A、B 分别执行 `openlogos verify --format json` 与读取 `acceptance-report.md`，与基线剔除 `timestamp`、`duration_ms` 后比对 | 两者都无 `scope` 键、`pre_run.commands[]` 无 `modules`、报告无「范围」行；defined 为全部用例；只执行项目级命令；除版本字段外与 0.16.7 基线逐字一致 | 同上；任一不成立表示零回归被破坏（review F1），回装旧版并回流本提案 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目、一次性调用日志目录与一次性基线 prefix 内进行，结束即删除。**不得**触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态目录、用户其他仓库（包括 runlogos）或本机全局 prefix；本节对全局安装态只读，对本仓只做 SMOKE-core-280 ④ 的只读比对。
+- 不触发真实 CI、不访问任何远程服务。
+- 命令图中不得出现 `npm publish` / dist-tag / `git tag` / `gh release` / `git push`。
+- 断言中不硬编码主机路径、墙上时钟、本机全局安装现值或版本字面量；commit 以临时仓库内 `git rev-parse` 的实际值比较。
+
+### 三、追溯与覆盖
+
+- 功能规格：§2.96。
+- 需求：`core-01-requirements.md`「S13 按模块限定 verify 范围验收补充」。
+- 根规范：`spec/logos-project.md` §modules（`paths`）、`spec/logos.config.schema.json`（`verify.modules`）、`spec/test-results.md` §运行约定、`spec/cli-json-output.md` §4（`scope`）、`spec/change-management.md`（guard `baseRef`）。
+- 场景：`core-S13-verify-results.md`「S13 按模块限定范围的 verify」。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.8 本机测试环境发布（module-scoped-verify）」。
+- 仓库内对应用例：UT-S13-104～UT-S13-121、ST-S13-27～ST-S13-32。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-module-scoped-verify-0-16-8.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-280～SMOKE-core-284，不得依靠通配发现后无条件 PASS。runner 记录全局入口 realpath、安装态版本、每个隔离项目路径、每次命令的退出码、调用日志与 JSON 摘要。
+- 适用窗口：活跃变更为 `module-scoped-verify`，或 `OPENLOGOS_MSV_SMOKE=1`；窗口之外按既有留痕机制为全部 owned ID 写 skip。环境变量一律使用 `OPENLOGOS_MSV_` 前缀。
+- **适用性判定不得依赖自动流程不会设置的环境变量**：候选版本取自部署记录与 `cli/src/lib/local-release-candidate.ts`，候选版本早于 0.16.8 时按缺候选制品处理；只有部署记录、回滚制品或本仓 sync 确实缺失时才写显式 `skip` 并携带缺失项，不得标 `reason_code:"platform-unavailable"`。有 skip 时不得写 `SMOKE_PASS`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`，`target_environment` 取本次 `OPENLOGOS_SMOKE_ENV`，skip 记录不声明；**失败不得写 pass**。
+- 判据以 `--format json` 的结构化字段、退出码、调用日志与报告 Summary 表行为准，不解析其余人类可读文案。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-280～SMOKE-core-284 均被 runner 覆盖。

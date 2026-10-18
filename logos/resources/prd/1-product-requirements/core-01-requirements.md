@@ -3435,3 +3435,80 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 - 功能规格：§2.95；架构：「五十五、环境晋级与审批门」；决策：D14。
 - 场景：`core-S43-environment-promotion-approval.md`；相关场景 S41、S42、S21、S19、S09。
 - 测试：`core-S43-test-cases.md`，以及 `core-S41-test-cases.md`、`core-S09-test-cases.md` 中 environment-promotion-approval 新增用例。
+
+## S13 按模块限定 verify 范围验收补充
+
+> 来源变更：module-scoped-verify（决策 C01、C02；review F1、F2 处置）。判据的权威定义见功能规格 §2.96 与 `spec/test-results.md`「按模块限定 verify 范围的运行约定（module-scoped-verify）」一节。
+
+### 场景定义
+
+- **触发条件**：一个仓库按 OpenLogos 模块承载多个子系统（如桌面端 `core` 与 Portal 的 `portal-web` / `portal-server`），提案只改其中一部分，但 `openlogos verify` 每次都跑全部模块的用例。
+- **用户价值**：只改 Portal 的提案不再被桌面端的全部用例拖慢，也不会被无关模块的偶发失败阻断；跨模块改动（如协议）仍然覆盖到每个受影响的模块。不会因为缩小范围而降级测试门：判断不了归属时回落全量。
+- **优先级**：P1
+- **主路径**：模块在 `logos-project.yaml` 的 `modules[].paths` 声明代码目录，可在 `logos.config.json` 的 `verify.modules.<id>` 配置自己的测试命令；`openlogos change` 在 guard 中记下提案起点提交 `baseRef`；verify 先判断是否启用模块范围，启用时算出范围 M（提案归属模块、delta 前缀模块、改动文件归属模块的并集），只执行 M 内模块的测试命令，只核对 M 内模块与全局测试规格中的用例；`openlogos verify --all` 手动全量。
+
+### 验收条件
+
+#### 正常：只改一个模块时只验证该模块
+- **GIVEN** 项目登记 `core`（`paths: ["src/**"]`）与 `portal-web`（`paths: ["portal-web/**"]`），两者各自配置了 `verify.modules.<id>` 命令；活跃提案归属 `portal-web`，guard 记有 `baseRef`，提案只改了 `portal-web/` 下的代码与 `portal-web-` 前缀的 delta
+- **WHEN** 用户执行 `openlogos verify --format json`
+- **THEN** 只执行 `portal-web` 的测试命令；只核对 `portal-web-` 前缀与不带已登记模块前缀（全局）的测试规格中的用例；`core` 用例的结果行被忽略、不计入统计；`data.scope` 为 `mode: "module"`、`modules: ["portal-web"]`，`reasons` 列出该模块进入范围的依据
+
+#### 正常：跨模块改动覆盖每个受影响的模块
+- **GIVEN** 同上项目，归属 `portal-web` 的提案还修改了 `src/protocol.ts`（命中 `core` 的 `paths`）
+- **WHEN** 用户执行 `openlogos verify`
+- **THEN** `core` 与 `portal-web` 都进入范围，两个模块的测试命令都执行；`reasons` 中 `core` 的依据为 `source: "path"`、`ref: "src/protocol.ts"`
+
+#### 正常：未启用模块范围的项目行为不变（review F1）
+- **GIVEN** 单模块项目；或多模块项目但没有任何模块声明非空 `paths`，且用新版 `openlogos change` 创建了合法 `baseRef`、只改了某个模块前缀 delta 的纯规格提案
+- **WHEN** 用户执行 `openlogos verify --format json`
+- **THEN** verify 不计算范围、不过滤用例与结果，只用项目级测试命令，defined 集合、失败结果处理与引入本能力前一致；JSON 不输出 `scope`，验收报告不出现「范围」行
+
+#### 异常：改动文件归不到任何模块时回落全量
+- **GIVEN** 模块范围已启用，提案修改了 `scripts/release.sh`，它不命中任何模块的 `paths`
+- **WHEN** 用户执行 `openlogos verify --format json`
+- **THEN** 按全部模块执行测试命令并核对全部用例；`scope.mode` 为 `"fallback-full"`，`scope.fallback_reason.code` 为 `"unmapped_file"`，`detail` 写明首个未归属文件与未归属文件总数
+
+#### 异常：共享验收配置被修改时回落全量（review F2）
+- **GIVEN** 模块范围已启用，提案修改了 `logos/logos.config.json` 或 `logos/logos-project.yaml`
+- **WHEN** 用户执行 `openlogos verify`
+- **THEN** 回落全量，`fallback_reason.code` 为 `"shared_config_changed"`，`detail` 写明被修改的文件
+
+#### 正常：logos/ 下已声明归属的文件照常归属（review F2）
+- **GIVEN** `core` 的 `paths` 含 `logos/tools/**`，归属 `portal-web` 的提案修改了 `logos/tools/protocol-check.ts`
+- **WHEN** 用户执行 `openlogos verify`
+- **THEN** `core` 进入范围；只有流程产物（`logos/.openlogos-guard`，`logos/changes/`、`logos/resources/verify/`、`logos/.runtime/` 下的文件）不参与归属判定
+
+#### 异常：无法确定提案起点时回落全量
+- **GIVEN** 模块范围已启用，guard 缺 `baseRef`（旧版 CLI 创建的提案），或项目不是 git 仓库，或 `baseRef` 已不可达
+- **WHEN** 用户执行 `openlogos verify`
+- **THEN** 回落全量，`fallback_reason.code` 分别为 `"base_ref_missing"`、`"not_git_repository"`、`"base_ref_unreachable"`
+
+#### 正常：手动全量
+- **GIVEN** 任意项目（无论是否启用模块范围）
+- **WHEN** 用户执行 `openlogos verify --all --format json`
+- **THEN** 按全部模块执行测试命令并核对全部用例，`scope.mode` 为 `"all"`；archive 不要求做过 `--all`（决策 C02）
+
+#### 正常：多个模块共用一条命令时只执行一次
+- **GIVEN** 范围内的 `portal-web` 与 `portal-server` 都没有配置模块级命令
+- **WHEN** 用户执行 `openlogos verify`
+- **THEN** 项目级命令只执行一次，执行时环境变量 `OPENLOGOS_VERIFY_MODULES` 为 `portal-web,portal-server`
+
+#### 正常：提案起点在创建提案时记录
+- **GIVEN** 项目是已有提交的 git 仓库
+- **WHEN** 用户执行 `openlogos change <slug>`
+- **THEN** guard 写入 `baseRef`（当时 `HEAD` 的 40 位提交号）；非 git 或尚无提交时不写该字段
+
+### 非目标
+
+- 不按模块限定 smoke（smoke 已有按提案归属的 runner 配置）。
+- 不做模块间依赖图（A 依赖 B 时改 B 自动验证 A）：首版靠「归不到模块即回落全量」兜底。
+- 不在 archive 前强制全量（决策 C02），只提供 `openlogos verify --all`。
+- 不改造已有项目的配置：单模块项目、没有任何模块声明 `paths` 的项目不受影响。
+
+### 追溯
+
+- 规范：`spec/logos-project.md` §modules（`paths`）、`spec/logos.config.schema.json`（`verify.modules`）、`spec/test-results.md`「按模块限定 verify 范围的运行约定（module-scoped-verify）」、`spec/test-slice-manifest.md` §7、`spec/cli-json-output.md` 与 `spec/schema/verify.schema.json`（`scope`）、`spec/change-management.md`（guard `baseRef`）。
+- 功能规格：§2.96。
+- 场景：`core-S13-verify-results.md`「S13 按模块限定范围的 verify」。
+- 测试：`core-S13-test-cases.md`「S13 按模块限定 verify 范围测试」（UT-S13-104～UT-S13-121、ST-S13-27～ST-S13-32）；smoke：SMOKE-core-280～284。

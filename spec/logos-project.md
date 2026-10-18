@@ -539,3 +539,51 @@ modules:
 - **不变量**：注入 / 移除均以「项目是否含 ≥1 GUI 模块」为键，重复 `sync` 收敛到同一状态（幂等）；
   在项目不含 GUI 模块时 `launched.yaml` 回到**无 `gui-ui-first` ops** 的态，保「**非 GUI 项目零改动**」不变量。
 
+## paths 模块字段（module-scoped-verify）
+
+### 字段位置与作用域
+
+`paths` 是 **`modules[]` 数组元素上的可选字段**，与 `bootstrap`、`skip_phases`、`product_type` 并列，用来声明**该模块**的代码目录。`openlogos verify` 依据它判断提案改动的代码文件属于哪个模块，从而只执行、只核对相关模块的测试（功能规格 §2.96）。
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `paths` | string[] | 否 | 模块代码目录的 glob 列表，相对项目根。缺省或空数组表示该模块未声明代码目录。 |
+
+### 写法
+
+- 路径一律相对项目根，以 `/` 分隔。
+- 支持 `**`（匹配任意层级，可跨路径段）、`*`（匹配一个路径段内的任意字符）与 `?`（匹配一个字符）。
+- 不得以 `/` 开头，不得含 `..` 段，不得为空串，数组元素必须是字符串。不合法时，verify 不猜测意图，而是回落全量并给出 `module_paths_invalid`（见下文「消费者」）。
+- 一个文件可以同时命中多个模块的 `paths`，命中的模块全部计入 verify 范围。
+- 允许指向 `logos/` 下的非规格内容（如 `logos/tools/**`）。这类文件与仓库其他文件按同一规则归属。
+
+### 缺省语义与启用条件
+
+`paths` 同时决定 verify 是否启用模块范围。verify 按顺序取第一条成立的规则：
+
+1. 传入 `openlogos verify --all`：按全部模块执行与核对。
+2. 项目只有一个模块，或没有任何模块声明非空 `paths`：**不启用**模块范围。verify 走现有全量流程，不计算范围、不过滤用例与结果，命令只用项目级；与引入本字段之前逐字节一致，纯规格提案也不例外。
+3. 其余情况才计算本次 verify 的模块范围。
+
+只给部分模块声明 `paths`，也视为已启用。未声明 `paths` 的模块仍可经提案归属与 delta 目标前缀进入范围，但不会有代码文件归到它；改动文件一个模块也命中不了时回落全量。
+
+### 消费者
+
+- `openlogos verify`：计算范围 M、选择模块级命令、核对范围内用例（功能规格 §2.96；`spec/test-results.md`「按模块限定 verify 范围的运行约定」）。
+- 其他命令不读取 `paths`。`openlogos module add`、`openlogos sync` 不写入、不修改该字段，由人维护。
+
+### 示例
+
+```yaml
+modules:
+  - id: core
+    name: 桌面端
+    lifecycle: launched
+    paths: ["src/**", "src-tauri/**", "logos/tools/**"]
+  - id: portal-web
+    name: Portal 前端
+    lifecycle: launched
+    paths: ["portal-web/**"]
+```
+
+只改 `portal-web/**` 下文件的 portal-web 提案只验收 portal-web（及全局用例）。改动若同时触及 `src-tauri/**`，core 也进入范围。改动的文件两个模块都不命中（如根目录下的 `scripts/release.sh`）时，回落全量。

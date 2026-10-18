@@ -250,6 +250,32 @@ checkpoint 对 eligible 执行既有 100% 覆盖、合法状态、去重和通�
 
 pending 不是 reporter status，不生成结果、不进入 uncovered。runner 输出 pending ID 时返回 `result_outside_eligible_scope`。
 
+### 7.1 与模块范围求交（module-scoped-verify）
+
+多模块项目启用按模块限定 verify 范围时（启用条件与范围 M 的计算见功能规格 §2.96），上述集合先与**范围内用例集** `S` 求交，再进入 checkpoint / final 判定：
+
+```text
+D_M = D 中定义在「文件名前缀 ∈ M 的测试规格」或「不带已登记模块前缀的全局测试规格」里的 ID
+S   = D_M ∪ C
+B_S = B ∩ S
+
+A exists:
+  mode = slice-checkpoint
+  eligible = B_S ∪ owned(P) ∪ owned(A)
+  pending = C − owned(P) − owned(A)
+
+A absent and code section complete:
+  mode = final
+  eligible = D ∩ S
+  pending = ∅
+```
+
+- **变更测试始终在范围内**：本提案修改的测试 `C` 无条件并入 `S`。测试 delta 的文件名前缀本就会把其模块计入 M，这一条用来保证即使出现前缀与 M 不一致的情况，`owned`、`confirmed`、`attempted` 与 `pending` 也不会被范围裁掉；`O = C` 等 §5 不变量不变。
+- **范围外结果**：结果行 `id ∈ D − S` 时既不进入 eligible 判定，也不返回 `result_outside_eligible_scope`，而是按 `spec/test-results.md`「按模块限定 verify 范围的运行约定」忽略，计入 verify JSON 的 `scope.out_of_scope_result_count`。`result_outside_eligible_scope` 只用于范围内、但不在本次 eligible 中的 ID（如 pending）。
+- **注入**：`OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 注入求交后的 eligible。
+- **未启用或 `scope.mode` 为 `all` / `fallback-full`**：`S = D`，上式退化为本节开头的原始公式，行为与引入前一致。
+- manifest、checkpoint ledger 与 fingerprint 的格式不变。范围 M 不写入 manifest，每次 verify 按当时的改动重新计算。因此同一 manifest 下，前后两次 checkpoint 的范围可以不同；已采信的 checkpoint 不因后续范围变化而重新判定。
+
 ## 8. Validator 与诊断码
 
 validator 必须先通过 TestChangeSetReader 验证 change set，再验证 slice manifest，且全部发生在 runner 启动前：

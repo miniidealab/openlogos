@@ -590,3 +590,44 @@ coverage = |covered| / |eligible|
 - 缓存路径**不豁免**写入审计：`sandbox_deny_workspace_write=true` 时，命令对缓存路径的写入与其他非白名单写入同口径（`auto` 告警、`always` 失败）。需要在 `always` 下使用缓存路径的项目，应让构建产物写到工作区之外（如 cargo 的 `CARGO_TARGET_DIR`）。
 - reporter 不需要感知复用：清空策略不变，每次完整测试运行前仍应清空对应阶段的结果文件。verify 在执行预跑命令前清空结果文件，清空后的状态经同步进入沙箱。
 - 复用不改变 `test-results.jsonl` 的 schema 与门禁判据。
+
+## 按模块限定 verify 范围的运行约定（module-scoped-verify）
+
+本节约定多模块项目按模块限定 verify 范围时，CLI 执行哪些命令、怎样收集结果、核对哪些用例。范围 M 的计算与回落规则见功能规格 §2.96；`modules[].paths` 见 `spec/logos-project.md`「paths 模块字段」；`verify.modules.<模块 id>` 见 `spec/logos.config.schema.json`。
+
+### 启用条件
+
+按顺序取第一条成立的：
+
+1. 传入 `openlogos verify --all` → `scope.mode = "all"`，按全部已登记模块执行与核对。
+2. 项目只有一个模块，或没有任何模块声明非空 `modules[].paths` → **未启用**：本节以下规则全部不适用。verify 走前文「运行约定」的现有流程，命令只用项目级，不注入 `OPENLOGOS_VERIFY_MODULES`，不过滤用例与结果，与引入前逐字节一致。
+3. 其余情况 → 计算范围 M，结果为 `scope.mode = "module"` 或 `"fallback-full"`。回落全量时按全部已登记模块执行与核对，仍适用本节的命令选择规则（与「未启用」不同）。
+
+### 执行哪些命令
+
+1. 按 `logos-project.yaml` 中的模块顺序遍历范围内的模块。某模块配置了 `verify.modules.<id>`，就用它的命令组；否则用项目级命令组（`verify.pre_run_command`，或 `verify.regression_command` / `verify.incremental_command`）。`verify.modules.<id>` 的三个字段都缺省，视为未配置模块级命令。
+2. 三个字段取值完全相同的命令组视为同一组，服务多个模块时只执行一次，按首次出现的顺序执行。
+3. 每个命令组内部沿用前文的两阶段优先规则（与项目级相同，review F4）：命令组中 `regression_command`、`incremental_command` 任一存在，就按 regression → incremental 执行已配置的阶段，同组的 `pre_run_command` 作为兼容配置保留、记为跳过（`pre_run.commands[]` 中 `stage:"pre_run"`、`status:"skipped"`，并给出兼容跳过诊断）；只有两阶段命令都不存在时才单阶段执行 `pre_run_command`。
+4. 全部命令组都执行完才判定。任一命令非零退出 → 既有的 `pre_run_failed` 门禁原因；JSON 的 `pre_run.commands[]` 每条带 `modules`（该命令组服务的模块 id 数组），诊断点名失败命令所服务的模块。
+5. `verify.modules` 中出现未在 `logos-project.yaml` 登记的模块 id 时，产生警告诊断 `verify_module_unknown`，忽略该项，不影响门禁。
+
+### 注入的环境变量
+
+- `OPENLOGOS_VERIFY_MODULES`：本条命令所属命令组服务的模块 id，以逗号分隔。runner 可据此只执行这些模块的测试。
+- `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS`：照旧注入（切片感知 verify），取值为与范围内用例求交后的集合。
+- 未启用模块范围时不注入 `OPENLOGOS_VERIFY_MODULES`。
+
+### 结果收集与合并
+
+每个阶段执行前清空其结果文件，执行后收集内容。全部命令组、全部阶段收集到的内容，按「归一化规则」第 5 条的同 ID 去重全序规则合并，写入 `result_path`。这与两阶段模型使用同一套机制，不另立第二套合并语义。多个命令组都写默认 `result_path` 时，CLI 必须在命令组之间保留快照，与两阶段模型对默认路径的要求相同。
+
+### 核对哪些用例
+
+- **用例归属**：测试规格文件按文件名 `<module>-` 前缀归属模块，前缀按已登记模块 id 最长匹配。前缀属于范围 M 的文件计入；文件名不带已登记模块前缀的视为全局用例，始终计入。verify 的用例提取与切片 manifest 的用例提取使用同一口径。
+- **范围外结果**：结果行的 `id` 属于范围外模块的用例时忽略：不判为未定义（unknown）、不判为 `outside_eligible`、不计入任何统计；被忽略的行数写入 `scope.out_of_scope_result_count`。
+- **范围内**的定义、覆盖、失败与 skip 判据与「JSONL 结果账本一致性与 Gate 判据」完全相同，只是计算对象换成范围内用例集。
+- `scope.mode` 为 `"all"` 或 `"fallback-full"` 时，范围内用例即全部用例，`out_of_scope_result_count` 为 0。
+
+### 与 reporter 的关系
+
+reporter 不需要感知模块范围：照常写全部执行过的用例结果，范围裁剪由 CLI 完成。reporter 写出了范围外模块的结果行也不会造成失败，只计入 `out_of_scope_result_count`。

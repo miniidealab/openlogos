@@ -669,3 +669,130 @@ sequenceDiagram
 
 - 功能规格：§2.92、§2.91.6。
 - 测试：UT-S13-101、UT-S13-102、ST-S13-26。
+
+## S13 按模块限定范围的 verify
+
+> 来源变更：module-scoped-verify（决策 C01、C02；review F1、F2 处置）。功能规格 §2.96；规范 `spec/test-results.md`「按模块限定 verify 范围的运行约定（module-scoped-verify）」、`spec/test-slice-manifest.md` §7、`spec/cli-json-output.md`（`scope`）。
+
+### 场景目标
+
+一个仓库按模块承载多个子系统时，提案 verify 只执行、只核对受本提案影响的模块（及全局）测试，跨模块改动覆盖每个受影响的模块；判断不了归属时回落全量，不降级测试门。未启用模块范围的项目（单模块，或没有任何模块声明 `paths`）行为完全不变。
+
+### 参与者
+
+- 用户或自动化宿主（RunLogos driver）
+- OpenLogos CLI（`openlogos change`、`openlogos verify`）
+- 范围计算（ScopeResolver）：读取 `logos-project.yaml`、guard、提案 delta 与 git 差异
+- 测试 runner 与 OpenLogos reporter（按模块命令执行）
+- 切片服务（SliceVerificationService）与结果账本
+
+### 前置条件
+
+- 项目已登记多个模块；至少一个模块在 `modules[].paths` 声明了代码目录（否则走「未启用」分支）。
+- 活跃提案由新版 `openlogos change` 创建，guard 记有 `baseRef`；项目为 git 仓库。
+- 测试规格文件按 `<module>-SXX-test-cases.md` 命名；可选地为部分模块配置 `verify.modules.<id>` 命令。
+
+### 成功后置条件
+
+- 只执行了范围内模块的测试命令（相同命令组只执行一次），只核对范围内模块与全局测试规格中的用例；范围外结果被忽略并计数。
+- verify JSON `data.scope` 记录范围、每个模块进入范围的依据与回落原因；验收报告 Summary 有「范围」行。
+- 门禁结论（PASS / FAIL）、`VERIFY_PASS` / `VERIFY_FAIL` / `LOOP_ITERS` 语义与现有一致。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    actor Caller as 用户/宿主
+    participant Change as openlogos change
+    participant CLI as openlogos verify
+    participant Scope as ScopeResolver
+    participant Git as git
+    participant Runner as 模块测试命令/reporter
+    participant SV as SliceVerificationService
+
+    Caller->>Change: Step 1: change <slug>
+    Change->>Git: Step 2: rev-parse HEAD
+    Change-->>Caller: Step 3: guard 写入 activeChange + baseRef
+    Caller->>CLI: Step 4: verify [--all] [--format json]
+    CLI->>Scope: Step 5: 判断启用条件（--all / 单模块或无 paths / 进入计算）
+    alt 未启用
+        Scope-->>CLI: Step 6a: disabled（不计算范围）
+        CLI->>Runner: Step 7a: 执行项目级命令（现有流程）
+    else --all
+        Scope-->>CLI: Step 6b: mode=all，modules=全部
+    else 进入范围计算
+        Scope->>Git: Step 6c: diff --name-status baseRef + 未跟踪文件
+        Git-->>Scope: Step 7c: 改动文件集合
+        Scope->>Scope: Step 8c: 流程产物豁免 → 共享配置 → 规格前缀 → paths 归属
+        Scope-->>CLI: Step 9c: mode=module（M、reasons）或 fallback-full（fallback_reason）
+    end
+    CLI->>SV: Step 10: baseline / eligible 与范围内用例求交
+    CLI->>Runner: Step 11: 按命令组执行（注入 OPENLOGOS_VERIFY_MODULES、收窄后的 eligible）
+    Runner-->>CLI: Step 12: 各阶段结果，按同 ID 规则合并
+    CLI->>CLI: Step 13: 忽略范围外结果，计算门禁
+    CLI-->>Caller: Step 14: 报告（含 scope 与「范围」行）、marker 与 LOOP_ITERS
+```
+
+### 步骤说明
+
+1. **用户 / 宿主**执行 `openlogos change <slug>`（时序 Step 1）。
+2. **openlogos change** 读取当时 `HEAD`（Step 2），在 guard 中写入 `activeChange` 与 `baseRef`（Step 3）；非 git 或无提交时不写 `baseRef`。
+3. **用户 / 宿主**执行 `openlogos verify`（Step 4）。
+4. **ScopeResolver** 先判断启用条件（Step 5）：传 `--all` 时直接全量（Step 6b）；单模块或没有任何模块声明 `paths` 时不启用，CLI 按现有流程只执行项目级命令、不输出 `scope`（Step 6a、7a），跳到第 8 步的门禁计算。
+5. **ScopeResolver** 取 `baseRef` 到工作区的差异与未跟踪文件（Step 6c、7c），按「流程产物豁免 → 共享验收配置回落 → `logos/resources/` 下模块前缀规格归属 → `paths` 归属」分类（Step 8c），与提案归属模块、delta 前缀模块合并为 M（Step 9c）；任一回落条件成立则 `fallback-full`。
+6. **SliceVerificationService** 把 baseline、confirmed、attempted、eligible 与范围内用例求交（Step 10）。
+7. **CLI** 为范围内模块选出命令组并去重，逐组执行，注入 `OPENLOGOS_VERIFY_MODULES` 与收窄后的 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS`（Step 11）；各阶段结果按同 ID 去重全序规则合并（Step 12）。
+8. **CLI** 忽略范围外模块用例的结果行并计入 `out_of_scope_result_count`，按既有硬门计算门禁（Step 13），写报告、marker 与 `LOOP_ITERS`（Step 14）。
+
+### 异常与边界
+
+#### EX-10.1: 未启用模块范围的多模块项目上的纯规格提案（review F1）
+- **触发条件**：多模块项目没有任何模块声明 `paths`；提案由新版 change 创建（有合法 `baseRef`），只改了某个模块前缀的 delta，改动文件集合为空。
+- **期望响应**：不进入范围计算；defined、失败结果处理与命令选择与现有流程一致；JSON 不输出 `scope`，报告无「范围」行。
+- **副作用**：无。
+
+#### EX-10.2: 改动文件归不到任何模块
+- **触发条件**：模块范围已启用，改动文件中有不属于流程产物、不是共享验收配置、不是带模块前缀规格、也不命中任何 `paths` 的文件。
+- **期望响应**：`mode: "fallback-full"`，`fallback_reason.code: "unmapped_file"`，`detail` 给出首个文件与总数；按全部模块执行与核对。
+- **副作用**：无。
+
+#### EX-10.3: 共享验收配置被修改（review F2）
+- **触发条件**：改动文件含 `logos/logos.config.json` 或 `logos/logos-project.yaml`。
+- **期望响应**：回落全量，`fallback_reason.code: "shared_config_changed"`，`detail` 写明文件。
+- **副作用**：无。
+
+#### EX-10.4: logos/ 下已声明归属的文件被修改（review F2）
+- **触发条件**：`core` 的 `paths` 含 `logos/tools/**`，提案修改 `logos/tools/protocol-check.ts`。
+- **期望响应**：`core` 进入范围，`reasons` 含 `{ module: "core", source: "path", ref: "logos/tools/protocol-check.ts" }`；只有 `PATH_CLASSES_V1` 的流程产物不参与判定。
+- **副作用**：无。
+
+#### EX-10.5: 提案起点不可用
+- **触发条件**：guard 缺 `baseRef`、项目不是 git 仓库、`baseRef` 不可达，或差异计算失败。
+- **期望响应**：回落全量，`fallback_reason.code` 依次为 `base_ref_missing`、`not_git_repository`、`base_ref_unreachable`、`diff_failed`。
+- **副作用**：无。
+
+#### EX-10.6: 模块命令失败
+- **触发条件**：范围内某模块的命令组非零退出。
+- **期望响应**：其余命令组照常执行；门禁以既有 `pre_run_failed` 失败，`pre_run.commands[]` 的 `modules` 与诊断点名该模块。
+- **副作用**：写 `VERIFY_FAIL` 与失败的 `LOOP_ITERS`，与现有预跑失败相同。
+
+#### EX-10.7: 跨模块提案
+- **触发条件**：归属 `portal-web` 的提案还改了命中 `core` `paths` 的文件。
+- **期望响应**：两个模块都进入范围，两组命令都执行；`reasons` 分别记录 `proposal` / `delta` 与 `path` 依据。
+- **副作用**：无。
+
+#### EX-10.8: `--all`
+- **触发条件**：用户执行 `openlogos verify --all`。
+- **期望响应**：不计算范围，`mode: "all"`，按全部模块执行与核对；未启用项目同样输出 `scope.mode: "all"`。
+- **副作用**：marker 与 `LOOP_ITERS` 语义不变；archive 不要求做过 `--all`。
+
+#### EX-10.9: `paths` 非法或 `verify.modules` 引用未登记模块
+- **触发条件**：某模块 `paths` 以 `/` 开头、含 `..` 段或为空串；或 `verify.modules` 含未登记的模块 id。
+- **期望响应**：前者回落全量（`module_paths_invalid`）；后者给出警告 `verify_module_unknown` 并忽略该项，不影响门禁。
+- **副作用**：无。
+
+### 追溯
+
+- 需求：`core-01-requirements.md`「S13 按模块限定 verify 范围验收补充」。
+- 功能规格：§2.96。
+- 测试：`core-S13-test-cases.md`「S13 按模块限定 verify 范围测试」——UT-S13-104～UT-S13-121、ST-S13-27～ST-S13-32；smoke：SMOKE-core-280～284。

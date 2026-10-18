@@ -907,3 +907,34 @@ failed/aborted 不产生规格提交；普通 fatal failed 无自动动作；rec
 ### 损坏的不可逆性
 
 被吞内容**无法从落盘文本反推**——信息已丢失，只能回溯归档 delta 取原文。因此这条规则的价值不在修复，在**拦截**：新增实例由「写下的 == 落盘的」对账当场拦下，不再进入主文档。
+
+## guard 文件记录提案起点 baseRef（module-scoped-verify）
+
+> 来源变更：module-scoped-verify。用途：按模块限定 verify 范围时，需要知道「本提案改了哪些文件」（功能规格 §2.96）。
+
+### 字段
+
+`logos/.openlogos-guard` 新增可选字段 `baseRef`：提案创建时 `HEAD` 的 40 位提交号。
+
+```json
+{
+  "activeChange": "module-scoped-demo",
+  "module": "portal-web",
+  "createdAt": "2026-10-18T09:00:00.000Z",
+  "baseRef": "3d851a71a17c86d081ce9d69adf2ea88331a94fe"
+}
+```
+
+### 写入
+
+- `openlogos change <slug>` 写 guard 时，若项目是 git 仓库且已有提交，写入 `baseRef`，取值为 `git rev-parse HEAD`。
+- 项目不是 git 仓库、或仓库还没有任何提交时，不写该字段，其余字段照旧。
+- 其他会重写 guard 的写入者，必须原样保留已有的 `baseRef`，不得改写或删除。
+- `baseRef` 不受提案后续提交、rebase 或 merge 影响，始终表示提案开始时的起点。
+
+### 读取与旧 guard
+
+- `baseRef` 只被 verify 的模块范围计算使用：改动文件集合 = `baseRef` 到工作区的差异，包括已提交、未提交与未跟踪（未被忽略）的文件。
+- 旧 guard（引入前创建的提案）缺这个字段。只在项目已启用模块范围时有影响：verify 回落全量，`scope.fallback_reason.code = "base_ref_missing"`。未启用模块范围的项目不读取它，行为不变。
+- `baseRef` 指向的提交已不存在（例如历史被改写）时同样回落全量，code 为 `base_ref_unreachable`。
+- 其他命令（status、next、merge、archive、guard 检查等）不读取 `baseRef`，guard 的锁语义（见「目录结构」）不变。
