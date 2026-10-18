@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
@@ -8,6 +9,17 @@ import { runGuardBoundary } from '../lib/guard-boundary.js';
 interface ModuleEntry {
   id: string;
   lifecycle?: string;
+}
+
+/**
+ * 提案起点提交（功能规格 §2.96.6，spec/change-management.md「guard 文件记录提案起点 baseRef」）：
+ * 项目是已有提交的 git 仓库时返回当时 HEAD 的 40 位提交号；非 git、尚无提交或 git 不可用时返回 null（不写该字段）。
+ */
+export function resolveProposalBaseRef(root: string): string | null {
+  const r = spawnSync('git', ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { cwd: root, encoding: 'utf8' });
+  if (r.error || r.status !== 0) return null;
+  const sha = r.stdout.trim();
+  return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
 }
 
 function resolveModule(root: string, moduleArg: string | undefined, locale: string, slug: string): string {
@@ -141,10 +153,13 @@ export function change(slug?: string, moduleArg?: string) {
 
     console.log(`  ✓ logos/changes/${slug}/deltas/`);
 
+    // baseRef 只在能确定提案起点时写入；缺字段的 guard 与引入前字节一致，读取方按缺省处理。
+    const baseRef = resolveProposalBaseRef(root);
     const guard = JSON.stringify({
       activeChange: slug,
       module: moduleId,
       createdAt: at,
+      ...(baseRef ? { baseRef } : {}),
     }, null, 2);
     writeFileSync(guardPath, guard);
     console.log(`  ✓ logos/.openlogos-guard`);

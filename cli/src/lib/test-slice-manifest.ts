@@ -577,6 +577,11 @@ export function deriveSliceVerificationState(
   root: string,
   proposalDir: string,
   expected?: { change?: string; module?: string },
+  /**
+   * module-scoped-verify（spec/test-slice-manifest.md §7.1）：范围内用例集 S = D_M ∪ C 的成员判定。
+   * 只有 verify 在模块范围 mode=module 时传入；缺省时集合计算逐字不变。
+   */
+  scope?: { inScope: (id: string) => boolean },
 ): SliceVerificationState | null {
   if (!shouldUseSliceVerification(proposalDir)) return null;
   const manifestPath = join(proposalDir, TEST_SLICE_MANIFEST);
@@ -678,7 +683,10 @@ export function deriveSliceVerificationState(
     .map(row => row.slice_id));
   const confirmed = manifest.slices.map(slice => slice.slice_id).filter(id => confirmedSet.has(id));
   const attempted = manifest.slices.find(slice => !confirmedSet.has(slice.slice_id)) ?? null;
-  const defined = extractDefinedVerificationIds(root);
+  // §7.1：先与范围内用例集求交；S 已含本提案变更测试 C，changed / pending 不会被范围裁掉。
+  const defined = scope
+    ? extractDefinedVerificationIds(root).filter(id => scope.inScope(id) || changedIds.includes(id))
+    : extractDefinedVerificationIds(root);
   const definedSet = new Set(defined);
   const changedVerificationIds = changedIds.filter(id => definedSet.has(id));
   const baseline = defined.filter(id => !changedVerificationIds.includes(id));

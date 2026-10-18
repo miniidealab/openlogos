@@ -46,6 +46,7 @@
     "manifest": { "$ref": "#/$defs/sliceManifestSummary" },
     "checkpoint": { "$ref": "#/$defs/sliceCheckpointSummary" }
     ,"test_change_set": { "$ref": "#/$defs/testChangeSetSummary" }
+    ,"scope": { "$ref": "#/$defs/verifyScope" }
   },
   "allOf": [
     {
@@ -70,6 +71,55 @@
   ],
   "$defs": {
     "stringArray": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "verifyScope": {
+      "$comment": "按模块限定 verify 范围（module-scoped-verify，功能规格 §2.96）。仅在模块范围启用（至少一个模块声明了非空 modules[].paths）或传入 --all 时输出；未启用时不输出 scope 键。",
+      "type": "object",
+      "required": ["mode", "modules", "reasons", "fallback_reason", "out_of_scope_result_count"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["module", "all", "fallback-full"] },
+        "modules": { "$ref": "#/$defs/stringArray" },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["module", "source", "ref"],
+            "additionalProperties": false,
+            "properties": {
+              "module": { "type": "string" },
+              "source": { "enum": ["proposal", "delta", "spec", "path"] },
+              "ref": { "type": "string" }
+            }
+          }
+        },
+        "fallback_reason": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["code", "detail"],
+              "additionalProperties": false,
+              "properties": {
+                "code": { "enum": ["no_active_change", "base_ref_missing", "not_git_repository", "base_ref_unreachable", "diff_failed", "shared_config_changed", "unmapped_file", "module_paths_invalid"] },
+                "detail": { "type": "string" }
+              }
+            }
+          ]
+        },
+        "out_of_scope_result_count": { "type": "integer", "minimum": 0 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "mode": { "const": "fallback-full" } } },
+          "then": { "properties": { "fallback_reason": { "type": "object" }, "reasons": { "maxItems": 0 }, "out_of_scope_result_count": { "const": 0 } } },
+          "else": { "properties": { "fallback_reason": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "all" } } },
+          "then": { "properties": { "reasons": { "maxItems": 0 }, "out_of_scope_result_count": { "const": 0 } } }
+        }
+      ]
+    },
     "testChangeSetSummary": {
       "type": "object",
       "required": ["status", "schema", "sha256", "changed_test_ids", "removed_test_ids"],

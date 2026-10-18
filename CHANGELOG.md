@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.8] - 2026-10-18
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- **按模块限定 verify 范围**（module-scoped-verify）：同一仓库承载多个模块时，提案 verify 只执行、只核对受本提案影响的模块（及全局）测试。
+  - `logos/logos-project.yaml` 的 `modules[].paths` 声明模块代码目录（glob 列表）；`logos/logos.config.json` 的 `verify.modules.<id>` 可为模块配置自己的 `pre_run_command` / `regression_command` / `incremental_command`，未配置的模块使用项目级命令。
+  - 范围 = 提案归属模块 ∪ delta 前缀模块 ∪ 改动文件归属模块。改动文件取提案起点 `baseRef` 到工作区的差异（含未跟踪文件）；流程产物不参与判定，带模块前缀的规格文件按前缀归属，其余按 `paths` 归属。
+  - 任一改动文件归不到模块、改动了 `logos/logos.config.json` 或 `logos/logos-project.yaml`、提案没有起点或 `paths` 非法时回落全量，并在 `scope.fallback_reason` 写明原因。
+  - 三字段相同的命令组只执行一次；每条命令注入 `OPENLOGOS_VERIFY_MODULES`，`OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 随范围收窄；范围外模块的结果行被忽略并计入 `scope.out_of_scope_result_count`。
+- 新增 `openlogos verify --all`：不计算范围，按全部模块执行与核对。
+- verify JSON 顶层新增 `scope`（`mode` / `modules` / `reasons` / `fallback_reason` / `out_of_scope_result_count`），`pre_run.commands[]` 新增 `modules`；验收报告 Summary 新增「Scope」行。
+- `openlogos change` 在 guard 中记录提案起点提交 `baseRef`（git 仓库且已有提交时）。
+
+### 升级提示
+
+- 模块范围只在「至少一个模块声明了非空 `modules[].paths`」时启用；单模块项目，以及没有任何模块声明 `paths` 的多模块项目，verify 的执行、核对与输出与 0.16.7 一致。
+- 旧版 CLI 创建的活跃提案的 guard 没有 `baseRef`，在已启用模块范围的项目里 verify 会回落全量（`base_ref_missing`），重新创建提案后即按模块执行。
+
 ## [0.16.7] - 2026-10-17
 
 0.16.2 之后的首个公开版本：**环境登记与部署执行**——在 `logos/environments.yaml` 登记项目的部署环境，用 `openlogos deploy` 按登记的方式部署到指定环境并留下部署账本，用晋级顺序与审批门约束生产部署，并可为提案指定默认部署环境。0.16.3～0.16.6 只在本机安装过，其内容全部包含在本版中，从 0.16.2 升级的用户直接看本节即可。

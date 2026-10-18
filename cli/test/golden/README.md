@@ -186,3 +186,21 @@ Linux 上同一字段为 `os.tmpdir()`（通常是 `"/tmp"`），这是宿主环
    其余字节不变。这等于对原录制结果补做同一条规范化，基线仍是各自「引入前」CLI 的实测输出。
 
 `s41-proposal-default-env-baseline.json` 不含该字段，不受影响。
+
+---
+
+# `s13-module-scope-disabled-baseline.json`（module-scoped-verify 切片 2）
+
+**按模块限定 verify 范围引入之前**（提交 `abf55fd`，0.16.7）的实测输出，用于 UT-S13-104 与 ST-S13-30 的零回归举证：未启用模块范围的四个夹具——单模块项目、无任何 `paths` 的多模块项目、`paths` 均为 `[]` 的多模块项目（三者都配置了 `verify.modules`，记录型运行器让 core 的 UT-S01-01 失败），以及无 `paths` 多模块项目上的纯规格提案——在 `openlogos verify --format json` 下的 envelope、退出码、运行器调用日志与验收报告。
+
+## 生成方式（可追溯，一次性）
+
+1. `git archive abf55fd cli spec skills plugin` 导出变更前源码到一次性目录，`cli/node_modules` 以符号链接复用；
+2. 在该目录 `cli/` 下执行 `npx tsc` 得到**变更前** `dist`；
+3. 执行 `node cli/test/golden/s13-module-scope-fixture.mjs <变更前 dist/index.js> cli/test/golden/s13-module-scope-disabled-baseline.json`。
+
+`s13-module-scope-fixture.mjs` 是夹具、记录型运行器与规范化规则的唯一定义点，生成脚本与测试调用同一函数。规范化只去掉随调用变化的值：ISO 时间、报告日期、临时目录路径、40 位提交号、耗时、信封 `version` / `timestamp`。
+
+## 反证（确认断言会失败）
+
+- 把启用条件改成「多模块即启用」（不看 `paths`）→ 这些夹具进入范围计算、输出 `scope` 并缩小 defined，UT-S13-104 变红（已实测）。

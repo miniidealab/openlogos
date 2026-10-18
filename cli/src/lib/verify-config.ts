@@ -19,6 +19,15 @@ export interface VerifyConfig {
   sandbox_mode?: 'off' | 'auto' | 'always';
   sandbox_root?: string;
   sandbox_deny_workspace_write?: boolean;
+  /** module-scoped-verify（§2.96.1）：模块级测试命令，三字段与项目级同语义。 */
+  modules?: Record<string, { pre_run_command?: string; regression_command?: string; incremental_command?: string }>;
+}
+
+/** 一个模块的命令组（三字段均缺省 = 未配置模块级命令）。 */
+export interface ModuleCommandConfig {
+  preRunCommand?: string;
+  regressionCommand?: string;
+  incrementalCommand?: string;
 }
 
 export interface NormalizedVerifyConfig {
@@ -30,6 +39,13 @@ export interface NormalizedVerifyConfig {
   incrementalResultPath?: string;
   mergeStrategy: 'last-write-wins';
   sandbox: NormalizedSandboxConfig;
+  /**
+   * module-scoped-verify：`verify.modules.<id>` 中至少配置了一个命令字段的模块。
+   * 只在模块范围已启用（或 --all）时被消费；未启用时 verify 完全不读取它。
+   */
+  moduleCommands: Record<string, ModuleCommandConfig>;
+  /** `verify.modules` 的全部键（含未配置任何命令字段的项），用于未登记模块 id 的警告。 */
+  moduleCommandIds: string[];
 }
 
 export interface VerifyPreRunBackfillResult {
@@ -116,7 +132,25 @@ export function normalizeVerifyConfig(rawVerify: unknown): NormalizedVerifyConfi
     incrementalResultPath: typeof verify.incremental_result_path === 'string' ? verify.incremental_result_path : undefined,
     mergeStrategy,
     sandbox: normalizeSandboxConfig(verify),
+    moduleCommands: normalizeModuleCommands(verify.modules),
+    moduleCommandIds: Object.keys(asRecord(verify.modules) ?? {}),
   };
+}
+
+function normalizeModuleCommands(raw: unknown): Record<string, ModuleCommandConfig> {
+  const record = asRecord(raw);
+  const out: Record<string, ModuleCommandConfig> = {};
+  if (!record) return out;
+  for (const [id, value] of Object.entries(record)) {
+    const entry = asRecord(value);
+    if (!entry) continue;
+    const cmd: ModuleCommandConfig = {};
+    if (typeof entry.pre_run_command === 'string') cmd.preRunCommand = entry.pre_run_command;
+    if (typeof entry.regression_command === 'string') cmd.regressionCommand = entry.regression_command;
+    if (typeof entry.incremental_command === 'string') cmd.incrementalCommand = entry.incremental_command;
+    if (cmd.preRunCommand || cmd.regressionCommand || cmd.incrementalCommand) out[id] = cmd;
+  }
+  return out;
 }
 
 export function readVerifyConfig(root: string): NormalizedVerifyConfig {

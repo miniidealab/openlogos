@@ -28,6 +28,13 @@ import {
 import { contractVersion } from '../lib/step-registry.js';
 import { VERIFY_PASS_MARKER } from '../lib/proposal-markers.js';
 import { TABLE_CELL_ID_RE, MANUAL_MARKER_RE } from '../lib/test-id.js';
+import {
+  moduleIdsOf,
+  readChangedTestIdsForScope,
+  resolveVerifyScope,
+  testFileInScope,
+  type VerifyScopeData,
+} from '../lib/verify-scope.js';
 
 export interface TestResult {
   id: string;
@@ -85,6 +92,8 @@ export interface VerifyPreRunData {
   mode: VerifyPreRunMode;
   commands: Array<VerifyPreRunCommandResult & {
     sandbox?: SandboxData;
+    /** module-scoped-verify：该命令组服务的模块 id（仅启用模块范围或 --all 时输出）。 */
+    modules?: string[];
   }>;
   result_paths: {
     final: string;
@@ -131,6 +140,8 @@ export interface VerifyData {
   checkpoint?: SliceVerificationState['checkpoint'];
   test_change_set?: SliceVerificationState['test_change_set'];
   automation_diagnostic?: AutomationDiagnostic;
+  /** module-scoped-verify（§2.96.7）：只在启用模块范围或传 --all 时输出。 */
+  scope?: VerifyScopeData;
 }
 
 function safeReadFile(path: string): string {
@@ -201,6 +212,7 @@ function executeVerifyCommand(
   sandboxConfig: NormalizedVerifyConfig['sandbox'],
   allowedWritePaths: string[],
   freshSandbox = false,
+  extraEnv?: Record<string, string>,
 ): { command: SandboxCommandResult; sandbox: SandboxData } {
   if (format !== 'json') {
     console.log(`\n⚙️  Running verify.${stage === 'pre_run' ? 'pre_run_command' : `${stage}_command`}: ${command}`);
@@ -212,6 +224,7 @@ function executeVerifyCommand(
     sandbox: sandboxConfig,
     allowedWritePaths,
     freshSandbox,
+    ...(extraEnv ? { extraEnv } : {}),
   });
 }
 
@@ -264,6 +277,8 @@ function mergeSandboxStatus(current: SandboxData, next: SandboxData): SandboxDat
 /** verify 侧运行选项（§2.91.7）。 */
 export interface VerifyRunOptions {
   freshSandbox?: boolean;
+  /** module-scoped-verify（§2.96.5）：`openlogos verify --all` 手动全量。 */
+  all?: boolean;
 }
 
 export function runVerifyPreRunWithSandbox(
@@ -342,6 +357,102 @@ export function runVerifyPreRunWithSandbox(
   runStage('regression', config.regressionCommand, config.regressionResultPath);
   runStage('incremental', config.incrementalCommand, config.incrementalResultPath);
   writeMergedResults(root, config.resultPath, stageContents);
+  appendSandboxDiagnostics(preRun, sandbox);
+  return { preRun, sandbox };
+}
+
+/** 模块范围下的一个命令组：三字段取值完全相同的模块合并为一组（§2.96.4）。 */
+export interface VerifyCommandGroup {
+  modules: string[];
+  preRunCommand?: string;
+  regressionCommand?: string;
+  incrementalCommand?: string;
+}
+
+/**
+ * 命令选择与去重（功能规格 §2.96.4，spec/test-results.md「执行哪些命令」）：按 logos-project.yaml 中的模块顺序，
+ * 范围内每个模块有 `verify.modules.<id>` 就用它，否则用项目级命令；三字段取值完全相同的合并、按首次出现顺序。
+ */
+export function selectVerifyCommandGroups(config: NormalizedVerifyConfig, modules: string[]): VerifyCommandGroup[] {
+  const groups: VerifyCommandGroup[] = [];
+  for (const id of modules) {
+    const own = config.moduleCommands[id];
+    const triple = own
+      ? { preRunCommand: own.preRunCommand, regressionCommand: own.regressionCommand, incrementalCommand: own.incrementalCommand }
+      : { preRunCommand: config.preRunCommand, regressionCommand: config.regressionCommand, incrementalCommand: config.incrementalCommand };
+    if (!triple.preRunCommand && !triple.regressionCommand && !triple.incrementalCommand) continue;
+    const same = groups.find(g => g.preRunCommand === triple.preRunCommand
+      && g.regressionCommand === triple.regressionCommand && g.incrementalCommand === triple.incrementalCommand);
+    if (same) same.modules.push(id);
+    else groups.push({ modules: [id], ...triple });
+  }
+  return groups;
+}
+
+/**
+ * 模块范围已启用（或 --all）时的预跑：逐命令组执行，组内两阶段优先，每阶段先清空结果文件后收集，
+ * 全部内容按同 ID 去重全序规则合并（与两阶段同一机制）。每条命令注入 OPENLOGOS_VERIFY_MODULES。
+ * 未启用模块范围时不调用本函数（现有 runVerifyPreRunWithSandbox 逐字不变）。
+ */
+export function runVerifyModulePreRunWithSandbox(
+  root: string,
+  config: NormalizedVerifyConfig,
+  scope: VerifyScopeData,
+  format: OutputFormat,
+  runOptions: VerifyRunOptions = {},
+): RunVerifyPreRunResult {
+  let freshPending = runOptions.freshSandbox === true;
+  const takeFresh = (): boolean => { const value = freshPending; freshPending = false; return value; };
+  const groups = selectVerifyCommandGroups(config, scope.modules);
+  const anyTwoPhase = groups.some(g => g.regressionCommand || g.incrementalCommand);
+  const preRun = buildInitialPreRunData(config);
+  preRun.mode = groups.length === 0 ? 'none' : anyTwoPhase ? 'two_phase' : 'pre_run_command';
+  preRun.merge_strategy = anyTwoPhase || groups.length > 1 ? config.mergeStrategy : null;
+  const locale = readLocale(root);
+  const registered = new Set(moduleIdsOf(root));
+  for (const id of config.moduleCommandIds) {
+    if (!registered.has(id)) preRun.diagnostics.push(t(locale, 'verify.moduleUnknown', { module: id }));
+  }
+  const sandboxConfig = config.sandbox ?? normalizeSandboxConfig({ sandbox_mode: 'auto' });
+  let sandbox = buildInitialSandboxData(sandboxConfig);
+  const allowPaths = new Set<string>([config.resultPath, 'logos/resources/verify/acceptance-report.md']);
+  if (config.regressionResultPath) allowPaths.add(config.regressionResultPath);
+  if (config.incrementalResultPath) allowPaths.add(config.incrementalResultPath);
+  const allowedWritePaths = Array.from(allowPaths).map(ensureRelativePath);
+  if (groups.length === 0) return { preRun, sandbox };
+
+  const contents: string[] = [];
+  let compatNoted = false;
+  const runStage = (group: VerifyCommandGroup, stage: VerifyPreRunStage, command: string, stageResultPath: string) => {
+    const fullStagePath = join(root, stageResultPath);
+    mkdirSync(dirname(fullStagePath), { recursive: true });
+    writeFileSync(fullStagePath, '');
+    const stageResult = executeVerifyCommand(root, stage, command, format, sandboxConfig, allowedWritePaths, takeFresh(),
+      { OPENLOGOS_VERIFY_MODULES: group.modules.join(',') });
+    const normalized = toPreRunCommandResult(stage, command, stageResult.command, stageResult.sandbox);
+    preRun.commands.push({ ...normalized, modules: [...group.modules] });
+    sandbox = mergeSandboxStatus(sandbox, stageResult.sandbox);
+    if (normalized.status === 'fail') {
+      const message = t(locale, 'verify.moduleCommandFailed', { modules: group.modules.join(', '), stage, exit: String(normalized.exit_code ?? 'n/a') });
+      if (!preRun.diagnostics.includes(message)) preRun.diagnostics.push(message);
+      if (format !== 'json') console.warn(`\n⚠️  ${message}`);
+    }
+    const content = safeReadFile(fullStagePath);
+    if (content.trim()) contents.push(content);
+  };
+  for (const group of groups) {
+    if (group.regressionCommand || group.incrementalCommand) {
+      if (group.preRunCommand) {
+        preRun.commands.push({ stage: 'pre_run', command: group.preRunCommand, status: 'skipped', modules: [...group.modules] });
+        if (!compatNoted) { preRun.diagnostics.push(t(locale, 'verify.preRunCompatSkipped')); compatNoted = true; }
+      }
+      if (group.regressionCommand) runStage(group, 'regression', group.regressionCommand, config.regressionResultPath ?? config.resultPath);
+      if (group.incrementalCommand) runStage(group, 'incremental', group.incrementalCommand, config.incrementalResultPath ?? config.resultPath);
+    } else if (group.preRunCommand) {
+      runStage(group, 'pre_run', group.preRunCommand, config.resultPath);
+    }
+  }
+  writeMergedResults(root, config.resultPath, contents);
   appendSandboxDiagnostics(preRun, sandbox);
   return { preRun, sandbox };
 }
@@ -607,6 +718,52 @@ export function extractDefinedIds(root: string): { ids: string[]; utCount: numbe
   return { ids, utCount, stCount, manualCount };
 }
 
+/** 模块范围上下文：scope 为 null 表示未启用；inScope 为 null 表示不过滤（all / fallback-full）。 */
+export interface VerifyScopeContext {
+  scope: VerifyScopeData | null;
+  inScope: Set<string> | null;
+}
+
+/**
+ * 范围内用例集 S = D_M ∪ C（功能规格 §2.96.4，spec/test-slice-manifest.md §7.1）：
+ * 测试规格文件按文件名 `<module>-` 前缀（已登记模块 id 最长匹配）归属模块，前缀在范围内或不带已登记前缀（全局）的
+ * 文件中的用例计入；本提案变更测试 C 一律计入。只在 mode=module 时计算，其余模式不过滤。
+ */
+export function resolveVerifyScopeContext(root: string, opts: { all?: boolean } = {}): VerifyScopeContext {
+  const scope = resolveVerifyScope(root, { all: opts.all });
+  if (!scope || scope.mode !== 'module') return { scope, inScope: null };
+  return { scope, inScope: computeInScopeIds(root, scope) };
+}
+
+/** 给定 mode=module 的范围，计算范围内用例集 S = D_M ∪ C（verify 与切片两侧共用这一份成员判定）。 */
+export function computeInScopeIds(root: string, scope: VerifyScopeData): Set<string> {
+  const moduleIds = moduleIdsOf(root);
+  const dir = join(root, TEST_CASES_DIR);
+  const inScope = new Set<string>();
+  if (existsSync(dir)) {
+    const files = readdirSync(dir, { recursive: true }).map(f => String(f)).filter(f => f.endsWith('-test-cases.md'));
+    for (const file of files) {
+      if (!testFileInScope(file, scope, moduleIds)) continue;
+      for (const line of readFileSync(join(dir, file), 'utf-8').split('\n')) {
+        if (!line.trim().startsWith('|')) continue;
+        const firstCell = (line.split('|').map(cell => cell.trim())[1]) ?? '';
+        if (!TABLE_CELL_ID_RE.test(firstCell)) continue;
+        inScope.add(firstCell.replace(MANUAL_SUFFIX, '').replace(/\s+/g, ' ').trim());
+      }
+    }
+  }
+  for (const id of readChangedTestIdsForScope(root)) inScope.add(id);
+  return inScope;
+}
+
+/** 验收报告 Summary「范围」行的取值（§2.96.7）。 */
+export function scopeReportValue(scope: VerifyScopeData): string {
+  if (scope.mode === 'module') return `module（${scope.modules.join(', ')}）`;
+  if (scope.mode === 'all') return 'all';
+  const reason = scope.fallback_reason;
+  return reason ? `fallback-full（${reason.code}：${reason.detail}）` : 'fallback-full';
+}
+
 
 
 export function generateReport(
@@ -623,11 +780,14 @@ export function generateReport(
   manualCount: number,
   sliceVerification?: SliceVerificationState | null,
   preRunFailures: Array<{ stage: VerifyPreRunStage; exit_code?: number }> = [],
+  scope: VerifyScopeData | null = null,
 ): string {
   const now = new Date().toISOString().slice(0, 10);
   let md = `# Acceptance Report\n\n> Generated by \`openlogos verify\` on ${now}\n\n`;
   md += `## Summary\n\n`;
   md += `| Metric | Value |\n|--------|-------|\n`;
+  // §2.96.7：只在启用模块范围或 --all 时出现，未启用时报告字节不变。
+  if (scope) md += `| Scope | ${scopeReportValue(scope).replace(/\|/g, '\\|')} |\n`;
   md += `| Defined cases | ${defined.length} |\n`;
   md += `| Manual cases (excluded) | ${manualCount} |\n`;
   md += `| Executed cases | ${results.length} |\n`;
@@ -818,7 +978,9 @@ export function collectVerifyData(
   root: string,
   preRun?: VerifyPreRunData,
   sliceVerification?: SliceVerificationState | null,
+  scopeContext: VerifyScopeContext = { scope: null, inScope: null },
 ): VerifyData {
+  const inScope = scopeContext.inScope;
   const config = readVerifyConfig(root);
   const resultPath = config.resultPath;
 
@@ -828,7 +990,7 @@ export function collectVerifyData(
   const fullIndex = extractDefinedIndex(root);
   const defined = sliceVerification?.manifest_status === 'valid' && sliceVerification.verify_mode
     ? sliceVerification.eligible_test_ids
-    : fullIndex.ids;
+    : (inScope ? fullIndex.ids.filter(id => inScope.has(id)) : fullIndex.ids);
   const utCount = defined.filter(id => id.startsWith('UT-')).length;
   const stCount = defined.filter(id => id.startsWith('ST-')).length;
   const { manualCount, manualIds } = fullIndex;
@@ -838,8 +1000,13 @@ export function collectVerifyData(
   const unknownResultIds: string[] = [];
   const manualResultIds: string[] = [];
   const outsideEligibleResultIds: string[] = [];
+  // §2.96.4：属于范围外模块用例的结果行忽略——不判 unknown / outside_eligible、不计入统计，只计数。
+  // 未定义 ID（不在任何测试规格中）不在此列，照旧按账本一致性判定。
+  const isOutOfScope = (id: string) => inScope !== null && fullDefinedSet.has(id) && !inScope.has(id);
+  let outOfScopeResultCount = 0;
   for (const result of allResults) {
     if (definedSet.has(result.id)) continue;
+    if (isOutOfScope(result.id)) { outOfScopeResultCount += 1; continue; }
     if (fullDefinedSet.has(result.id) && sliceVerification?.verify_mode === 'slice-checkpoint') {
       pushUnique(outsideEligibleResultIds, result.id);
       continue;
@@ -851,6 +1018,12 @@ export function collectVerifyData(
     }
   }
   const results = allResults.filter(result => definedSet.has(result.id));
+  // review code-r1 F1：ID 可识别且属于范围外已定义用例的**非法**记录（缺 error / 缺 status / 非法 status 等）与合法范围外行
+  // 同口径忽略并计数；范围内、未定义 ID 与无法识别 ID 的非法记录保持既有严格门禁。未启用 / all / fallback-full 时 inScope 为 null，不过滤。
+  const invalidResults = parsedResults.invalidResults.filter(invalid => {
+    if (invalid.id !== undefined && isOutOfScope(invalid.id)) { outOfScopeResultCount += 1; return false; }
+    return true;
+  });
 
   const resultIds = new Set(results.map(r => r.id));
   const passed = results.filter(r => r.status === 'pass');
@@ -872,7 +1045,7 @@ export function collectVerifyData(
     manual_count: manualCount,
     // 账本统计保留所有自动化结果行的有效 ID 数量；未知/越界 ID 不参与 pass/fail，
     // 但必须通过 executed>defined / 守恒诊断留下可审计的不一致证据。
-    executed_count: allResults.filter(result => !manualSet.has(result.id)).length,
+    executed_count: allResults.filter(result => !manualSet.has(result.id) && !isOutOfScope(result.id)).length,
     passed_count: passed.length,
     failed_count: failed.length,
     skipped_count: skipped.length,
@@ -882,7 +1055,7 @@ export function collectVerifyData(
   };
   const countMismatches = buildVerifyCountMismatches(summary, { covered_count: coveredCount, results_count: results.length });
   const consistency = buildVerifyConsistency({
-    invalidResults: parsedResults.invalidResults,
+    invalidResults,
     unknownResultIds,
     manualResultIds,
     outsideEligibleResultIds,
@@ -918,6 +1091,7 @@ export function collectVerifyData(
     String(coveragePct), String(passRatePct), gateResult, resultIds, manualCount,
     sliceVerification,
     preRunFailures.map(cmd => ({ stage: cmd.stage, exit_code: cmd.exit_code })),
+    scopeContext.scope ? { ...scopeContext.scope, out_of_scope_result_count: outOfScopeResultCount } : null,
   ));
 
   const relReportPath = 'logos/resources/verify/acceptance-report.md';
@@ -946,6 +1120,7 @@ export function collectVerifyData(
       checkpoint: sliceVerification.checkpoint,
       test_change_set: sliceVerification.test_change_set,
     } : {}),
+    ...(scopeContext.scope ? { scope: { ...scopeContext.scope, out_of_scope_result_count: outOfScopeResultCount } } : {}),
   });
   applySmokePrecheck(root, data);
 
@@ -1035,7 +1210,7 @@ function appendLoopIter(
   appendFileSync(path, row + '\n');
 }
 
-function activeSliceVerification(root: string): {
+function activeSliceVerification(root: string, inScope: Set<string> | null = null): {
   proposalDir: string;
   state: SliceVerificationState;
 } | null {
@@ -1049,7 +1224,7 @@ function activeSliceVerification(root: string): {
     const state = deriveSliceVerificationState(root, proposalDir, {
       change: guard.activeChange,
       module: guard.module ?? 'core',
-    });
+    }, inScope ? { inScope: id => inScope.has(id) } : undefined);
     return state ? { proposalDir, state } : null;
   } catch {
     return null;
@@ -1108,7 +1283,9 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
     throw e;
   }
 
-  const sliceContext = activeSliceVerification(root);
+  // §2.96.2：启用条件与范围先于切片集合与结果过滤计算；未启用时 scopeContext 为空、全部行为逐字不变。
+  const scopeContext = resolveVerifyScopeContext(root, { all: runOptions.all });
+  const sliceContext = activeSliceVerification(root, scopeContext.inScope);
   if (sliceContext && (sliceContext.state.manifest_status !== 'valid' || !sliceContext.state.verify_mode)) {
     return stopForSliceManifestState(format, sliceContext.state);
   }
@@ -1122,7 +1299,9 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   }
   let preRunResult: RunVerifyPreRunResult;
   try {
-    preRunResult = runVerifyPreRunWithSandbox(root, config, format, runOptions);
+    preRunResult = scopeContext.scope
+      ? runVerifyModulePreRunWithSandbox(root, config, scopeContext.scope, format, runOptions)
+      : runVerifyPreRunWithSandbox(root, config, format, runOptions);
   } finally {
     if (previousEligible === undefined) delete process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS;
     else process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS = previousEligible;
@@ -1156,7 +1335,7 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
     process.exit(1);
   }
 
-  const data = collectVerifyData(root, preRun, sliceVerification);
+  const data = collectVerifyData(root, preRun, sliceVerification, scopeContext);
   data.sandbox = sandbox;
   if (sandbox.status === 'fail' && data.gate.result === 'PASS') {
     data.gate.result = 'FAIL';
@@ -1232,6 +1411,7 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   console.log(`\n${LINE}`);
   console.log(`📊 ${t(locale, 'verify.summary')}`);
   console.log(LINE);
+  if (data.scope) console.log(`  Scope: ${scopeReportValue(data.scope)}`);
   console.log(`  ${t(locale, 'verify.totalDefined', { count: String(summary.defined_count), ut: String(summary.ut_count), st: String(summary.st_count) })}`);
   if (summary.manual_count > 0) {
     console.log(`  🔵 ${t(locale, 'verify.manual', { count: String(summary.manual_count) })}`);

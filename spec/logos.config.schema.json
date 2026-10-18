@@ -98,6 +98,28 @@
         "test_command": {
           "type": "string",
           "description": "旧字段，保留兼容。建议使用 pre_run_command"
+        },
+        "modules": {
+          "type": "object",
+          "description": "模块级测试命令（可选，module-scoped-verify）。键为 logos-project.yaml 中已登记的模块 id，值为该模块的命令组；三个字段与项目级同名字段同语义、同互斥与兼容规则，都缺省视为该模块未配置模块级命令。只在模块范围启用（至少一个模块声明了非空 modules[].paths）或传入 --all 时使用；未登记的模块 id 产生警告 verify_module_unknown 并被忽略",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "pre_run_command": {
+                "type": "string",
+                "description": "该模块的单阶段测试命令"
+              },
+              "regression_command": {
+                "type": "string",
+                "description": "该模块的回归测试命令，在增量测试前执行"
+              },
+              "incremental_command": {
+                "type": "string",
+                "description": "该模块的增量测试命令，在回归测试后执行"
+              }
+            },
+            "additionalProperties": false
+          }
         }
       }
     },

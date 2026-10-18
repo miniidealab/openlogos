@@ -31,6 +31,12 @@ export interface ProjectYamlModule {
    * 读取兼容历史布尔 `baseline_seed_required: true` → 映射为 `required`；`false`/缺失不推断。
    */
   baseline_seed_state?: BaselineSeedState;
+  /**
+   * module-scoped-verify（功能规格 §2.96.1）：模块代码目录 glob 列表（相对项目根、`/` 分隔）。
+   * 原样保留条目，合法性（字符串、非空、不以 `/` 开头、不含 `..` 段）由范围计算判定；
+   * 非数组取值记为 `[null]`，使其按「已声明但非法」处理（回落全量 `module_paths_invalid`）。
+   */
+  paths?: unknown[];
 }
 
 export interface ProjectYamlScenario {
@@ -180,6 +186,9 @@ function normalizeModule(raw: unknown): ProjectYamlModule | null {
   }
   if (typeof record.product_type === 'string') {
     module.product_type = record.product_type;
+  }
+  if (record.paths !== undefined && record.paths !== null) {
+    module.paths = Array.isArray(record.paths) ? [...record.paths] : [null];
   }
   const seedState = normalizeBaselineSeedState(record.baseline_seed_state, record.baseline_seed_required);
   if (seedState !== undefined) {
