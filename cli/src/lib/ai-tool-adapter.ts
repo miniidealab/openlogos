@@ -423,10 +423,11 @@ export function localizedZCodeResult(
     : `ZCode plugin ${action} at ${result.target}${preserved}${session}`;
 }
 
-export function createZCodeAgentsInstruction(locale: 'zh' | 'en', lifecycle: string): string {
-  return locale === 'zh'
+export function createZCodeAgentsInstruction(locale: 'zh' | 'en', lifecycle: string, mixedNote?: string): string {
+  const note = lifecycle === 'mixed' && mixedNote ? ` ${mixedNote}` : '';
+  return (locale === 'zh'
     ? `OpenLogos ZCode 指令：当前 lifecycle=${lifecycle}。直接读取根 AGENTS.md 与插件 skills；不得依赖子目录 AGENTS、include 或 CLAUDE.md。`
-    : `OpenLogos ZCode instructions: lifecycle=${lifecycle}. Read the root AGENTS.md and plugin skills directly; do not depend on nested AGENTS, include directives, or CLAUDE.md.`;
+    : `OpenLogos ZCode instructions: lifecycle=${lifecycle}. Read the root AGENTS.md and plugin skills directly; do not depend on nested AGENTS, include directives, or CLAUDE.md.`) + note;
 }
 
 export function validateQoderTemplate(source: string): void {
@@ -557,10 +558,11 @@ export function localizedQoderResult(locale: 'zh' | 'en', result: QoderDeploymen
     : `Qoder plugin ${action} at ${result.target}${preserved}${session}`;
 }
 
-export function createQoderAgentsInstruction(locale: 'zh' | 'en', lifecycle: string): string {
-  return locale === 'zh'
+export function createQoderAgentsInstruction(locale: 'zh' | 'en', lifecycle: string, mixedNote?: string): string {
+  const note = lifecycle === 'mixed' && mixedNote ? ` ${mixedNote}` : '';
+  return (locale === 'zh'
     ? `OpenLogos Qoder 指令：当前 lifecycle=${lifecycle}。直接读取根 AGENTS.md 与插件 skills；不得依赖 AGENTS.local.md、.qoder/rules 或其它用户资产表达关键流程约束。`
-    : `OpenLogos Qoder instructions: lifecycle=${lifecycle}. Read the root AGENTS.md and plugin skills directly; do not depend on AGENTS.local.md, .qoder/rules, or other user assets for critical workflow rules.`;
+    : `OpenLogos Qoder instructions: lifecycle=${lifecycle}. Read the root AGENTS.md and plugin skills directly; do not depend on AGENTS.local.md, .qoder/rules, or other user assets for critical workflow rules.`) + note;
 }
 
 export function validateWorkBuddyTemplate(source: string): void {
@@ -691,8 +693,9 @@ export function localizedWorkBuddyResult(locale: 'zh' | 'en', result: WorkBuddyD
     : `WorkBuddy plugin ${action} at ${result.target}${preserved}${session}`;
 }
 
-export function createWorkBuddyAgentsInstruction(locale: 'zh' | 'en', lifecycle: string): string {
-  return locale === 'zh'
+export function createWorkBuddyAgentsInstruction(locale: 'zh' | 'en', lifecycle: string, mixedNote?: string): string {
+  const note = lifecycle === 'mixed' && mixedNote ? ` ${mixedNote}` : '';
+  return (locale === 'zh'
     ? `OpenLogos WorkBuddy 指令：当前 lifecycle=${lifecycle}。使用插件 Skills/Commands 与 SessionStart 获取方法论上下文；原生记忆不作为授权事实，写入权限只由 PreToolUse 的磁盘重读决定。`
-    : `OpenLogos WorkBuddy instructions: lifecycle=${lifecycle}. Use plugin Skills/Commands and SessionStart for methodology context; native memory is not authorization, and write permission comes only from PreToolUse disk facts.`;
+    : `OpenLogos WorkBuddy instructions: lifecycle=${lifecycle}. Use plugin Skills/Commands and SessionStart for methodology context; native memory is not authorization, and write permission comes only from PreToolUse disk facts.`) + note;
 }

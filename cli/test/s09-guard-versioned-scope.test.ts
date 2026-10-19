@@ -261,7 +261,7 @@ describe('S09-F 受保护判定 is_protected — 函数层', () => {
     }
   }, TIMEOUT);
 
-  it('UT-S09-389: 前提不满足时新判据不启用（N-repo / N-nogit / 活跃提案 / initial）', () => {
+  it('UT-S09-389: 前提不满足时新判据不启用（N-repo / N-nogit / 活跃提案 / 所有模块 initial）', () => {
     const baseline = JSON.parse(readFileSync(BASELINE_FILE, 'utf-8')) as { cases: Array<{ fixture: string; key: string; exit: number }> };
     const inputs = BASELINE_INPUTS.filter(i => i.key === 'Write src/a.js' || i.key === 'Bash sed -i src/a.js');
     for (const kind of ['N-repo', 'N-nogit'] as FixtureKind[]) {
@@ -285,11 +285,19 @@ describe('S09-F 受保护判定 is_protected — 函数层', () => {
     expect(runGuard(GUARD_SRC, active, 'Write', { file_path: 'logos/changes/x/deltas/prd/2-product-design/2-page-design/p.html', content: 'x' }).exitCode).toBe(0);
     writeFileSync(join(active, 'logos/changes/x/PLAN_APPROVED'), '');
     expect(runGuard(GUARD_SRC, active, 'Write', { file_path: 'logos/changes/x/deltas/api/a.yaml', content: 'x' }).exitCode).toBe(0);
-    // initial：放行
+    // 所有模块 initial：放行（项目级短路，与修改前相同）
     const { root: initial } = fixture('G-repo');
     writeFileSync(join(initial, 'logos/logos-project.yaml'), 'project:\n  name: "g"\nmodules:\n  - id: core\n    name: Core\n    lifecycle: initial\n');
     expect(runGuard(GUARD_SRC, initial, 'Write', { file_path: 'src/a.js', content: 'x' }).exitCode).toBe(0);
     expect(runGuard(GUARD_SRC, initial, 'Bash', { command: 'sed -i s/a/b/ src/a.js' }).exitCode).toBe(0);
+    // 混合生命周期项目：src/a.js 不是 initial 归属文件，结论与 launched 相同（按文件归属见 UT-S09-469、UT-S09-472）
+    const { root: launched } = fixture('G-repo');
+    const { root: mixed } = fixture('G-repo');
+    writeFileSync(join(mixed, 'logos/logos-project.yaml'),
+      'project:\n  name: "g"\nmodules:\n  - id: core\n    name: Core\n    lifecycle: launched\n  - id: team\n    name: Team\n    lifecycle: initial\n    paths: ["team/**"]\n');
+    for (const [tool, input] of [['Write', { file_path: 'src/a.js', content: 'x' }], ['Bash', { command: 'sed -i s/a/b/ src/a.js' }]] as Array<[string, Record<string, unknown>]>) {
+      expect(runGuard(GUARD_SRC, mixed, tool, input).exitCode, `mixed ${tool}`).toBe(runGuard(GUARD_SRC, launched, tool, input).exitCode);
+    }
   }, TIMEOUT);
 
   it('UT-S09-392: Edit / Write / MultiEdit / NotebookEdit 事前判定', () => {

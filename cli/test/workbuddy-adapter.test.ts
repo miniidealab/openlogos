@@ -153,7 +153,8 @@ describe('WorkBuddy Adapter — S01/S20', () => {
     } finally {
       rmSync(packRoot, { recursive: true, force: true });
     }
-  });
+  // 负载敏感（module-lifecycle-guard loop-repair：verify 全量并行于外置盘沙箱时实测超过默认上限），超时按实际工作量放宽，断言不变
+  }, 120_000);
 
   it('UT-S01-122: 不同 owner 的同名目标在预检阶段被阻断', () => {
     writeForeignOwner(root);

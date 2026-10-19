@@ -577,6 +577,76 @@ if [ "$MODE" = "json" ] && [ "$NODE_OK" -eq 1 ]; then
   fi
 fi
 
+# module-lifecycle-guard：混合生命周期项目（同时有 launched 与 initial 模块）按模块追加提示段（spec/pretooluse-guard.md
+# 「SessionStart 提示」）。只提供指导，授权以每次 PreToolUse 重读磁盘为准；全部 initial / 全部 launched 项目不输出任何内容。
+module_lifecycle_context() {
+  [ "${NODE_OK:-0}" -eq 1 ] || return 0
+  [ -f "logos/logos-project.yaml" ] || return 0
+  local _mlc_js
+  _mlc_js=$(mktemp "${TMPDIR:-/tmp}/openlogos_mlc.XXXXXX") || return 0
+  cat > "$_mlc_js" << 'JSEOF'
+const fs = require('fs');
+const zh = process.argv[2] === 'zh';
+let text;
+try { text = fs.readFileSync('logos/logos-project.yaml', 'utf8'); } catch { process.exit(0); }
+const unq = (raw) => {
+  const v = raw.trim();
+  if (v[0] === '"' || v[0] === "'") { const j = v.indexOf(v[0], 1); return j > 0 ? v.slice(1, j) : ''; }
+  const k = v.indexOf(' #');
+  return (k >= 0 ? v.slice(0, k) : v).trim();
+};
+const mods = [];
+let inModules = false; let cur = null; let inPaths = false; let dash = -1;
+for (const raw of text.split('\n')) {
+  const line = raw.replace(/\r$/, '');
+  if (/^\s*(#|$)/.test(line)) continue;
+  const top = /^([A-Za-z_][\w-]*)\s*:/.exec(line);
+  if (top) { inModules = top[1] === 'modules'; cur = null; inPaths = false; dash = -1; continue; }
+  if (!inModules) continue;
+  const body = line.replace(/^ +/, '');
+  const indent = line.length - body.length;
+  const item = /^-(?:\s+(.*))?$/.exec(body);
+  let kvText = body;
+  if (item) {
+    if (inPaths && indent > dash) { const v = unq(item[1] || ''); if (v) cur.paths.push(v); continue; }
+    if (dash < 0 || indent === dash) {
+      dash = indent; inPaths = false; cur = { id: '', lifecycle: '', paths: [] }; mods.push(cur);
+      if (!(item[1] || '').trim()) continue;
+      kvText = item[1];
+    } else continue;
+  }
+  const kv = /^([A-Za-z_][\w-]*)\s*:(.*)$/.exec(kvText);
+  if (!kv || !cur) continue;
+  inPaths = false;
+  const value = kv[2].trim();
+  if (kv[1] === 'id') cur.id = unq(value);
+  else if (kv[1] === 'lifecycle') cur.lifecycle = unq(value);
+  else if (kv[1] === 'paths') {
+    if (value === '' || value[0] === '#') inPaths = true;
+    else if (value[0] === '[') { const e = value.indexOf(']'); if (e > 0) cur.paths = value.slice(1, e).split(',').map(unq).filter(Boolean); }
+  }
+}
+const initial = mods.filter(m => m.id && m.lifecycle === 'initial');
+const launched = mods.filter(m => m.id && m.lifecycle === 'launched');
+if (initial.length === 0 || launched.length === 0) process.exit(0);
+const valid = (p) => p && !p.startsWith('/') && !p.split('/').includes('..');
+const out = [zh
+  ? 'Module Lifecycle（混合生命周期，按模块判定；上方变更管理规则只约束 launched 模块文件、共享配置与未归属文件）：'
+  : 'Module Lifecycle (mixed; the change-management rule above applies only to launched module files, shared configuration and unattributed files):'];
+for (const m of initial) {
+  const paths = m.paths.filter(valid);
+  out.push(zh
+    ? `- ${m.id}: initial — 按 Phase 推进，无需变更提案；豁免范围：logos/resources/** 下 ${m.id}- 前缀规格；${paths.length ? `代码 paths: ${paths.join(', ')}` : '代码仍需提案（未声明 paths）'}`
+    : `- ${m.id}: initial — follow the Phase progression, no change proposal needed; exempt: specs prefixed ${m.id}- under logos/resources/**; ${paths.length ? `code paths: ${paths.join(', ')}` : 'code still requires a proposal (no paths declared)'}`);
+}
+for (const m of launched) out.push(zh ? `- ${m.id}: launched — 变更须先立案` : `- ${m.id}: launched — changes require a proposal first`);
+process.stdout.write(out.join('\n'));
+JSEOF
+  node "$_mlc_js" "${LOCALE:-en}" 2>/dev/null || true
+  rm -f "$_mlc_js"
+}
+MODULE_LIFECYCLE="$(module_lifecycle_context)"
+
 # Build full context for additionalContext (Claude-visible)
 CONTEXT="=== OpenLogos Project Context ===
 Project: $PROJECT_NAME
@@ -592,7 +662,8 @@ fi
 CONTEXT="$CONTEXT
 $LANG_POLICY${CAPABILITIES:+
 $CAPABILITIES}
-$CHANGE_MGMT${GUARD_PENDING:+
+$CHANGE_MGMT${MODULE_LIFECYCLE:+
+$MODULE_LIFECYCLE}${GUARD_PENDING:+
 $GUARD_PENDING}
 === End OpenLogos Context ==="
 

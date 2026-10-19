@@ -1,0 +1,357 @@
+{
+  "description": "module-lifecycle-guard 归属判定共享测试向量（spec/pretooluse-guard.md「按文件归属的模块生命周期判定」归属 1～6 步）：fixtures 为 logos/logos-project.yaml 原文，logos/logos.config.json 不含 guard 字段（guard.exempt 取内置默认）；step 0 表示 yaml 不可解析、不做按文件判定（含锚点 / 别名、未支持的转义、非数组 paths、块标量等无法可靠解释的写法，code-r1 F1）。Claude bash、事后检查引擎与 Cursor / Qoder / WorkBuddy / ZCode 运行时须逐条给出相同结论。",
+  "fixtures": {
+    "M-repo": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    name: core\n    lifecycle: launched\n    paths: [\"src/**\"]\n  - id: team\n    name: team\n    lifecycle: initial\n    paths: [\"team/**\"]\nscenarios:\n  - id: S01\n    name: Login\n    module: core\n  - id: S44\n    name: Seats\n    module: team\n  - id: S45\n    name: Misc\n",
+    "M-shared": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    name: core\n    lifecycle: launched\n    paths: [\"src/**\", \"shared/**\"]\n  - id: team\n    name: team\n    lifecycle: initial\n    paths: [\"team/**\", \"shared/**\"]\nscenarios:\n  - id: S01\n    name: Login\n    module: core\n  - id: S44\n    name: Seats\n    module: team\n  - id: S45\n    name: Misc\n",
+    "M-nopaths": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    name: core\n    lifecycle: launched\n    paths: [\"src/**\"]\n  - id: team\n    name: team\n    lifecycle: initial\nscenarios:\n  - id: S01\n    name: Login\n    module: core\n  - id: S44\n    name: Seats\n    module: team\n  - id: S45\n    name: Misc\n",
+    "M-prefix": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    name: core\n    lifecycle: launched\n    paths: [\"src/**\"]\n  - id: team\n    name: team\n    lifecycle: initial\n    paths: [\"team/**\"]\n  - id: core-api\n    name: core-api\n    lifecycle: initial\nscenarios:\n  - id: S01\n    name: Login\n    module: core\n  - id: S44\n    name: Seats\n    module: team\n  - id: S45\n    name: Misc\n",
+    "M-invalid-paths": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    name: core\n    lifecycle: launched\n    paths: [\"src/**\"]\n  - id: team\n    name: team\n    lifecycle: initial\n    paths: [\"/abs\", \"../x\", \"\", \"team/**\"]\nscenarios:\n  - id: S01\n    name: Login\n    module: core\n  - id: S44\n    name: Seats\n    module: team\n  - id: S45\n    name: Misc\n",
+    "M-lc-missing": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    name: core\n    lifecycle: launched\n    paths: [\"src/**\"]\n  - id: team\n    name: team\n    paths: [\"team/**\"]\nscenarios:\n  - id: S01\n    name: Login\n    module: core\n  - id: S44\n    name: Seats\n    module: team\n  - id: S45\n    name: Misc\n",
+    "M-lc-Initial": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    name: core\n    lifecycle: launched\n    paths: [\"src/**\"]\n  - id: team\n    name: team\n    lifecycle: Initial\n    paths: [\"team/**\"]\nscenarios:\n  - id: S01\n    name: Login\n    module: core\n  - id: S44\n    name: Seats\n    module: team\n  - id: S45\n    name: Misc\n",
+    "M-lc-draft": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    name: core\n    lifecycle: launched\n    paths: [\"src/**\"]\n  - id: team\n    name: team\n    lifecycle: draft\n    paths: [\"team/**\"]\nscenarios:\n  - id: S01\n    name: Login\n    module: core\n  - id: S44\n    name: Seats\n    module: team\n  - id: S45\n    name: Misc\n",
+    "M-variant-quoted": "project:\n  name: \"m\"\nmodules:\n  - id: \"core\"\n    name: core\n    lifecycle: 'launched'\n    paths: ['src/**']  # 代码目录\n  - id: 'team'\n    name: team\n    lifecycle: \"initial\"   # 尚未上线\n    paths: [\"team/**\"]\nscenarios:\n  - id: \"S44\"\n    name: Seats\n    module: 'team'\n",
+    "M-variant-crlf": "project:\r\n  name: \"m\"\r\nmodules:\r\n  - id: core\r\n    name: core\r\n    lifecycle: launched\r\n    paths: [\"src/**\"]\r\n  - id: team\r\n    name: team\r\n    lifecycle: initial\r\n    paths: [\"team/**\"]\r\nscenarios:\r\n  - id: S01\r\n    name: Login\r\n    module: core\r\n  - id: S44\r\n    name: Seats\r\n    module: team\r\n  - id: S45\r\n    name: Misc\r\n",
+    "M-variant-block": "project:\n  name: \"m\"\nmodules:\n- id: core\n  name: core\n  lifecycle: launched\n  paths:\n  - \"src/**\"\n- id: team\n  name: team\n  lifecycle: initial\n  paths:\n    - team/**\n    - 'tools/team/**'\nscenarios:\n- id: S44\n  name: Seats\n  module: team\n",
+    "M-badyaml": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    name: core\n    lifecycle: launched\n    paths: [\"src/**\"]\n  - id: team\n    name: team\n    lifecycle: initial\n    paths: [\"team/**\"\nscenarios:\n  - id: S01\n    name: Login\n    module: core\n  - id: S44\n    name: Seats\n    module: team\n  - id: S45\n    name: Misc\n",
+    "A-initial": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    name: core\n    lifecycle: initial\n    paths: [\"src/**\"]\n  - id: team\n    name: team\n    lifecycle: initial\n    paths: [\"team/**\"]\nscenarios:\n  - id: S01\n    name: Login\n    module: core\n  - id: S44\n    name: Seats\n    module: team\n  - id: S45\n    name: Misc\n",
+    "A-launched": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    name: core\n    lifecycle: launched\n    paths: [\"src/**\"]\n  - id: team\n    name: team\n    lifecycle: launched\n    paths: [\"team/**\"]\nscenarios:\n  - id: S01\n    name: Login\n    module: core\n  - id: S44\n    name: Seats\n    module: team\n  - id: S45\n    name: Misc\n",
+    "M-alias": "project:\n  name: \"m\"\nshared_paths: &shared [\"shared/**\"]\nmodules:\n  - id: core\n    lifecycle: launched\n    paths: *shared\n  - id: team\n    lifecycle: initial\n    paths: [\"shared/**\"]\n",
+    "M-escape": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    lifecycle: launched\n    paths: [\"shared/\\u002a\\u002a\"]\n  - id: team\n    lifecycle: initial\n    paths: [\"shared/**\"]\n",
+    "M-escape-ok": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    lifecycle: launched\n    paths: [\"src/**\"]\n  - id: team\n    lifecycle: initial\n    paths: [\"team/**\", \"a\\\\b/**\", \"q\\\"x/**\"]\n",
+    "M-nonstring": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    lifecycle: launched\n    paths: [\"src/**\"]\n  - id: team\n    lifecycle: initial\n    paths: [123, true, \"team/**\"]\n  - id: 7\n    lifecycle: initial\n    paths: [\"seven/**\"]\n",
+    "M-scalar-paths": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    lifecycle: launched\n    paths: [\"src/**\"]\n  - id: team\n    lifecycle: initial\n    paths: team/**\n",
+    "M-block-id": "project:\n  name: \"m\"\nmodules:\n  - id: core\n    lifecycle: launched\n    paths: [\"src/**\"]\n  - id: |\n      team\n    lifecycle: initial\n    paths: [\"team/**\"]\n"
+  },
+  "cases": [
+    {
+      "fixture": "M-repo",
+      "path": "logos/resources/prd/1-product-requirements/team-01-requirements.md",
+      "expect": "initial",
+      "step": 4
+    },
+    {
+      "fixture": "M-repo",
+      "path": "logos/resources/test/team-S44-test-cases.md",
+      "expect": "initial",
+      "step": 4
+    },
+    {
+      "fixture": "M-repo",
+      "path": "logos/resources/api/S44-seats.yaml",
+      "expect": "initial",
+      "step": 5
+    },
+    {
+      "fixture": "M-repo",
+      "path": "logos/resources/api/S01-login.yaml",
+      "expect": "launched",
+      "step": 5
+    },
+    {
+      "fixture": "M-repo",
+      "path": "logos/resources/api/S45-x.yml",
+      "expect": "launched",
+      "step": 5
+    },
+    {
+      "fixture": "M-repo",
+      "path": "logos/resources/api/S99-x.yaml",
+      "expect": "unattributed",
+      "step": 6
+    },
+    {
+      "fixture": "M-repo",
+      "path": "team/app.ts",
+      "expect": "initial",
+      "step": 6
+    },
+    {
+      "fixture": "M-repo",
+      "path": "team/src/deep/a.ts",
+      "expect": "initial",
+      "step": 6
+    },
+    {
+      "fixture": "M-repo",
+      "path": "src/main.ts",
+      "expect": "launched",
+      "step": 6
+    },
+    {
+      "fixture": "M-repo",
+      "path": "scripts/release.sh",
+      "expect": "unattributed",
+      "step": 6
+    },
+    {
+      "fixture": "M-repo",
+      "path": "teamx/a.ts",
+      "expect": "unattributed",
+      "step": 6
+    },
+    {
+      "fixture": "M-repo",
+      "path": "team",
+      "expect": "unattributed",
+      "step": 6
+    },
+    {
+      "fixture": "M-repo",
+      "path": "logos/resources/prd/x.md",
+      "expect": "unattributed",
+      "step": 6
+    },
+    {
+      "fixture": "M-repo",
+      "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "expect": "launched",
+      "step": 4
+    },
+    {
+      "fixture": "M-repo",
+      "path": "logos/logos.config.json",
+      "expect": "not-applicable",
+      "step": 3
+    },
+    {
+      "fixture": "M-repo",
+      "path": "logos/changes/x/proposal.md",
+      "expect": "not-applicable",
+      "step": 2
+    },
+    {
+      "fixture": "M-repo",
+      "path": "logos/logos-project.yaml",
+      "expect": "not-applicable",
+      "step": 2
+    },
+    {
+      "fixture": "M-repo",
+      "path": "logos/resources/verify/test-results.jsonl",
+      "expect": "not-applicable",
+      "step": 2
+    },
+    {
+      "fixture": "M-repo",
+      "path": "logos/resources/reference/a.md",
+      "expect": "not-applicable",
+      "step": 2
+    },
+    {
+      "fixture": "M-repo",
+      "path": "logos/environments.yaml",
+      "expect": "not-applicable",
+      "step": 2
+    },
+    {
+      "fixture": "M-repo",
+      "path": "team/.gitignore",
+      "expect": "not-applicable",
+      "step": 1
+    },
+    {
+      "fixture": "M-repo",
+      "path": "logos/.openlogos-runtime/x",
+      "expect": "not-applicable",
+      "step": 1
+    },
+    {
+      "fixture": "M-repo",
+      "path": "team/.git/config",
+      "expect": "not-applicable",
+      "step": 1
+    },
+    {
+      "fixture": "M-shared",
+      "path": "shared/protocol.ts",
+      "expect": "cross",
+      "step": 6
+    },
+    {
+      "fixture": "M-shared",
+      "path": "team/app.ts",
+      "expect": "initial",
+      "step": 6
+    },
+    {
+      "fixture": "M-nopaths",
+      "path": "team/app.ts",
+      "expect": "unattributed",
+      "step": 6
+    },
+    {
+      "fixture": "M-nopaths",
+      "path": "logos/resources/prd/1-product-requirements/team-01-requirements.md",
+      "expect": "initial",
+      "step": 4
+    },
+    {
+      "fixture": "M-prefix",
+      "path": "logos/resources/prd/1-product-requirements/core-api-01-requirements.md",
+      "expect": "initial",
+      "step": 4
+    },
+    {
+      "fixture": "M-prefix",
+      "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md",
+      "expect": "launched",
+      "step": 4
+    },
+    {
+      "fixture": "M-invalid-paths",
+      "path": "team/app.ts",
+      "expect": "initial",
+      "step": 6
+    },
+    {
+      "fixture": "M-lc-missing",
+      "path": "team/app.ts",
+      "expect": "launched",
+      "step": 6
+    },
+    {
+      "fixture": "M-lc-Initial",
+      "path": "team/app.ts",
+      "expect": "launched",
+      "step": 6
+    },
+    {
+      "fixture": "M-lc-draft",
+      "path": "team/app.ts",
+      "expect": "launched",
+      "step": 6
+    },
+    {
+      "fixture": "M-variant-quoted",
+      "path": "team/app.ts",
+      "expect": "initial",
+      "step": 6
+    },
+    {
+      "fixture": "M-variant-quoted",
+      "path": "src/main.ts",
+      "expect": "launched",
+      "step": 6
+    },
+    {
+      "fixture": "M-variant-quoted",
+      "path": "logos/resources/api/S44-seats.yaml",
+      "expect": "initial",
+      "step": 5
+    },
+    {
+      "fixture": "M-variant-crlf",
+      "path": "team/app.ts",
+      "expect": "initial",
+      "step": 6
+    },
+    {
+      "fixture": "M-variant-crlf",
+      "path": "src/main.ts",
+      "expect": "launched",
+      "step": 6
+    },
+    {
+      "fixture": "M-variant-block",
+      "path": "team/app.ts",
+      "expect": "initial",
+      "step": 6
+    },
+    {
+      "fixture": "M-variant-block",
+      "path": "tools/team/x.ts",
+      "expect": "initial",
+      "step": 6
+    },
+    {
+      "fixture": "M-variant-block",
+      "path": "src/main.ts",
+      "expect": "launched",
+      "step": 6
+    },
+    {
+      "fixture": "M-variant-block",
+      "path": "logos/resources/api/S44-seats.yaml",
+      "expect": "initial",
+      "step": 5
+    },
+    {
+      "fixture": "M-badyaml",
+      "path": "team/app.ts",
+      "expect": "not-applicable",
+      "step": 0
+    },
+    {
+      "fixture": "A-initial",
+      "path": "src/main.ts",
+      "expect": "initial",
+      "step": 6
+    },
+    {
+      "fixture": "A-launched",
+      "path": "team/app.ts",
+      "expect": "launched",
+      "step": 6
+    },
+    {
+      "fixture": "M-alias",
+      "path": "shared/p.ts",
+      "expect": "not-applicable",
+      "step": 0
+    },
+    {
+      "fixture": "M-escape",
+      "path": "shared/p.ts",
+      "expect": "not-applicable",
+      "step": 0
+    },
+    {
+      "fixture": "M-escape-ok",
+      "path": "team/app.ts",
+      "expect": "initial",
+      "step": 6
+    },
+    {
+      "fixture": "M-escape-ok",
+      "path": "src/main.ts",
+      "expect": "launched",
+      "step": 6
+    },
+    {
+      "fixture": "M-nonstring",
+      "path": "123",
+      "expect": "unattributed",
+      "step": 6
+    },
+    {
+      "fixture": "M-nonstring",
+      "path": "true",
+      "expect": "unattributed",
+      "step": 6
+    },
+    {
+      "fixture": "M-nonstring",
+      "path": "team/app.ts",
+      "expect": "initial",
+      "step": 6
+    },
+    {
+      "fixture": "M-nonstring",
+      "path": "seven/x.ts",
+      "expect": "unattributed",
+      "step": 6
+    },
+    {
+      "fixture": "M-scalar-paths",
+      "path": "team/app.ts",
+      "expect": "not-applicable",
+      "step": 0
+    },
+    {
+      "fixture": "M-block-id",
+      "path": "team/app.ts",
+      "expect": "not-applicable",
+      "step": 0
+    }
+  ]
+}

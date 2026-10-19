@@ -362,5 +362,6 @@ describe('S19 — OpenLogos 本地全局 candidate', () => {
     expect(missing.status).not.toBe(0);
     expect(checked(process.execPath, [entry, '--version'], root)).toBe(LOCAL_RELEASE_CANDIDATE_VERSION);
     expect(existsSync(candidate.tarball)).toBe(true);
-  }, 180_000);
+  // 真实 pack + 两次全局安装：单独运行约 70s，verify 全量并行下实测 237s（module-lifecycle-guard loop-repair），上限按实际工作量放宽
+  }, 420_000);
 });

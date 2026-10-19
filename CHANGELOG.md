@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.9] - 2026-10-19
+
+本机全局发布（未发布到 npm）。
+
+### Changed
+
+- **guard 按模块生命周期判定**（module-lifecycle-guard）：项目里同时有 launched 与 initial 模块时，guard 按「被写入的文件归属哪个模块」判定，不再一律按 launched 拦截。
+  - 文件归属：`logos/resources/**` 下带已登记模块前缀（`<module>-`，最长匹配）的规格归该模块；API 规格 `logos/resources/api/SXX-*.yaml` 按 `scenarios[].module` 归属；其余文件按 `modules[].paths` 归属。
+  - 只归属 initial 模块的文件无需变更提案即可写入，其他模块有活跃提案时也不受该提案范围限制；共享配置、归不到模块的文件、同时归属 launched 模块的文件，以及不可豁免项（guard 自有状态、保护范围来源、git 元数据、已配置门禁的环境登记表）按原规则处理。launched 文件在有无活跃提案时的结论不变。
+  - Claude Code、Cursor、Qoder、WorkBuddy、ZCode 与事后检查引擎同判；Bash 可确定目标逐路径归属，事后检查不报告只归属 initial 模块的变化；删除目录时只有其下全部受保护文件都归属 initial 模块才放行。
+- SessionStart（Claude Code `openlogos-phase`、Codex `session-start.sh`）在混合生命周期项目中按模块追加提示。
+- `init` / `sync` / `launch` / `adopt` 生成的 AGENTS.md、CLAUDE.md 托管段、ZCode / Qoder / WorkBuddy / Cursor 宿主指令段与 Cursor policy，在混合生命周期项目中列出 initial 模块的豁免范围，「无 guard 文件 → 禁止修改」等条款限定为 launched 模块文件、共享配置与未归属文件。
+
+### Added
+
+- 共享测试向量 `plugin/test-vectors/guard-module-lifecycle.json`，供各宿主运行时校验归属结论。
+
+### 升级提示
+
+- 全部模块 initial 的项目与没有 initial 模块的项目，guard 判定、SessionStart 文本与生成的指令文字与 0.16.8 一致。
+- 混合生命周期项目需在升级后执行一次 `openlogos sync`，项目内的 guard 副本与托管指令才会更新。
+
 ## [0.16.8] - 2026-10-18
 
 本机全局发布（未发布到 npm）。

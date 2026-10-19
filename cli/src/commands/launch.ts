@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { readLocale, t } from '../i18n.js';
 import { deployAiToolAssets, expandAiTools, writeInstructionFiles } from './init.js';
+import { readLifecycleView } from '../lib/lifecycle-view.js';
 import { syncLogosProjectName } from './sync.js';
 import { migrateProjectLifecycle } from '../lib/migrate-lifecycle.js';
 import { isAdoptedBootstrap } from '../lib/project-yaml.js';
@@ -103,7 +104,9 @@ export function launch(moduleArg?: string) {
     const projectName = config.name || 'Unnamed Project';
 
     syncLogosProjectName(root, projectName);
-    writeInstructionFiles(root, locale, rawAiTool, true);
+    // 按目标模块已切换为 launched 后的状态计算视图；仍有 initial 模块时生成 mixed 文字（module-lifecycle-guard）
+    const adoptedView = readLifecycleView(root, { launched: [targetId] });
+    writeInstructionFiles(root, locale, rawAiTool, adoptedView.kind === 'mixed' ? adoptedView : true);
 
     deployAiToolAssets(root, aiTools, locale, true, 'synced');
 
@@ -148,7 +151,9 @@ export function launch(moduleArg?: string) {
 
   syncLogosProjectName(root, projectName);
 
-  writeInstructionFiles(root, locale, rawAiTool, isLaunched);
+  // lifecycle 在全部资产成功后才提交：按目标模块切换后的状态计算视图（module-lifecycle-guard）
+  const lifecycleView = readLifecycleView(root, { launched: [targetId] });
+  writeInstructionFiles(root, locale, rawAiTool, lifecycleView.kind === 'mixed' ? lifecycleView : isLaunched);
 
   deployAiToolAssets(root, aiTools, locale, isLaunched, 'synced');
 

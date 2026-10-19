@@ -19,6 +19,7 @@ import {
   writeInstructionFiles,
 } from './init.js';
 import type { Locale } from '../i18n.js';
+import { readLifecycleView } from '../lib/lifecycle-view.js';
 import { acceptedEntries, applyIgnoreBlock, managedBlockPrecheck, planIgnoreSuggestions } from '../lib/ignore-suggest.js';
 
 function isTTY(): boolean {
@@ -150,7 +151,9 @@ export async function adopt(name?: string, options?: { locale?: string; aiTool?:
   console.log('✓ 写入 logos-project.yaml（bootstrap: adopted, lifecycle: launched）');
   console.log('✓ 标记待建现状基线（baseline_seed_state: required）');
 
-  writeInstructionFiles(root, locale, aiTool, true);
+  // 混合生命周期（module-lifecycle-guard）按写入后的 yaml 生成 mixed 文字；其余情况与修改前相同（launched）
+  const lifecycleView = readLifecycleView(root);
+  writeInstructionFiles(root, locale, aiTool, lifecycleView.kind === 'mixed' ? lifecycleView : true);
   console.log('✓ 写入 AGENTS.md / CLAUDE.md');
 
   deployAiToolAssets(root, deployTools, locale, true, 'deployed');

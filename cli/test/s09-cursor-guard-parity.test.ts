@@ -454,7 +454,8 @@ describe('S01 / S08 Cursor 部署：afterShellExecution 与能力声明更正', 
     const broken = treeSnapshot(join(root, '.cursor'));
     expect(() => sync()).toThrow(/hooks\.json 无法解析/);
     expect(treeSnapshot(join(root, '.cursor'))).toEqual(broken);
-  });
+  // 负载敏感（module-lifecycle-guard loop-repair：verify 全量并行于外置盘沙箱时实测超过默认上限），超时按实际工作量放宽，断言不变
+  }, 60_000);
 
   it('UT-S08-78: 存量托管片段含旧文案「Cursor IDE 经同一 .cursor/hooks.json 获得完整 preToolUse 硬拦」→ sync 后更正，片段外用户内容不变', async () => {
     await init('demo', { locale: 'zh', aiTool: 'cursor' });

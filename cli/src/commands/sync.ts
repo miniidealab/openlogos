@@ -14,6 +14,7 @@ import {
 } from '../lib/asset-manifest.js';
 import { dirname } from 'node:path';
 import { ensureManagedGitattributes } from '../lib/gitattributes.js';
+import { readLifecycleView, viewIsLaunched } from '../lib/lifecycle-view.js';
 import { formatCrlfRecoveryReport, recoverCrlfWorkspace } from '../lib/crlf-recovery.js';
 import { syncManagedGitignoreBlock } from '../lib/gitignore-sync.js';
 
@@ -134,17 +135,10 @@ export function sync() {
     console.log(`  ✓ baseline provenance migrated: ${baselineMigration.changes.join('; ')}`);
   }
 
-  // Derive isLaunched from modules
-  const yamlPath = join(root, 'logos', 'logos-project.yaml');
-  let isLaunched = false;
-  if (existsSync(yamlPath)) {
-    try {
-      const yaml = parseYaml(readFileSync(yamlPath, 'utf-8'));
-      if (Array.isArray(yaml?.modules)) {
-        isLaunched = (yaml.modules as Array<{ lifecycle?: string }>).some(m => m.lifecycle === 'launched');
-      }
-    } catch { /* ignore */ }
-  }
+  // 生命周期视图（module-lifecycle-guard）：指令文字按 initial / launched / mixed 生成；
+  // Skills 与宿主资产部署沿用「是否存在 launched 模块」的布尔口径
+  const lifecycleView = readLifecycleView(root);
+  const isLaunched = viewIsLaunched(lifecycleView);
 
   const namesynced = syncLogosProjectName(root, projectName);
   if (namesynced) {
@@ -199,7 +193,7 @@ export function sync() {
   }
   printVerifyPreRunBackfillResult(locale, verifyBackfill);
 
-  writeInstructionFiles(root, locale, rawAiTool, isLaunched);
+  writeInstructionFiles(root, locale, rawAiTool, lifecycleView);
   console.log('  ✓ AGENTS.md updated');
   console.log('  ✓ CLAUDE.md updated');
 

@@ -78,12 +78,18 @@ describe('S09 Unit Tests — guard-check script', () => {
     expect(result.exitCode).toBe(0);
   });
 
-  it('UT-S09-13: initial lifecycle → allow Edit unconditionally', () => {
+  it('UT-S09-13: 所有模块 initial → 放行（项目级短路）', () => {
     writeFileSync(join(root, 'logos', 'logos-project.yaml'), makeYaml('initial'));
 
     const result = runGuardCheck(root, 'Edit', { file_path: join(root, 'src', 'index.ts') });
 
     expect(result.exitCode).toBe(0);
+
+    // 混合生命周期项目不走项目级短路：src/index.ts 不归属 initial 模块，按 launched 判定（按文件归属见 UT-S09-469）
+    writeFileSync(join(root, 'logos', 'logos-project.yaml'),
+      `${makeYaml('launched')}  - id: team\n    name: Team\n    lifecycle: initial\n    paths: ["team/**"]\n`);
+    expect(runGuardCheck(root, 'Edit', { file_path: join(root, 'src', 'index.ts') }).exitCode).toBe(2);
+    expect(runGuardCheck(root, 'Edit', { file_path: join(root, 'team', 'app.ts') }).exitCode).toBe(0);
   });
 
   it('UT-S09-14: whitelist logos/changes/ → allow Edit without guard', () => {

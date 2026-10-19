@@ -145,5 +145,6 @@ describe('adopted seed 三态与首个 change — S33', () => {
       // 只读消费者不得写回项目 yaml
       expect(readFileSync(join(f.root, 'logos/logos-project.yaml'), 'utf-8'), state).toBe(before);
     }
-  });
+  // 负载敏感（module-lifecycle-guard loop-repair：verify 全量并行于外置盘沙箱时实测超过默认上限），超时按实际工作量放宽，断言不变
+  }, 60_000);
 });

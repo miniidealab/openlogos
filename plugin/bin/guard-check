@@ -674,6 +674,372 @@ _has_symlink_component() {
   return 1
 }
 
+# >>> openlogos module-ownership v1（module-lifecycle-guard；spec/pretooluse-guard.md「按文件归属的模块生命周期判定」）
+# 纯 bash 实现，与 plugin/bin/guard-post-check.cjs 等 JS 运行时中的 mlg* 代码块同一规则（YAML 子集解析、归属 1～6 步、
+# 目录目标），共用测试向量 plugin/test-vectors/guard-module-lifecycle.json。
+# 不依赖 python / node：输入不可解析时的 fail-closed 必须在无运行时环境下也能到达。
+MLG_LOADED=0
+MLG_OK=0
+MLG_HAS_INITIAL=0
+MLG_MOD_IDS=()
+MLG_MOD_LC=()
+MLG_MOD_PATHS=()
+MLG_SC_IDS=()
+MLG_SC_MOD=()
+MLG_SV=""
+MLG_FL=()
+MLG_VERDICT=""
+MLG_STEP=""
+MLG_MODULES=""
+MLG_WALK_LIMIT=5000
+
+_mlg_trim() {
+  local t="$1"
+  t="${t#"${t%%[![:space:]]*}"}"
+  t="${t%"${t##*[![:space:]]}"}"
+  printf '%s' "$t"
+}
+
+# YAML 1.2 core schema 下解析为非字符串（数字、布尔、null）的无引号标量
+MLG_CORE_NON_STRING_RE='^(~|null|Null|NULL|true|True|TRUE|false|False|FALSE|[-+]?[0-9]+|0o[0-7]+|0x[0-9a-fA-F]+|[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?|[-+]?\.(inf|Inf|INF)|\.(nan|NaN|NAN))$'
+MLG_SNS=0
+
+# _mlg_scalar <raw> — YAML 子集标量，结果置 MLG_SV；不可解析返回 1。双引号只支持 \" 与 \\ 转义；锚点 / 别名 / 标签 /
+# 块标量等无法可靠解释的写法一律不解析（code-r1 F1）。无引号非字符串标量置 MLG_SNS=1、MLG_SV 为空。
+_mlg_scalar() {
+  local t q rest val c i n nx
+  t="$(_mlg_trim "$1")"
+  MLG_SV=""; MLG_SNS=0
+  [ -z "$t" ] && return 0
+  q="${t:0:1}"
+  if [ "$q" = '"' ] || [ "$q" = "'" ]; then
+    n=${#t}; i=1; val=""
+    while [ "$i" -lt "$n" ]; do
+      c="${t:$i:1}"
+      [ "$c" = "$q" ] && break
+      if [ "$q" = '"' ] && [ "$c" = '\' ]; then
+        nx="${t:$((i + 1)):1}"
+        if [ "$nx" != '"' ] && [ "$nx" != '\' ]; then return 1; fi
+        val+="$nx"; i=$((i + 2)); continue
+      fi
+      val+="$c"; i=$((i + 1))
+    done
+    [ "$i" -ge "$n" ] && return 1
+    rest="$(_mlg_trim "${t:$((i + 1))}")"
+    if [ -n "$rest" ] && [ "${rest:0:1}" != "#" ]; then return 1; fi
+    MLG_SV="$val"
+    return 0
+  fi
+  [ "$q" = "#" ] && return 0
+  case "$q" in
+    '|'|'>'|'*'|'&'|'!'|'{'|'}'|'['|']'|'%'|'@'|'`'|','|'?'|':') return 1 ;;
+    '-') [[ "$t" =~ ^-[^[:space:]] ]] || return 1 ;;
+  esac
+  if [[ "$t" == *" #"* ]]; then t="${t%%" #"*}"; fi
+  t="$(_mlg_trim "$t")"
+  if [[ "$t" =~ $MLG_CORE_NON_STRING_RE ]]; then MLG_SNS=1; return 0; fi
+  MLG_SV="$t"
+  return 0
+}
+
+# _mlg_flow <raw> — 流式序列 [a, "b", 'c']（不支持嵌套），结果置 MLG_FL；非字符串条目丢弃；不可解析返回 1
+_mlg_flow() {
+  local t c q="" cur="" i n end=-1 rest p
+  local -a pieces=()
+  t="$(_mlg_trim "$1")"
+  MLG_FL=()
+  [ "${t:0:1}" = "[" ] || return 1
+  n=${#t}
+  for ((i = 1; i < n; i++)); do
+    c="${t:$i:1}"
+    if [ -z "$q" ]; then
+      if [ "$c" = '"' ] || [ "$c" = "'" ]; then q="$c"
+      elif [ "$c" = "," ]; then pieces+=("$cur"); cur=""; continue
+      elif [ "$c" = "]" ]; then pieces+=("$cur"); end=$i; break
+      fi
+    elif [ "$q" = '"' ] && [ "$c" = '\' ]; then
+      cur+="$c${t:$((i + 1)):1}"; i=$((i + 1)); continue
+    elif [ "$c" = "$q" ]; then q=""
+    fi
+    cur+="$c"
+  done
+  [ "$end" -ge 0 ] || return 1
+  rest="$(_mlg_trim "${t:$((end + 1))}")"
+  if [ -n "$rest" ] && [ "${rest:0:1}" != "#" ]; then return 1; fi
+  for p in ${pieces[@]+"${pieces[@]}"}; do
+    [ -z "$(_mlg_trim "$p")" ] && continue
+    _mlg_scalar "$p" || return 1
+    [ "$MLG_SNS" -eq 1 ] && continue
+    MLG_FL+=("$MLG_SV")
+  done
+  return 0
+}
+
+# mlg_parse_file <yaml> — 解析 modules / scenarios 子集到 MLG_* 数组；不可解析返回 1
+mlg_parse_file() {
+  local file="$1" line body indent section="" item=-1 dash_indent=-1 in_paths=0 skip_indent=-1 saw_modules=0
+  local top_re='^([A-Za-z_][A-Za-z0-9_-]*)[[:space:]]*:(.*)$' dash_re='^-([[:space:]]+(.*))?$' blank_re='^[[:space:]]*(#|$)'
+  local rest v key rawv
+  MLG_MOD_IDS=(); MLG_MOD_LC=(); MLG_MOD_PATHS=(); MLG_SC_IDS=(); MLG_SC_MOD=()
+  _mlg_kv() {
+    # $1 = body，$2 = indent；使用外层 section / item / in_paths / skip_indent
+    [[ "$1" =~ $top_re ]] || return 1
+    key="${BASH_REMATCH[1]}"; rawv="${BASH_REMATCH[2]}"
+    in_paths=0
+    if [ "$section" = "modules" ] && [ "$key" = "paths" ]; then
+      v="$(_mlg_trim "$rawv")"
+      if [ -z "$v" ] || [ "${v:0:1}" = "#" ]; then MLG_MOD_PATHS[$item]=""; in_paths=1; return 0; fi
+      if [ "${v:0:1}" = "[" ]; then
+        _mlg_flow "$v" || return 1
+        local joined="" e
+        for e in ${MLG_FL[@]+"${MLG_FL[@]}"}; do joined+="$e"$'\x1f'; done
+        MLG_MOD_PATHS[$item]="$joined"
+        return 0
+      fi
+      return 1
+    fi
+    if [ "$section" = "modules" ] && { [ "$key" = "id" ] || [ "$key" = "lifecycle" ]; }; then
+      _mlg_scalar "$rawv" || return 1
+      if [ "$key" = "id" ]; then MLG_MOD_IDS[$item]="$MLG_SV"; else MLG_MOD_LC[$item]="$MLG_SV"; fi
+      return 0
+    fi
+    if [ "$section" = "scenarios" ] && { [ "$key" = "id" ] || [ "$key" = "module" ]; }; then
+      _mlg_scalar "$rawv" || return 1
+      if [ "$key" = "id" ]; then MLG_SC_IDS[$item]="$MLG_SV"; else MLG_SC_MOD[$item]="$MLG_SV"; fi
+      return 0
+    fi
+    v="$(_mlg_trim "$rawv")"
+    case "$v" in '|'*|'>'*) skip_indent="$2" ;; esac
+    return 0
+  }
+  [ -f "$file" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    [[ "$line" =~ $blank_re ]] && continue
+    if [[ "$line" == *$'\t'* ]]; then
+      [ -n "$section" ] && return 1
+      continue
+    fi
+    if [[ "$line" =~ $top_re ]]; then
+      case "${BASH_REMATCH[1]}" in
+        modules) section="modules"; saw_modules=1 ;;
+        scenarios) section="scenarios" ;;
+        *) section="" ;;
+      esac
+      item=-1; dash_indent=-1; in_paths=0; skip_indent=-1
+      if [ -n "$section" ]; then
+        v="$(_mlg_trim "${BASH_REMATCH[2]}")"
+        if [ -n "$v" ] && [ "${v:0:1}" != "#" ] && [ "$v" != "[]" ]; then return 1; fi
+      fi
+      continue
+    fi
+    [ -n "$section" ] || continue
+    body="${line#"${line%%[! ]*}"}"
+    indent=$(( ${#line} - ${#body} ))
+    if [ "$skip_indent" -ge 0 ]; then
+      if [ "$indent" -gt "$skip_indent" ]; then continue; fi
+      skip_indent=-1
+    fi
+    if [[ "$body" =~ $dash_re ]]; then
+      rest="${BASH_REMATCH[2]}"
+      if [ "$in_paths" -eq 1 ] && [ "$indent" -gt "$dash_indent" ]; then
+        _mlg_scalar "$rest" || return 1
+        [ "$MLG_SNS" -eq 1 ] || MLG_MOD_PATHS[$item]+="$MLG_SV"$'\x1f'
+        continue
+      fi
+      if [ "$dash_indent" -lt 0 ] || [ "$indent" -eq "$dash_indent" ]; then
+        dash_indent=$indent; in_paths=0
+        if [ "$section" = "modules" ]; then
+          item=${#MLG_MOD_IDS[@]}; MLG_MOD_IDS[$item]=""; MLG_MOD_LC[$item]=""; MLG_MOD_PATHS[$item]=""
+        else
+          item=${#MLG_SC_IDS[@]}; MLG_SC_IDS[$item]=""; MLG_SC_MOD[$item]=""
+        fi
+        [ -z "$(_mlg_trim "$rest")" ] && continue
+        _mlg_kv "$rest" "$indent" || return 1
+        continue
+      fi
+      [ "$indent" -gt "$dash_indent" ] && continue
+      return 1
+    fi
+    if [ "$item" -lt 0 ] || [ "$indent" -le "$dash_indent" ]; then return 1; fi
+    _mlg_kv "$body" "$indent" || return 1
+  done < "$file"
+  [ "$saw_modules" -eq 1 ]
+}
+
+# mlg_load — 每次 hook 调用解析一次；MLG_OK=1 表示可做按文件判定
+mlg_load() {
+  if [ "$MLG_LOADED" -eq 0 ]; then
+    MLG_LOADED=1; MLG_OK=0; MLG_HAS_INITIAL=0
+    if mlg_parse_file "logos/logos-project.yaml"; then
+      MLG_OK=1
+      local lc
+      for lc in ${MLG_MOD_LC[@]+"${MLG_MOD_LC[@]}"}; do [ "$lc" = "initial" ] && MLG_HAS_INITIAL=1; done
+    fi
+  fi
+  [ "$MLG_OK" -eq 1 ]
+}
+
+# _mlg_glob_re <glob> — glob → ERE（语义同 cli/src/lib/verify-scope.ts globToRegExp）
+_mlg_glob_re() {
+  local g="$1" out="" i n ch
+  n=${#g}
+  for ((i = 0; i < n; i++)); do
+    ch="${g:$i:1}"
+    if [ "$ch" = "*" ]; then
+      if [ "${g:$((i + 1)):1}" = "*" ]; then
+        if { [ "$i" -eq 0 ] || [ "${g:$((i - 1)):1}" = "/" ]; } && [ "${g:$((i + 2)):1}" = "/" ]; then
+          out+='(.*/)?'; i=$((i + 2)); continue
+        fi
+        out+='.*'; i=$((i + 1)); continue
+      fi
+      out+='[^/]*'
+    elif [ "$ch" = "?" ]; then
+      out+='[^/]'
+    else
+      case "$ch" in
+        '.'|'+'|'^'|'$'|'{'|'}'|'('|')'|'|'|'['|']'|'\') out+="\\$ch" ;;
+        *) out+="$ch" ;;
+      esac
+    fi
+  done
+  printf '%s' "$out"
+}
+
+_mlg_valid_path() {
+  local e="$1" seg
+  local -a segs=()
+  [ -n "$(_mlg_trim "$e")" ] || return 1
+  [ "${e:0:1}" = "/" ] && return 1
+  IFS='/' read -r -a segs <<< "$e"
+  for seg in ${segs[@]+"${segs[@]}"}; do [ "$seg" = ".." ] && return 1; done
+  return 0
+}
+
+_mlg_index_of() {
+  local id="$1" i
+  for ((i = 0; i < ${#MLG_MOD_IDS[@]}; i++)); do
+    if [ "${MLG_MOD_IDS[$i]}" = "$id" ]; then printf '%s' "$i"; return 0; fi
+  done
+  return 1
+}
+
+# mlg_owner <rel> — 归属判定（spec「归属判定」1～6 步），置 MLG_VERDICT / MLG_STEP / MLG_MODULES
+mlg_owner() {
+  local rel="$1" base id best="" i j re entry sc_mod hit="" n_hit=0 n_init=0 seg
+  local -a segs=() hits=() globs=()
+  MLG_VERDICT="not-applicable"; MLG_STEP=0; MLG_MODULES=""
+  mlg_load || return 0
+  case "$rel" in ''|'.'|'..'|../*|/*) return 0 ;; esac
+  IFS='/' read -r -a segs <<< "$rel"
+  base="${rel##*/}"
+  if [ "$rel" = "logos/.openlogos-runtime" ] || [[ "$rel" == logos/.openlogos-runtime/* ]]; then MLG_STEP=1; return 0; fi
+  if [ "$base" = ".gitignore" ]; then MLG_STEP=1; return 0; fi
+  for seg in ${segs[@]+"${segs[@]}"}; do [ "$seg" = ".git" ] && { MLG_STEP=1; return 0; }; done
+  if whitelist_prefix_hit "$rel"; then MLG_STEP=2; return 0; fi
+  if [ "$rel" = "logos/environments.yaml" ]; then MLG_STEP=2; return 0; fi
+  if [ "$rel" = "logos/resources/verify" ] || [[ "$rel" == logos/resources/verify/* ]]; then MLG_STEP=2; return 0; fi
+  if _mlg_exempt_hit "$rel"; then MLG_STEP=2; return 0; fi
+  if [ "$rel" = "logos/logos.config.json" ]; then MLG_STEP=3; return 0; fi
+  if [[ "$rel" == logos/resources/* ]]; then
+    for id in ${MLG_MOD_IDS[@]+"${MLG_MOD_IDS[@]}"}; do
+      [ -n "$id" ] || continue
+      if [[ "$base" == "$id-"* ]] && [ "${#id}" -gt "${#best}" ]; then best="$id"; fi
+    done
+    if [ -n "$best" ]; then hits=("$best"); MLG_STEP=4; fi
+  fi
+  if [ "${#hits[@]}" -eq 0 ] && [[ "$rel" == logos/resources/api/* ]]; then
+    local api_re='^(S[0-9]+)-.*\.ya?ml$'
+    if [[ "$base" =~ $api_re ]]; then
+      local sid="${BASH_REMATCH[1]}"
+      for ((i = 0; i < ${#MLG_SC_IDS[@]}; i++)); do
+        if [ "${MLG_SC_IDS[$i]}" = "$sid" ]; then
+          sc_mod="${MLG_SC_MOD[$i]:-core}"
+          if _mlg_index_of "$sc_mod" >/dev/null; then hits=("$sc_mod"); MLG_STEP=5; fi
+          break
+        fi
+      done
+    fi
+  fi
+  if [ "${#hits[@]}" -eq 0 ]; then
+    MLG_STEP=6
+    local -a seen=()
+    for ((i = 0; i < ${#MLG_MOD_IDS[@]}; i++)); do
+      id="${MLG_MOD_IDS[$i]}"
+      [ -n "$id" ] || continue
+      local dup=0 s
+      for s in ${seen[@]+"${seen[@]}"}; do [ "$s" = "$id" ] && dup=1; done
+      [ "$dup" -eq 1 ] && continue
+      seen+=("$id")
+      j="$(_mlg_index_of "$id")"
+      IFS=$'\x1f' read -r -a globs <<< "${MLG_MOD_PATHS[$j]}"
+      for entry in ${globs[@]+"${globs[@]}"}; do
+        _mlg_valid_path "$entry" || continue
+        re="^$(_mlg_glob_re "$entry")\$"
+        if [[ "$rel" =~ $re ]]; then hits+=("$id"); break; fi
+      done
+    done
+  fi
+  n_hit=${#hits[@]}
+  if [ "$n_hit" -eq 0 ]; then MLG_VERDICT="unattributed"; return 0; fi
+  for hit in "${hits[@]}"; do
+    j="$(_mlg_index_of "$hit")"
+    [ "${MLG_MOD_LC[$j]}" = "initial" ] && n_init=$((n_init + 1))
+  done
+  MLG_MODULES="${hits[*]}"
+  if [ "$n_init" -eq "$n_hit" ]; then MLG_VERDICT="initial"
+  elif [ "$n_init" -eq 0 ]; then MLG_VERDICT="launched"
+  else MLG_VERDICT="cross"
+  fi
+  return 0
+}
+
+# _mlg_exempt_hit <rel> — guard.exempt 命中（复用既有读取与完整段匹配；不查文件系统符号链接）
+_mlg_exempt_hit() {
+  local rel="$1" entry
+  case "/$rel/" in *//*|*/./*|*/../*) return 1 ;; esac
+  load_guard_exempt
+  for entry in ${GUARD_EXEMPT_ENTRIES[@]+"${GUARD_EXEMPT_ENTRIES[@]}"}; do
+    exempt_entry_matches "$entry" "$rel" && return 0
+  done
+  return 1
+}
+
+# mlg_target_initial_owned <rel> — 写入目标是否仅归属 initial 模块（initial_owned）；目录目标见 spec「归属判定」
+mlg_target_initial_owned() {
+  local rel="$1" f count=0 yaml_text=""
+  # 预筛：yaml 原文不含 initial 即不可能有 initial 模块，免去逐行解析（launched 项目的每次 hook 调用都会经过这里）
+  [ -f "logos/logos-project.yaml" ] || return 1
+  yaml_text="$(<"logos/logos-project.yaml")"
+  [[ "$yaml_text" == *initial* ]] || return 1
+  mlg_load || return 1
+  [ "$MLG_HAS_INITIAL" -eq 1 ] || return 1
+  mlg_owner "$rel"
+  if [ "$MLG_VERDICT" = "not-applicable" ] && [ "$MLG_STEP" -le 1 ]; then return 1; fi
+  _has_symlink_component "$rel" && return 1
+  if [ -d "$rel" ]; then
+    if [ "${GUARD_MODE:-}" = "git" ] && [ -n "${GUARD_ENGINE:-}" ] && [ -f "$GUARD_ENGINE" ]; then
+      node "$GUARD_ENGINE" owned -- "$rel" 2>/dev/null | grep -qxF "owned=$rel"
+      return $?
+    fi
+    while IFS= read -r -d '' f; do
+      count=$((count + 1))
+      [ "$count" -gt "$MLG_WALK_LIMIT" ] && return 1
+      f="${f#./}"
+      mlg_owner "$f"
+      [ "$MLG_VERDICT" = "initial" ] || return 1
+    done < <(find "$rel" -mindepth 1 \( -type f -o -type l \) -print0 2>/dev/null || printf 'find-failed\0')
+    if [ "$count" -eq 0 ]; then
+      mlg_owner "$rel"
+      [ "$MLG_VERDICT" = "initial" ]
+      return $?
+    fi
+    return 0
+  fi
+  [ "$MLG_VERDICT" = "initial" ]
+}
+# <<< openlogos module-ownership v1
+
 _protect() { PROTECT_STEP="$1"; PROTECT_REASON="$2"; return 0; }
 _unprotect() { PROTECT_STEP="$1"; PROTECT_REASON="$2"; return 0; }
 
@@ -718,6 +1084,11 @@ is_protected() {
     for seg in "${segs[@]}"; do
       if [ "$seg" = ".git" ]; then _protect 4 "git 元数据"; return 0; fi
     done
+  fi
+  # M 仅归属 initial 模块（module-lifecycle-guard，spec/pretooluse-guard.md「按文件归属的模块生命周期判定」）：
+  # 不可豁免项（第 2–4 步）之后、白名单之前；点段目标不享受。混合生命周期项目才可能命中，其余项目结论不变。
+  if [ "$lexical" != "1" ] && mlg_target_initial_owned "$rel"; then
+    _unprotect M "仅归属 initial 模块（按模块生命周期判定）"; return 1
   fi
   # 5 硬编码白名单 / 6 guard.exempt：两种模式都沿用既有 is_whitelisted_path（同一归一化、点段与符号链接约束；
   # 词法点段得出的目标不享受放行，只可更保守）

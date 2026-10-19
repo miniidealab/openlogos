@@ -577,8 +577,9 @@ export function localizedCursorResult(
 }
 
 /** AGENTS.md 的 Cursor 宿主指令段（guard 强度必显行，capability honesty）。 */
-export function createCursorAgentsInstruction(locale: 'zh' | 'en', lifecycle: string): string {
-  return locale === 'zh'
+export function createCursorAgentsInstruction(locale: 'zh' | 'en', lifecycle: string, mixedNote?: string): string {
+  const note = lifecycle === 'mixed' && mixedNote ? ` ${mixedNote}` : '';
+  return (locale === 'zh'
     ? `OpenLogos Cursor 指令：当前 lifecycle=${lifecycle}。OpenLogos Skills 部署于 .cursor/skills/（显式命令以 /openlogos-<command> 触发），change-reviewer subagent 部署于 .cursor/agents/。写入门禁在 Cursor（IDE 与 cursor-agent CLI）下为部分强度：shell 命令经 beforeShellExecution 事前轻判（保护范围变更命令需宿主审批）并经 afterShellExecution 事后检查；文件编辑经 afterFileEdit 事后报告，不被事前阻断。OpenLogos 未接入 preToolUse，与 claude-code 不等价。sessionStart 注入的上下文不构成写入授权。`
-    : `OpenLogos Cursor instructions: lifecycle=${lifecycle}. OpenLogos Skills live in .cursor/skills/ (explicit commands via /openlogos-<command>); the change-reviewer subagent lives in .cursor/agents/. Write guard on Cursor (IDE and cursor-agent CLI) is partial-strength: shell commands get a light pre-check via beforeShellExecution (guard-scope changes need host approval) plus an afterShellExecution post-check; file edits are only reported after the fact via afterFileEdit and are never blocked beforehand. OpenLogos does not wire preToolUse, so Cursor is not equivalent to claude-code. sessionStart context never grants write authorization.`;
+    : `OpenLogos Cursor instructions: lifecycle=${lifecycle}. OpenLogos Skills live in .cursor/skills/ (explicit commands via /openlogos-<command>); the change-reviewer subagent lives in .cursor/agents/. Write guard on Cursor (IDE and cursor-agent CLI) is partial-strength: shell commands get a light pre-check via beforeShellExecution (guard-scope changes need host approval) plus an afterShellExecution post-check; file edits are only reported after the fact via afterFileEdit and are never blocked beforehand. OpenLogos does not wire preToolUse, so Cursor is not equivalent to claude-code. sessionStart context never grants write authorization.`) + note;
 }

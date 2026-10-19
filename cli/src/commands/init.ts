@@ -5,6 +5,9 @@ import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { execSync, spawnSync } from 'node:child_process';
 import { ensureManagedGitattributes } from '../lib/gitattributes.js';
+import {
+  type LifecycleInput, applyMixedLifecycle, mixedExemptionSection, mixedHostNote, readLifecycleView, toLifecycleView,
+} from '../lib/lifecycle-view.js';
 import { parse as parseYaml } from 'yaml';
 import { type Locale, t, conventionsForYaml, conventionsForAgentsMd } from '../i18n.js';
 import {
@@ -420,7 +423,7 @@ export function preflightInstructionFiles(
   root: string,
   locale: Locale,
   rawAiTool: unknown,
-  isLaunched: boolean,
+  isLaunched: LifecycleInput,
 ): void {
   for (const [fileName, target] of [['AGENTS.md', 'agents'], ['CLAUDE.md', 'claude']] as const) {
     const file = join(root, fileName);
@@ -1627,7 +1630,7 @@ export function writeManagedInstructionFile(root: string, fileName: 'AGENTS.md' 
   return targetPath;
 }
 
-export function writeInstructionFiles(root: string, locale: Locale, rawAiTool: unknown, isLaunched: boolean) {
+export function writeInstructionFiles(root: string, locale: Locale, rawAiTool: unknown, isLaunched: LifecycleInput) {
   writeManagedInstructionFile(
     root,
     'AGENTS.md',
@@ -1640,7 +1643,41 @@ export function writeInstructionFiles(root: string, locale: Locale, rawAiTool: u
   );
 }
 
-export function generatePolicyMdc(locale: Locale, isLaunched: boolean = false): string {
+/** mixed 视图对 Cursor policy 规则的改写表（spec/agents-md.md「混合生命周期项目的变更管理条款生成」）。 */
+const POLICY_MIXED_REPLACEMENTS: Record<Locale, Array<[string, string]>> = {
+  zh: [
+    ['- **有 guard 文件** → 可以修改代码，但只能在该提案范围内修改', '- **有 guard 文件** → launched 模块文件、共享配置与未归属文件可以修改，但只能在该提案范围内修改'],
+    ['- **无 guard 文件** → **禁止修改任何源代码**', '- **无 guard 文件** → **禁止修改 launched 模块文件、共享配置与未归属文件**'],
+    ['- 发现 bug/问题时：', '- 在 launched 模块文件、共享配置或未归属文件中发现 bug/问题时：'],
+    ['- 修改代码前：', '- 修改 launched 模块文件、共享配置或未归属文件前：'],
+  ],
+  en: [
+    ['- **Guard file exists** → you may modify code, but only within the scope of that proposal', '- **Guard file exists** → launched module files, shared configuration and unattributed files may be modified, but only within the scope of that proposal'],
+    ['- **No guard file** → **modifying source code is FORBIDDEN**', '- **No guard file** → **modifying launched module files, shared configuration and unattributed files is FORBIDDEN**'],
+    ['- When you discover a bug/issue:', '- When you discover a bug/issue in launched module files, shared configuration or unattributed files:'],
+    ['- Before modifying code:', '- Before modifying launched module files, shared configuration or unattributed files:'],
+  ],
+};
+
+/** mixed 视图对 AGENTS.md / CLAUDE.md 变更管理段的改写表。 */
+const AGENTS_MIXED_REPLACEMENTS: Record<Locale, Array<[string, string]>> = {
+  zh: [
+    ['- **有 guard 文件** → 可以修改代码，但 **只能在该提案范围内** 修改', '- **有 guard 文件** → launched 模块文件、共享配置与未归属文件可以修改，但 **只能在该提案范围内** 修改'],
+    ['- **无 guard 文件** → **禁止修改任何源代码**', '- **无 guard 文件** → **禁止修改 launched 模块文件、共享配置与未归属文件**'],
+    ['- **发现 bug/问题时**：', '- **在 launched 模块文件、共享配置或未归属文件中发现 bug/问题时**：'],
+    ['- **修改代码前**：', '- **修改 launched 模块文件、共享配置或未归属文件前**：'],
+  ],
+  en: [
+    ['- **Guard file exists** → you may modify code, but **only within the scope of that proposal**', '- **Guard file exists** → launched module files, shared configuration and unattributed files may be modified, but **only within the scope of that proposal**'],
+    ['- **No guard file** → **modifying source code is FORBIDDEN**', '- **No guard file** → **modifying launched module files, shared configuration and unattributed files is FORBIDDEN**'],
+    ['- **When you discover a bug/issue**:', '- **When you discover a bug/issue in launched module files, shared configuration or unattributed files**:'],
+    ['- **Before modifying code**:', '- **Before modifying launched module files, shared configuration or unattributed files**:'],
+  ],
+};
+
+export function generatePolicyMdc(locale: Locale, lifecycle: LifecycleInput = false): string {
+  const view = toLifecycleView(lifecycle);
+  const isLaunched = view.kind !== 'initial';
   const langSection = locale === 'zh'
     ? `## ⚠️ 语言策略（最高优先级）
 
@@ -1657,7 +1694,7 @@ This project's document language is **English** (configured in \`logos/logos.con
 Even if Skill files are written in another language, your output MUST be in English.
 Violating this rule will render the output unusable.`;
 
-  const changeMgmtSection = isLaunched
+  let changeMgmtSection = isLaunched
     ? (locale === 'zh'
       ? `## ⛔ 变更管理（强制执行）
 
@@ -1698,6 +1735,8 @@ This project uses \`logos/.openlogos-guard\` lock file to track active changes.
 
 This project is currently in initial development — follow the Phase 1 → 2 → 3 progression to create documents.
 After the first full cycle is complete, run \`openlogos launch\` to activate change management.`);
+  changeMgmtSection = applyMixedLifecycle(changeMgmtSection, view, mixedExemptionSection(locale, view),
+    locale === 'zh' ? '### 行为约束' : '### Behavioral Constraints', POLICY_MIXED_REPLACEMENTS[locale]);
 
   return `---
 description: "OpenLogos — Project Policy: Language & Change Management (always active)"
@@ -2215,7 +2254,11 @@ ${conventionsForYaml(locale)}
 `;
 }
 
-export function createAgentsMd(locale: Locale, aiTool?: AiTool, target?: 'agents' | 'claude', isLaunched: boolean = false): string {
+export function createAgentsMd(locale: Locale, aiTool?: AiTool, target?: 'agents' | 'claude', lifecycle: LifecycleInput = false): string {
+  const view = toLifecycleView(lifecycle);
+  const isLaunched = view.kind !== 'initial';
+  const hostLifecycle = view.kind;
+  const hostNote = view.kind === 'mixed' ? mixedHostNote(locale, view) : undefined;
   const includeSkills = aiTool && target ? shouldIncludeActiveSkills(aiTool, target) : false;
 
   const langPolicy = locale === 'zh'
@@ -2269,16 +2312,16 @@ ${generateDocumentPostEditVerify(locale)}
 `;
 
   if (aiTool === 'zcode' && target === 'agents') {
-    content += '\n## ZCode 宿主指令\n' + createZCodeAgentsInstruction(locale, isLaunched ? 'launched' : 'initial') + '\n';
+    content += '\n## ZCode 宿主指令\n' + createZCodeAgentsInstruction(locale, hostLifecycle, hostNote) + '\n';
   }
   if (aiTool === 'qoder' && target === 'agents') {
-    content += '\n## Qoder 宿主指令\n' + createQoderAgentsInstruction(locale, isLaunched ? 'launched' : 'initial') + '\n';
+    content += '\n## Qoder 宿主指令\n' + createQoderAgentsInstruction(locale, hostLifecycle, hostNote) + '\n';
   }
   if (aiTool === 'workbuddy' && target === 'agents') {
-    content += '\n## WorkBuddy 宿主指令\n' + createWorkBuddyAgentsInstruction(locale, isLaunched ? 'launched' : 'initial') + '\n';
+    content += '\n## WorkBuddy 宿主指令\n' + createWorkBuddyAgentsInstruction(locale, hostLifecycle, hostNote) + '\n';
   }
   if (aiTool === 'cursor' && target === 'agents') {
-    content += '\n## Cursor 宿主指令\n' + createCursorAgentsInstruction(locale, isLaunched ? 'launched' : 'initial') + '\n';
+    content += '\n## Cursor 宿主指令\n' + createCursorAgentsInstruction(locale, hostLifecycle, hostNote) + '\n';
   }
 
   if (includeSkills) {
@@ -2292,7 +2335,7 @@ ${skillAutoLoadInstr}
 ${generateActiveSkillsSection(locale, aiTool, target)}`;
   }
 
-  const changeMgmt = isLaunched
+  let changeMgmt = isLaunched
     ? (locale === 'zh'
       ? `## ⛔ 变更管理（强制执行）
 
@@ -2381,6 +2424,8 @@ This project uses \`logos/.openlogos-guard\` lock file to track active changes.
 
 After the first cycle is complete, run \`openlogos launch\` to activate change management.
 `);
+  changeMgmt = applyMixedLifecycle(changeMgmt, view, mixedExemptionSection(locale, view),
+    locale === 'zh' ? '### 变更流程' : '### Change Workflow', AGENTS_MIXED_REPLACEMENTS[locale]);
 
   const cliRule = locale === 'zh'
     ? `## ⚠️ openlogos CLI 规则
@@ -2440,7 +2485,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
       try {
         preflightAiToolAssets(root, requestedTools);
         if (requestedTools.includes('zcode') || requestedTools.includes('qoder') || requestedTools.includes('workbuddy')) {
-          preflightInstructionFiles(root, locale, mergeAiToolConfig(config.aiTool, requestedAiTool), readProjectLaunched(root));
+          preflightInstructionFiles(root, locale, mergeAiToolConfig(config.aiTool, requestedAiTool), readLifecycleView(root));
         }
       } catch (error) {
         console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
@@ -2454,7 +2499,7 @@ export async function init(name?: string, options?: { locale?: string; aiTool?: 
       const isLaunched = readProjectLaunched(root);
       console.log(`\nAdding AI tool target(s) to existing OpenLogos project: ${requestedTools.join(', ')}\n`);
 
-      writeInstructionFiles(root, locale, config.aiTool, isLaunched);
+      writeInstructionFiles(root, locale, config.aiTool, readLifecycleView(root));
       console.log('  ✓ AGENTS.md updated');
       console.log('  ✓ CLAUDE.md updated');
       printVerifyPreRunBackfillResult(locale, verifyBackfill);
