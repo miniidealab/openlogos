@@ -2535,3 +2535,40 @@
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`，`target_environment` 取本次 `OPENLOGOS_SMOKE_ENV`，skip 记录不声明；**失败不得写 pass**。
 - 判据以退出码、托管段 marker 之间的文本与 hook stdout JSON 为准，不解析其余人类可读文案。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-285～SMOKE-core-288 均被 runner 覆盖。
+
+## OpenLogos 0.16.10 按模块区分环境与 smoke 安装态 smoke（SMOKE-core-289～293）
+
+> 这组用例验证按模块区分环境与 smoke（来源提案 module-scoped-env-smoke，功能规格 §2.98）确实进入了本机全局安装态。它们都是 CLI 运行时行为，只有全局 `openlogos` 升级后才对用户的各项目（含 runlogos 的 Team 版）生效。
+>
+> 用例在 `mktemp -d` 一次性隔离 git 项目内执行，经全局 `openlogos init` 建立后写入多模块 `logos-project.yaml`（`core` 不声明环境；`team` 声明 `deployment_gates.team.environments: [team-prod]`）、登记表（`test`、`team-prod`，`team-prod` 配置 script 方式 `deploy`，脚本为夹具内的记录型脚本）、smoke 规格（core / team / 全局三份）与两个记录型 smoke runner（项目级与 `smoke.modules.team.command`，把被调用模块与注入变量写入项目外一次性调用日志）。runner 以子进程直接调用全局 CLI，对全局安装态**只读**，不做安装或卸载，不触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态账本与用户其他仓库（包括 runlogos）；唯一读取本仓的是 SMOKE-core-289 ④ 的只读比对。版本以部署记录与 `cli/src/lib/local-release-candidate.ts` 的候选版本为准，断言写成关系式，不硬编码 `0.16.10`。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-289 | 安装态版本、制品身份与本仓 sync 同源 | 本机全局已安装本次候选；部署记录中有候选版本与 tarball SHA-256；本仓已按部署方案执行 `openlogos sync` | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 检查全局包内 `spec/logos.config.schema.json` 含 `smoke.modules` 定义、`spec/environments.md` 含 §14、`dist/` 内存在 `ENV_MODULE_MISMATCH` 的实现；④ 逐字节比对本仓 `logos/spec/environments.md`、`logos/skills/change-writer/SKILL.md` 与全局包内同名文件 | ① `--version` 等于部署记录候选版本，入口无 workspace link；② `payloadHash` 自洽；③ 全部成立；④ 字节一致 | 保留读取结果；①～③ 任一不符 → 停止后续流程，按部署方案以 `openlogos deploy --env test --rollback` 回到 0.16.9；④ 不一致 → 重新执行本仓 `openlogos sync` 后复核，仍不一致则回流本提案 |
+| SMOKE-core-290 | 安装态未声明模块不被登记表拦截、声明模块归属校验 | 本机全局已安装本次候选；多模块临时项目已初始提交；以全局 `openlogos change` 创建归属 core 的提案并满足部署前置 | ① core 提案执行 `deploy-done`（不传 `--env`）与 `smoke`；② core 提案执行 `deploy-done --env team-prod`；③ 改建归属 team 的提案，执行 `deploy-done --env test` 与不传 `--env` | ① 均成功，`DEPLOY_DONE.environment` 为 null，不写部署账本；② `ENV_MODULE_MISMATCH`、零写入；③ 依次 `ENV_MODULE_MISMATCH` 与 `ENV_REQUIRED`，均零写入 | 同上；任一不成立表示按模块区分未进入安装态，回装旧版并回流本提案 |
+| SMOKE-core-291 | 安装态 core 有活跃提案时 team 版本部署与 team smoke | 同 SMOKE-core-290 的临时项目；core 有活跃提案且尚未部署 | ① `deploy --env team-prod --ref <HEAD>`；② `smoke --env team-prod --format json`；③ 读取调用日志与 core 提案目录 | ① 版本通道成功；② 通过，`scope.module="team"`、`scope.context="version"`，部署身份取自 ① 的账本记录；③ 调用日志只有 team 命令一次、`OPENLOGOS_SMOKE_MODULE=team`；core 提案目录前后字节一致，无 `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL` | 同上 |
+| SMOKE-core-292 | 安装态引用失效拒绝不降级 | 同上；把 team 的声明改为一个不存在的别名，`team-prod` 配置 `require_approval: true`，team 有活跃提案 | 执行 `deploy-done --env team-prod`、`smoke --env team-prod`、`deploy --env team-prod` | 三者均 `ENV_GATE_REFERENCE_UNKNOWN`，提案目录与账本字节不变，部署脚本未运行 | 同上 |
+| SMOKE-core-293 | 安装态单模块零回归与 next 带 --env | 本机全局已安装本次候选；单模块临时项目带登记表；对同一夹具以 0.16.9 回滚制品在一次性隔离 prefix 中执行同样命令作为基线 | ① `deploy-done --env test`、`smoke --env test --format json` 与基线比对（剔除时间戳、耗时、随机 id）；② ready-to-smoke 时 `next --auto --format json` | ① 与基线一致，无 `scope`；② `auto_execute.command` 为 `openlogos smoke --env test`（基线为 `openlogos smoke`） | 同上 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目、一次性调用日志目录与一次性基线 prefix 内进行，结束即删除；**不得**触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态目录、用户其他仓库（包括 runlogos）或本机全局 prefix。
+- 不触发真实 CI、不访问任何远程服务；`team-prod` 的部署脚本只写临时目录内的调用日志。
+- 命令图中不得出现 `npm publish` / dist-tag / `git tag` / `gh release` / `git push`。
+
+### 三、追溯与覆盖
+
+- 功能规格：§2.98。需求：`core-01-requirements.md`「S41/S19/S21/S42 按模块区分环境与 smoke 验收补充」。
+- 根规范：`spec/environments.md` §14；`spec/cli-json-output.md`「smoke / env / next 按模块区分增量」；`spec/test-results.md`「按模块限定 smoke 范围的运行约定」。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.10 本机测试环境发布（module-scoped-env-smoke）」。
+- 仓库内对应用例：UT-S41-24～29、ST-S41-07、UT-S19-74～82、ST-S19-30～31、UT-S21-20～22、UT-S42-26～28。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-module-scoped-env-smoke-0-16-10.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-289～SMOKE-core-293，不得依靠通配发现后无条件 PASS。
+- 适用窗口：活跃变更为 `module-scoped-env-smoke`，或 `OPENLOGOS_MSES_SMOKE=1`；窗口之外按既有留痕机制为全部 owned ID 写 skip。环境变量一律使用 `OPENLOGOS_MSES_` 前缀。
+- 适用性判定不得依赖自动流程不会设置的环境变量；只有部署记录、回滚制品或本仓 sync 确实缺失时才写显式 `skip` 并携带缺失项，不得标 `reason_code:"platform-unavailable"`。有 skip 时不得写 `SMOKE_PASS`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-289～SMOKE-core-293 均被 runner 覆盖。

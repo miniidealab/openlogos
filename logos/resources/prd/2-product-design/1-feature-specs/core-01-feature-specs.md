@@ -5419,3 +5419,65 @@ Claude Code（`plugin/bin/guard-check`）、Cursor（`plugin-cursor/hooks/runtim
 - 场景：`core-S09-change-management.md`「S09-H 混合生命周期项目中 initial 模块免提案写入」。
 - 测试：UT-S09-467～UT-S09-480、ST-S09-206～ST-S09-209；smoke：SMOKE-core-285～SMOKE-core-288。
 - 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.9 本机测试环境发布（module-lifecycle-guard）」。
+
+## 2.98 按模块区分环境与 smoke
+
+> 来源变更：module-scoped-env-smoke（决策 C01、C02；proposal-r1 F1、F2 处置）。权威规范见 `spec/environments.md` §14（并 §2.3、§8）、`spec/cli-json-output.md`「smoke / env / next 按模块区分增量」、`spec/test-results.md`「按模块限定 smoke 范围的运行约定」、`spec/logos.config.schema.json`（`smoke.modules`）；本节描述用户可见行为。场景：S41、S19、S21、S42 各自的「按模块」子场景。
+
+### 2.98.1 配置
+
+- **环境归属**：沿用 `logos/logos-project.yaml` 的 `deployment_gates.<module>.environments`（按 id 或别名），它同时是「环境属于哪个模块」的唯一来源（C01）。登记表 `logos/environments.yaml` 格式不变，不新增 `module` 字段。
+- **模块 smoke 命令**：`logos/logos.config.json` 新增可选 `smoke.modules.<id>`，字段 `command`、`result_path`、`report_path` 与项目级同语义，未写的字段回落项目级；沙箱字段沿用项目级。`<id>` 未登记时警告 `smoke_module_unknown` 并忽略。
+
+### 2.98.2 启用条件（先于任何解析）
+
+按顺序取第一条成立的：① 项目只有一个模块 → 未启用；② 没有任何模块声明非空 `environments`，且没有任何 `smoke.modules.<id>` → 未启用；③ 其余启用。未启用时 `deploy-done`、`smoke`、`deploy`、`env`、`next` 的判定与输出与现在一致（§2.98.7 除外），JSON 不输出 `scope` 与 `modules`。openlogos 本仓库是单模块项目，不受影响。
+
+### 2.98.3 环境集合 E(m) 与引用失效（proposal-r1 F1）
+
+- E(m) = `deployment_gates.<m>.environments` 逐项解析到登记表环境 id 的集合。
+- **未声明**只指 `environments` 缺失或为空数组。
+- **引用失效**：声明含任一解析不了的项（别名已删除、拼错）。目标模块属于此类时，`deploy-done`、`smoke`、`deploy` 在执行与任何写入之前报 `ENV_GATE_REFERENCE_UNKNOWN`（退出码 1，点名模块与失效引用），不降级为未声明、不忽略失效项；其他模块的失效引用不影响当前命令。`env check` 照旧报告。
+
+### 2.98.4 目标模块与部署上下文（proposal-r1 F2）
+
+1. `--env` 解析出的环境恰好属于一个模块 m 的 E(m) → 目标模块 m；
+2. 否则有活跃提案取提案模块（`resolveProposalModuleContext`），无活跃提案不限定模块（全项目口径）。
+
+- **提案上下文**：存在活跃提案且目标模块等于提案模块，沿用提案前置、`DEPLOY_DONE` 与提案标记。
+- **版本上下文**：目标模块不等于提案模块或没有活跃提案：不套用活跃提案前置，不读写 `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL`，部署身份取账本中该环境最近一条 deploy 记录，smoke 只追加账本 smoke 行（slug 为 null），使用目标模块的 smoke 命令与用例。
+
+### 2.98.5 各命令行为（启用时）
+
+- **E(m) 非空**：`--env` 必须属于 E(m)，否则 `ENV_MODULE_MISMATCH`（退出码 1，零写入，列出 E(m)）；不传 `--env` 仍 `ENV_REQUIRED`；不做「只有一个环境就默认选它」的推断；受门环境规则不变。
+- **未声明环境的模块**（如 runlogos 的 core）：`deploy-done` / `smoke` 按「没有登记表」原逻辑——`--env` 可选、只作标签，不写部署账本、不做环境证据门禁与部署身份核对。`--env` 指向另一模块已声明的环境时：`deploy-done`（只服务提案）报 `ENV_MODULE_MISMATCH`；`smoke` 按环境归属路由到声明该环境的模块、进入其版本上下文执行，不报错，与 core 是否已落标无关（delta-r1 F1）。
+- **deploy 通道**：活跃提案处于 ready-to-deploy 且（未启用或 `--env` ∈ E(提案模块)）→ 提案通道，否则版本通道；提案模块未声明环境时默认恒为版本通道；显式 `--channel proposal` 而环境不属于提案模块 → `ENV_MODULE_MISMATCH`。版本通道部署不读写任何提案文件。
+- **env list / show**：环境条目新增 `modules`（声明了该环境的模块 id）。
+
+### 2.98.6 smoke 用例范围与命令
+
+- 目标模块为 m 时，最终应覆盖集合 S = `m-` 前缀规格（已登记模块 id 最长匹配）∪ 不带任何已登记模块前缀的全局规格 ∪ C；C 为提案上下文下本提案新增或修改的 smoke 用例（可属其他模块前缀），版本上下文下 C 为空，不读取无关活跃提案的变更用例（delta-r1 F2）。不限定模块时为全部用例。
+- 命令：`smoke.modules.<m>` 存在则用其字段（缺省回落项目级），否则项目级；注入 `OPENLOGOS_SMOKE_MODULE=<m>`（不限定模块时不注入）；runner 覆盖诊断只按实际所用命令判定。
+- 覆盖与结果过滤用同一个 S：已定义但不在 S 中的结果行忽略不计，计数进 `scope.out_of_scope_result_count`；S 内的结果一律保留——属于其他模块前缀的变更用例 pass 满足覆盖、fail 阻断、缺结果仍 uncovered；未定义 ID 照旧判定。
+- JSON 顶层新增可选 `scope`（`mode`、`module`、`context`、`reasons`、`fallback_reason`、`out_of_scope_result_count`、`command_source`），启用时输出；smoke 报告 Summary 新增「范围」行。
+
+### 2.98.7 next --auto 带 --env（与是否启用无关）
+
+`next --auto` 为 smoke 生成 `auto_execute.command` 时（`ready-to-smoke`），活跃提案 `DEPLOY_DONE` 记录了 `environment` → `openlogos smoke --env <environment>`；旧空格式、`environment` 为 null 或读取失败 → `openlogos smoke`。复用 `readDeployDoneMarker`，不新增 marker。RunLogos driver 自己拼 `--env` 的逻辑与此兼容。
+
+### 2.98.8 Skill 口径
+
+- **change-writer**：启用时 `proposal_default_env` 只在其环境属于提案模块 E(m) 时采用为目标环境（`source: policy`）；提案模块未声明环境时「影响环境」写自由文本、目标环境照旧询问；E(m) 非空但不含默认值时照旧询问，选项只列 E(m)。
+- **deployment-designer**：多模块项目产出或更新登记表时，须同时在 `deployment_gates.<module>.environments` 声明归属，并提示未声明的模块按无登记表处理、引用失效会被拒绝。
+
+### 2.98.9 订正与兼容
+
+- **订正 §2.96 的一处说法**：module-scoped-verify 的非目标写「不按模块限定 smoke（smoke 已有按提案归属的 runner 配置）」，括号内说法在代码中没有对应实现；按模块限定 smoke 由本节提供。
+- 未启用项目零改动；登记表、`DEPLOY_DONE`、账本与 smoke 结果文件格式不变；新增配置字段全部可选；新错误码 `ENV_MODULE_MISMATCH` 只在启用的项目上出现。
+
+### 2.98.10 追溯
+
+- 需求：`core-01-requirements.md`「S41/S19/S21/S42 按模块区分环境与 smoke 验收补充」。
+- 场景：`core-S41-environment-registry.md`「按模块的环境归属」、`core-S19-smoke-gate.md`「按模块限定 smoke」、`core-S21-deploy-done-marker.md`「按模块的环境校验」、`core-S42-environment-deploy.md`「按环境归属的部署通道」。
+- 测试：UT-S41-24 起、ST-S41-07 起、UT-S19-74 起、ST-S19-30 起、UT-S21-20 起、UT-S42-26 起；smoke：SMOKE-core-289 起。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.10 本机测试环境发布（module-scoped-env-smoke）」。

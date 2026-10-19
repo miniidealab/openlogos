@@ -3375,3 +3375,38 @@ openlogos approve --env <id|alias> --ref <revision> [--note <文字>] --format j
 ### 文本输出与验收报告
 
 文本输出与验收报告 Summary 表新增一行「范围 / Scope」，例如 `module（portal-web）`、`all`、`fallback-full（unmapped_file：scripts/x.sh 等 3 个文件）`。未启用时不出现该行。
+
+## smoke / env / next 按模块区分增量（module-scoped-env-smoke）
+
+> 来源变更 module-scoped-env-smoke（决策 C01；proposal-r1 F1、F2），功能规格 §2.98，规范见 `spec/environments.md` §14。**采用 ADDED 子节而非 MODIFIED**：本节只新增可选字段与 `next` 命令文本的取值规则，不改 `## 5. openlogos smoke --format json`、`openlogos env list|show|check --format json`、`### 11.2 auto_execute` 既有字段、取值与兼容规则。未启用按模块区分（`spec/environments.md` §14.1）的项目，下列 `scope`、`modules` 一律不输出，envelope 逐字节不变。
+
+### smoke `scope`（data 顶层，可选）
+
+启用按模块区分时输出：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `scope.mode` | `"module"` \| `"project"` | 目标模块确定为 `module`；未传 `--env` 且无活跃提案、或环境不属于任何模块 / 属于多个模块而无可取的提案模块时为 `project`（全部用例、项目级命令） |
+| `scope.module` | string \| null | 目标模块 id；`mode=project` 时为 null |
+| `scope.context` | `"proposal"` \| `"version"` | 部署上下文（`spec/environments.md` §14.3）：`proposal` 沿用提案前置、`DEPLOY_DONE` 与提案标记；`version` 不读写任何提案标记，部署身份取账本 |
+| `scope.reasons` | string[] | 确定目标模块的依据，取值 `env`（`--env` 属于该模块的环境集合）、`proposal`（取活跃提案模块） |
+| `scope.fallback_reason` | object \| null | `mode=project` 时说明原因：`{ code, detail }`，`code` 取 `no_env_no_proposal`、`env_unattributed`、`env_shared` |
+| `scope.out_of_scope_result_count` | integer | 结果行 ID 在 smoke 规格中已定义、但不在本次最终应覆盖集合 S（`spec/environments.md` §14.5）中而被忽略的条数；S 内的结果（含其他模块前缀的变更用例）不计入此数 |
+| `scope.command_source` | `"module"` \| `"project"` | 实际所用 smoke 命令来自 `smoke.modules.<id>` 还是项目级 |
+
+- `summary.defined_count`、`uncovered_cases` 等既有字段按本次范围计算（`spec/environments.md` §14.5）；`mode=project` 时与未启用相同。
+- `diagnostics` 新增警告 `smoke_module_unknown`（`smoke.modules.<id>` 未登记）。
+- 版本上下文时 `environment_evidence` 的 `deploy_id`、`ref`、`deploy_env_confirmed` 取自账本中该环境最近一条 deploy 记录，`ledger_written=true`（追加 `slug` 为 null 的 smoke 记录），与「smoke 部署身份字段（environment-deploy）」无活跃提案分支同一口径；不写任何提案 marker。
+
+### smoke / deploy-done / deploy 新增错误码
+
+- `ENV_MODULE_MISMATCH`（退出码 1，stderr error envelope）：`error.details` = `{ module, environment, module_environments }`，`module_environments` 为目标模块的环境集合 E(m)（未声明时为 `[]`）。
+- `ENV_GATE_REFERENCE_UNKNOWN`：启用时也由 `deploy-done` / `smoke` / `deploy` 在任何写入前输出，`error.details` = `{ module, invalid_references }`。
+
+### `env list` / `env show` 环境条目 `modules`（可选）
+
+启用按模块区分时，每个环境条目新增 `modules: string[]`——在 `deployment_gates.<module>.environments` 中声明了该环境（按 id 或别名解析）的模块 id，按 `logos-project.yaml` 模块顺序；无模块声明时为 `[]`。未启用时不输出。`env check` 的 data 不变。
+
+### `next --auto` 的 smoke 命令文本
+
+`### 11.2 auto_execute` 表中 `ready-to-smoke` 一行的 `command` 取值细化：活跃提案 `DEPLOY_DONE` 为合法新格式且 `environment` 非空时为 `openlogos smoke --env <environment>`；旧空格式、`environment` 为 null 或读取失败时仍为 `openlogos smoke`。与是否启用按模块区分无关；字段集合与类型不变。

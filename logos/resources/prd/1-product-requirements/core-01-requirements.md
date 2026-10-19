@@ -3631,3 +3631,69 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 - 功能规格：§2.97。
 - 场景：`core-S09-change-management.md`「S09-H 混合生命周期项目中 initial 模块免提案写入」。
 - 测试：`core-S09-test-cases.md`「S09 guard 按模块生命周期判定测试」（UT-S09-467～UT-S09-480、ST-S09-206～ST-S09-209）；smoke：SMOKE-core-285～SMOKE-core-288。
+
+## S41/S19/S21/S42 按模块区分环境与 smoke 验收补充
+
+> 来源变更：module-scoped-env-smoke（决策 C01、C02；proposal-r1 F1、F2 处置）。判据的权威定义见 `spec/environments.md` §14，功能规格 §2.98。
+
+### 场景定义
+
+- **触发条件**：一个仓库按 OpenLogos 模块承载多个子系统（如 runlogos 的桌面端 `core` 与 Team 版 `team`），其中一个模块需要环境登记表做部署门禁与部署后 smoke，另一个模块没有登记环境、也不需要这些门禁。
+- **用户价值**：Team 可以使用 OpenLogos 的环境登记、部署与 smoke 门禁，而不拖累 core：core 的 `deploy-done` / `smoke` 不再因登记表存在而被 `ENV_REQUIRED` / `ENV_UNKNOWN` 拦住；Team 的 smoke 只覆盖 Team 自己的用例与命令；一个模块的提案不会被记成部署到另一个模块的环境；环境引用写错不会悄悄放松门禁。`next --auto` 生成的 smoke 命令带上 `DEPLOY_DONE` 记录的环境，不再在有登记表的项目上必然 `ENV_REQUIRED`。
+- **优先级**：P1
+- **主路径**：模块在 `logos-project.yaml` 的 `deployment_gates.<module>.environments` 声明自己用哪些环境、在 `logos.config.json` 的 `smoke.modules.<id>` 配置自己的 smoke 命令；只要有模块声明了其中之一即启用按模块区分；`deploy-done` / `smoke` / `deploy` 按目标模块的环境集合 E(m) 判定，smoke 按目标模块确定应覆盖用例与命令，JSON 顶层新增 `scope`；单模块项目与都没声明的多模块项目行为不变。
+
+### 验收条件
+
+#### 正常：未启用的项目行为不变
+- **GIVEN** 单模块项目带登记表；或多模块项目，没有任何模块声明 `deployment_gates.<module>.environments`，也没有 `smoke.modules`
+- **WHEN** 执行 `deploy-done`、`smoke`、`deploy`、`env list`、`env show`、`next --format json`
+- **THEN** 判定、退出码、输出与 JSON 与引入本能力前逐字节一致（`next --auto` 带 `--env` 的修复除外），JSON 不输出 `scope` 与 `modules`
+
+#### 正常：未声明环境的模块按无登记表处理
+- **GIVEN** 登记表存在 `team-prod`；`team` 声明 `environments: [team-prod]`；`core` 未声明；core 有活跃提案处于 ready-to-deploy
+- **WHEN** 执行 `openlogos deploy-done`（不传 `--env`），或 `--env local-macos`（未登记）
+- **THEN** 落标成功，`DEPLOY_DONE.environment` 为 null 或原始标签，不写部署账本；随后 `openlogos smoke`（不传 `--env`）照常执行；`deploy-done --env team-prod` 则报 `ENV_MODULE_MISMATCH`、零写入；`smoke --env team-prod` 不报错，按环境归属进入 team 的版本上下文（见下文「其他模块有活跃提案时的版本部署与 smoke」）
+
+#### 异常：声明了环境的模块只能用自己的环境
+- **GIVEN** 同上，team 有活跃提案
+- **WHEN** 执行 `deploy-done --env prod`（另一个已登记、不属于 team 的环境）或不传 `--env`
+- **THEN** 分别报 `ENV_MODULE_MISMATCH`（列出 E(team)）与 `ENV_REQUIRED`，均零写入；`--env team-prod` 按既有登记表规则执行（含受门环境拒绝）
+
+#### 异常：环境引用失效不降级（proposal-r1 F1）
+- **GIVEN** team 声明的别名 `team-production` 已从登记表删除（或拼错），E(team) 全部失效；`team-prod` 配置了 `require_approval`
+- **WHEN** team 有活跃提案时执行 `deploy-done --env team-prod`、`smoke --env team-prod`、`deploy --env team-prod`
+- **THEN** 三者均在任何执行与写入前报 `ENV_GATE_REFERENCE_UNKNOWN`（点名模块与失效引用），不得按「未声明」降级通过；core 的命令不受 team 失效引用影响
+
+#### 正常：deploy 默认通道按环境归属
+- **GIVEN** core 活跃提案处于 ready-to-deploy，core 未声明环境
+- **WHEN** 执行 `openlogos deploy --env team-prod --ref <commit>`（不写 `--channel`）
+- **THEN** 走版本通道，不读写 core 提案任何文件；显式 `--channel proposal` 报 `ENV_MODULE_MISMATCH`
+
+#### 正常：其他模块有活跃提案时的版本部署与 smoke（proposal-r1 F2）
+- **GIVEN** core 有尚未部署的活跃提案；team 声明 `team-prod`，`smoke.modules.team.command` 已配置
+- **WHEN** 执行 `deploy --env team-prod --ref <commit>` 成功后，执行 `smoke --env team-prod`
+- **THEN** smoke 目标模块为 team、部署上下文为版本上下文：不套用 core 提案前置、不读写 core 的 `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL`，部署身份取账本中 team-prod 最近一条 deploy 记录，只追加账本 smoke 行（slug 为 null），执行 team 的 smoke 命令、只覆盖 team 用例；core 提案的 `proposal_step` 与全部标记保持不变
+
+#### 正常：smoke 用例与命令按模块
+- **GIVEN** smoke 规格有 `core-smoke-test-cases.md`、`team-smoke-test-cases.md` 与全局 `shared-smoke-test-cases.md`；`smoke.modules.team` 配置了 `command`
+- **WHEN** team 提案执行 `smoke --env team-prod`
+- **THEN** 应覆盖用例 = team 前缀与全局规格中的 `SMOKE-*`，加上 team 提案自身新增或修改的 smoke 用例（即使属于 core 规格，其结果保留并参与覆盖与失败判定）；未被本提案触达的 core 用例不计入；执行 team 命令并注入 `OPENLOGOS_SMOKE_MODULE=team`；结果行中的 core 用例被忽略并计入 `scope.out_of_scope_result_count`；JSON 输出 `scope.mode=module`、`scope.module=team`
+
+#### 正常：next --auto 带 --env
+- **GIVEN** 活跃提案处于 ready-to-smoke，`DEPLOY_DONE.environment` 为 `test`
+- **WHEN** 执行 `openlogos next --auto --format json`
+- **THEN** `auto_execute.command` 为 `openlogos smoke --env test`；`DEPLOY_DONE` 为旧空格式或 `environment` 为 null 时为 `openlogos smoke`
+
+### 非目标
+
+- 不给登记表环境条目增加 `module` 字段（C01 否决项）；不新增 `--module` 参数。
+- 不做「模块只有一个环境就自动选它」的推断。
+- 不改 RunLogos driver；不 npm publish。
+
+### 追溯
+
+- 规范：`spec/environments.md` §2.3、§8、§14；`spec/cli-json-output.md`「smoke / env / next 按模块区分增量」；`spec/test-results.md`「按模块限定 smoke 范围的运行约定」；`spec/logos.config.schema.json`（`smoke.modules`）。
+- 功能规格：§2.98。
+- 场景：S41「按模块的环境归属」、S19「按模块限定 smoke」、S21「按模块的环境校验」、S42「按环境归属的部署通道」。
+- 测试：UT-S41-24 起、ST-S41-07 起、UT-S19-74 起、ST-S19-30 起、UT-S21-20 起、UT-S42-26 起；smoke：SMOKE-core-289 起。

@@ -59,6 +59,8 @@ environments:
 
 `logos/logos-project.yaml` 中 `deployment_gates.<module>.environments` 保留原语义「本模块需要覆盖的环境」。登记表存在时，`env check` 校验其中每一项都能按 §3 解析到登记表中的环境，解析不到报 `ENV_GATE_REFERENCE_UNKNOWN`；登记表不存在时不做该校验。环境定义不写入 `logos-project.yaml`。
 
+**按模块区分（module-scoped-env-smoke，决策 C01）**：多模块项目中，该字段同时是「环境归属哪个模块」的唯一来源（登记表格式不变、不新增 `module` 字段）。只要有模块声明了非空 `environments`（或配置了 `smoke.modules`），即按 §14 启用按模块区分：`deploy-done`、`smoke`、`deploy` 按目标模块的环境集合 E(m) 判定；未声明环境的模块按「没有登记表」的原逻辑处理；声明含失效引用的模块，运行命令时同样报 `ENV_GATE_REFERENCE_UNKNOWN` 并拒绝，不降级（§14.2）。单模块项目与都没声明的多模块项目不受影响。
+
 ## 3. 环境解析（`--env`）
 
 1. **登记表不存在**：`--env <label>` 为自由标签，不校验，原样使用。
@@ -262,10 +264,12 @@ smoke 记录的 `verified` 为 `true` 当且仅当同时满足：`result=pass`�
 | `ENV_REGISTRY_INVALID` | error | 登记表存在但非法（§2.2） | 1 |
 | `ENV_FIELD_INVALID` | error | `env check` 中单个字段非法（含 `deploy` 子字段，§11.2；`promote_from` / `require_approval`，§12.1；顶层 `proposal_default_env`，§13.2，此时不带 `environment`） | 1 |
 | `ENV_DUPLICATE_ID_OR_ALIAS` | error | id / alias 不区分大小写冲突 | 1 |
-| `ENV_GATE_REFERENCE_UNKNOWN` | error | `deployment_gates.<module>.environments` 引用未登记环境 | 1 |
+| `ENV_GATE_REFERENCE_UNKNOWN` | error | `deployment_gates.<module>.environments` 引用未登记环境：`env check` 逐项报告；按模块区分启用时，命令的目标模块声明含失效引用，`deploy-done` / `smoke` / `deploy` 在任何写入与执行前拒绝（§14.2） | 1 |
+| `ENV_MODULE_MISMATCH` | error | 按模块区分启用时（§14），`--env` 不属于目标模块的环境集合 E(m)；`deploy-done` 中未声明环境的提案模块传入另一模块已声明的环境（`smoke` 不适用，按环境归属路由，§14.3）；显式 `--channel proposal` 而环境不属于提案模块。`error.details` 含 `module`、`environment` 与 `module_environments` | 1 |
 | `ENV_SECRET_MISSING` | error | `secrets` 声明的变量名在当前进程环境中不存在 | 1 |
 | `ENV_PROBE_FAILED` | error | `--probe` 时请求失败、超时或非 2xx | 1 |
 | `ENV_UNKNOWN_FIELD` | warning | 登记表含未知字段 | 不影响 |
+| `smoke_module_unknown` | warning | `logos.config.json` 的 `smoke.modules.<id>` 中 `<id>` 未在 `logos-project.yaml` 登记，该项被忽略（§14.5） | 不影响 |
 | `ENV_UNKNOWN` | error | `--env` 或 `env show` 参数解析不到 | 1 |
 | `ENV_REQUIRED` | error | 登记表存在时 `deploy-done` / `smoke` / `deploy` / `approve` 未传 `--env` | 1 |
 | `ENV_REF_UNRESOLVED` | error | `deploy-done --ref` / `deploy --ref` / `approve --ref` 无法解析为 commit | 1 |
@@ -517,3 +521,84 @@ openlogos approve --env <id|alias> --ref <revision> [--note <文字>] [--format 
 
 - 0.16.5 及更早版本读取写有该字段的登记表时，只多一条 `ENV_UNKNOWN_FIELD` 警告（`field=proposal_default_env`），其余行为不变；change-writer 旧规则仍逐案询问目标环境。
 - 账本格式与记录字段不变，无数据迁移。
+
+## 14. 按模块区分环境与 smoke（module-scoped-env-smoke）
+
+来源变更 module-scoped-env-smoke（决策 C01；proposal-r1 F1、F2）。一个仓库按模块承载多个子系统（如 runlogos 的桌面端 `core` 与 Team 版 `team`）时，登记表（§2）与 smoke 不再对全项目一刀切：模块在 `deployment_gates.<module>.environments` 声明自己用哪些环境，在 `logos.config.json` 的 `smoke.modules.<id>` 配置自己的 smoke 命令。环境归属只有这一个来源，登记表格式不变（C01）。
+
+### 14.1 启用条件
+
+按顺序取第一条成立的，**先于任何解析**：
+
+1. 项目只登记了一个模块 → **未启用**；
+2. 没有任何模块声明非空 `deployment_gates.<module>.environments`，且 `logos.config.json` 没有任何 `smoke.modules.<id>` → **未启用**；
+3. 其余 → **启用**。
+
+未启用时 `deploy-done`、`smoke`、`deploy`、`env`、`next` 的判定与输出与引入本节之前一致（§14.7 `next` 修复除外），JSON 不输出 `scope` 与 `modules`。
+
+### 14.2 环境集合 E(m) 与引用失效
+
+- **E(m)**：`deployment_gates.<m>.environments` 逐项按 §3（id 或别名，不区分大小写）解析到登记表环境 id 的集合。
+- **未声明**：`environments` 缺失或为空数组。只有这种模块按 §14.4「未声明环境的模块」处理。
+- **引用失效**（proposal-r1 F1）：声明非空，但含任一无法解析的项（例如别名已从登记表删除或拼错）。命令的**目标模块**（§14.3）属于此类时，`deploy-done`、`smoke`、`deploy` 在执行任何命令、写任何 marker 或账本**之前**拒绝，报 `ENV_GATE_REFERENCE_UNKNOWN`（退出码 1，零写入，消息点名模块与失效引用）。不得降级为「未声明」，也不得忽略失效项后继续——否则一次配置错误就能绕过受门环境的 `DEPLOY_DONE_GATED_ENV`（§12.6）。`env check` 照旧报同一错误码。其他模块的失效引用不影响当前目标模块的命令。
+- 登记表不存在而启用（只配置了 `smoke.modules`）时，全部模块视为未声明，E(m) 为空，不做引用校验。
+
+### 14.3 目标模块与部署上下文
+
+启用时，每个命令先确定**目标模块**，再确定**部署上下文**（proposal-r1 F2：版本通道不等于「没有活跃提案」）：
+
+1. `--env` 解析出的环境恰好属于一个模块 m 的 E(m) → 目标模块为 m；
+2. 否则（未传 `--env`、环境不属于任何模块、或属于多个模块的共享环境）：有活跃提案时取提案模块（`resolveProposalModuleContext`：`proposal.md` 头 → guard `module`）；无活跃提案时**不限定模块**，按全项目口径（等同未启用）。共享环境包含提案模块时同样取提案模块。
+
+部署上下文：
+
+- **提案上下文**：存在活跃提案且目标模块等于提案模块。沿用既有提案前置（§2.67.1 系列）、`DEPLOY_DONE` 读取与分类（§4.2）、提案标记写入（§5.1）。
+- **版本上下文**：目标模块不等于提案模块，或没有活跃提案。**不**套用活跃提案的前置检查，**不读不写**任何提案标记（`DEPLOY_DONE`、`SMOKE_PASS`、`SMOKE_FAIL`）；部署身份取账本中该环境最近一条 deploy 记录（与 §4.2「部署身份核对」无活跃提案分支同一规则）；smoke 只追加账本 smoke 行（`slug` 为 null）；使用目标模块的 smoke 命令与用例（§14.5）。
+- 版本上下文中，目标模块由第 1 条确定时，E(m) 必然非空；不限定模块时按全项目口径。
+
+### 14.4 各命令行为（启用时）
+
+**E(m) 非空的目标模块**：`--env` 必须解析为已登记环境且属于 E(m)，否则报 `ENV_MODULE_MISMATCH`（退出码 1，零写入，消息列出 E(m)）；不传 `--env` 仍报 `ENV_REQUIRED`；不做「只有一个环境就默认选它」的推断（§3）。受门环境规则（§12）不变。
+
+**未声明环境的目标模块**（如 runlogos 的 core）：`deploy-done` 与 `smoke` 按「没有登记表」的原逻辑处理——`--env` 可选、只作原始标签写入 `DEPLOY_DONE.environment`（§4.1），不写部署账本、不做环境证据门禁与部署身份核对。`--env` 解析为**另一模块已声明**的环境时，两个命令按各自的目标模块规则分流（delta-r1 F1）：
+
+- `deploy-done` 只服务活跃提案、目标模块恒为提案模块，因此报 `ENV_MODULE_MISMATCH`，不得把本模块提案标记为部署到他模块环境；
+- `smoke` 按 §14.3 第 1 条以环境归属确定目标模块，目标模块是声明该环境的模块而不是未声明的提案模块，进入该模块的版本上下文执行（执行该模块的命令与用例、部署身份取账本、不读写提案标记），不报错。是否已为提案模块落标（`DEPLOY_DONE` 是否存在）不影响这一路由。
+
+**`deploy-done`**：目标模块按 §14.3 第 2 条取提案模块（`deploy-done` 只服务活跃提案）；校验顺序为引用失效（§14.2）→ 本节归属 → 既有前置与受门环境检查。
+
+**`smoke`**：按 §14.3 选上下文后执行；提案上下文下 E(m) 非空时沿用 §4.2、§6 的全部规则；版本上下文见 §14.3。
+
+**`deploy`**：
+
+- 默认通道：活跃提案处于 `ready-to-deploy`，且（未启用，或 `--env` ∈ E(提案模块)）→ 提案通道；否则版本通道。提案模块未声明环境时默认通道恒为版本通道。
+- 显式 `--channel proposal` 而 `--env` 不属于 E(提案模块)（含提案模块未声明环境）→ `ENV_MODULE_MISMATCH`。
+- 版本通道部署某模块的环境不读写任何提案文件（§11.5），即使其他模块有活跃提案。
+- 目标模块引用失效时按 §14.2 在任何部署动作前拒绝。
+
+**`env list` / `env show`**：环境条目新增 `modules`（声明了该环境的模块 id 列表，按 `logos-project.yaml` 模块顺序）。`env check` 不变（已逐项校验引用）。
+
+### 14.5 smoke 用例范围与命令
+
+- **用例范围**（目标模块为 m，delta-r1 F2）：最终应覆盖集合 S = 目标模块 `m-` 前缀规格（已登记模块 id 最长匹配）中的 `SMOKE-*` ∪ 不带任何已登记模块前缀的全局规格中的 `SMOKE-*` ∪ C，其中 C 为**提案上下文**下本提案新增或修改的 smoke 用例（可能属于其他模块前缀规格）；**版本上下文**下 C 为空——不从无关的活跃提案读取变更用例，也不回退读取全局 guard。覆盖统计、uncovered、失败判定与结果过滤**只用这一个集合 S**。其他模块前缀规格中不属于 C 的用例不计入。不限定模块时用全部用例（现状）。
+- **范围外结果**：结果行的 ID 在 smoke 规格中已定义、但不在 S 中时忽略不计，计数进 `scope.out_of_scope_result_count`；在 S 中的结果一律保留并参与覆盖与失败判定（因此 C 中属于其他模块前缀的变更用例：pass 满足覆盖、fail 阻断门禁、缺结果仍 uncovered）；未定义 ID 照旧判定。与 verify 的范围过滤同一口径（只忽略「已定义且不在最终范围内」的 ID，不按模块前缀无条件丢弃）。
+- **命令**：`logos.config.json` 新增可选 `smoke.modules.<id>`，字段 `command`、`result_path`、`report_path` 与项目级同语义。目标模块为 m 且配置了 `smoke.modules.<m>` 时用其字段，未写的字段回落项目级；否则用项目级 smoke 配置。`<id>` 未在 `logos-project.yaml` 登记时给出警告 `smoke_module_unknown` 并忽略该项，不影响门禁。沙箱规则（`smoke.sandbox_mode`）沿用项目级。
+- **注入**：目标模块确定时以 `OPENLOGOS_SMOKE_MODULE=<m>` 运行命令；不限定模块时不注入。`OPENLOGOS_SMOKE_ENV`（§6）不变。
+- **runner 覆盖诊断**：只按本次实际所用命令判定 runner 缺失 / reporter 缺失 / uncovered。
+
+### 14.6 JSON 与报告
+
+- smoke JSON 顶层新增可选 `scope`：`{ mode: "module" | "project", module, context: "proposal" | "version", reasons, fallback_reason, out_of_scope_result_count }`，启用时输出，未启用时不输出。
+- smoke 报告 Summary 新增「范围」一行（启用时）。
+- `env list` / `env show` 条目的 `modules` 只在启用时输出。
+
+### 14.7 `next --auto` 带 `--env`（与是否启用无关）
+
+`next --auto` 为 smoke 生成 `auto_execute.command` 时（现为 `ready-to-smoke`），活跃提案 `DEPLOY_DONE` 合法且 `environment` 非空 → `openlogos smoke --env <environment>`；`DEPLOY_DONE` 为旧空格式、`environment` 为 null 或读取失败 → 保持 `openlogos smoke`。复用 `readDeployDoneMarker`，不新增 marker。
+
+### 14.8 兼容性与不变量
+
+- 未启用的项目（单模块；多模块但没有任何模块声明环境且没有 `smoke.modules`）：判定、输出与 JSON 逐字节不变（§14.7 除外：有登记表的项目原命令必然 `ENV_REQUIRED`，无登记表项目 `DEPLOY_DONE.environment` 为 null 时命令不变）。
+- 登记表、`DEPLOY_DONE`、账本与 smoke 结果文件格式不变；新增配置字段全部可选。
+- 引用失效永不降级为未声明；版本上下文永不读写提案标记、也不读取无关提案的变更用例；一个模块的提案永不被标记为部署到另一模块已声明的环境；smoke 的应覆盖集合与结果过滤永远是同一个集合 S。
+- 不新增 `--module` 参数；不给登记表环境条目加 `module` 字段（C01 否决项）。

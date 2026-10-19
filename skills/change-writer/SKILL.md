@@ -709,7 +709,8 @@ deployment, release, external_commitment, acceptance
    - 用户在本次需求中明确说了目标环境，或明确说「这次不部署」：按用户原话，`source: user`；
    - JSON 含 `proposal_default_env`：目标环境取该值，`source: policy`，reason 写明「登记表 proposal_default_env」，**不再询问目标环境**；
    - 无该字段、无登记表，或命令报 `ENV_REGISTRY_INVALID`：维持必问（登记表非法时同时提示用户先修复）。
-   有登记表时，proposal「部署影响」的「影响环境」写环境 id。
+   - **多模块项目按模块区分（module-scoped-env-smoke，`spec/environments.md` §14）**：`env list --format json` 的环境条目带 `modules` 字段时即已启用。此时 `proposal_default_env` 只在其环境条目的 `modules` 含提案模块（属于提案模块的环境集合 E(m)）时采用为目标环境（`source: policy`）；提案模块没有声明任何环境（没有任何环境条目的 `modules` 含它）时，按「没有登记表」处理——「影响环境」写自由文本，目标环境照旧询问；提案模块声明了环境但不含默认值时照旧询问，提问选项只列 E(m)。不得把提案的目标环境写成另一模块声明的环境。
+   有登记表时，proposal「部署影响」的「影响环境」写环境 id（提案模块未声明环境的多模块项目除外，见上条）。
 4. **部署方式、回滚、smoke 证据逐项判断**。依据只认已合并规格与结构化配置（它们合并时已经过 plan-exit 人工批准）；本提案自己新写或要实质修改的部署方案、smoke 命令**不算依据**，该项视为缺依据：
 
    | 事项 | 有依据（可免问）的条件 | 必须提问的情况 |

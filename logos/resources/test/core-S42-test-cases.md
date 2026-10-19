@@ -105,3 +105,17 @@
 - 首次安装：UT-S42-23。
 - 部署工作树删除后的安装态身份核对与篡改负例：UT-S42-24。
 - 成功部署后手工回装可检出、经 `deploy --ref` 恢复一致：ST-S42-06。
+
+## 六、按环境归属的部署通道测试（module-scoped-env-smoke）
+
+> 覆盖场景 `core-S42-environment-deploy.md`「按环境归属的部署通道（module-scoped-env-smoke）」，功能规格 §2.98.5，`spec/environments.md` §11.5、§14.4，proposal-r1 F1、F2。既有 UT-S42-01～UT-S42-25、ST-S42-01～ST-S42-08 不变，作为零回归守护（含单模块项目默认通道规则）。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S42"`；「提案文件不变」以调用前后提案目录字节快照比对取证。
+>
+> **夹具 MM**：`mktemp -d` 一次性 git 项目，`logos-project.yaml` 登记 `core`（launched，不声明 `deployment_gates`）与 `team`（initial，`deployment_gates.team.environments: [team-prod]`）；登记表 `logos/environments.yaml` 含 `test`、`prod`、`team-prod`（别名 `Team-Production`），`team-prod` 配置 `deploy`（script，夹具内记录型脚本）；smoke 规格为 `core-smoke-test-cases.md`、`team-smoke-test-cases.md` 与全局 `shared-smoke-test-cases.md`；`smoke.command` 与 `smoke.modules.team.command` 为两个记录型 runner（把被调用的模块、`OPENLOGOS_SMOKE_MODULE`、`OPENLOGOS_SMOKE_ENV` 写入项目外一次性调用日志，并为各自模块用例写结果）。**夹具 S1**：单模块项目带同一登记表；**夹具 M0**：同 MM 但不写任何 `deployment_gates` 与 `smoke.modules`。「零回归基准」为修改前（0.16.9）CLI 对同一输入的实测输出，入库为夹具，不在测试内复述。
+
+### 单元测试（UT）
+
+| ID | 描述 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|---------|----------|---------|
+| UT-S42-26 | 默认通道按环境归属 | MM：① core 活跃提案处于 ready-to-deploy；② team 活跃提案处于 ready-to-deploy | ① `deploy --env team-prod --ref <commit>`（不写 `--channel`）；② `deploy --env team-prod` | ① 版本通道成功，账本记录 `slug=null`、`channel=version`，core 提案目录字节不变、`proposal_step` 仍为 ready-to-deploy；② 提案通道，与既有提案通道行为一致（写报告、`DEPLOY_DONE`、勾选） |
+| UT-S42-27 | 显式提案通道的归属校验 | MM：core 活跃提案处于 ready-to-deploy | `deploy --env team-prod --channel proposal`；`deploy --env test --channel proposal` | 两者均 `ENV_MODULE_MISMATCH`（core 未声明环境，任何登记环境都不属于 E(core)），零执行、零写入、未取环境锁 |
+| UT-S42-28 | 引用失效在部署前拒绝 | MM 变体：team 声明 `[team-prod, team-old]`，`team-old` 未登记（引用失效），`team-prod` 仍有效归属 team；分别在无活跃提案与 core 活跃提案（ready-to-deploy）下执行 | `deploy --env team-prod --ref <commit>` | 目标模块为 team 且其声明含失效引用：报 `ENV_GATE_REFERENCE_UNKNOWN`（`invalid_references=["team-old"]`），在取环境锁与执行前拒绝，部署脚本未运行、账本字节不变、core 提案目录字节不变 |

@@ -1185,3 +1185,76 @@ sequenceDiagram
 - 需求：「S42: 按环境执行部署与回滚」验收条件「smoke 部署身份被取代」。
 - 功能规格：§2.93.4；规范：`spec/environments.md` §4.2、§5.1、§5.2、§8；`spec/cli-json-output.md`「smoke / env / status 部署字段增量（environment-deploy）」。
 - 测试：UT-S19-72、UT-S19-73、ST-S19-29。
+
+## 按模块限定 smoke（module-scoped-env-smoke）
+
+> 来源变更：module-scoped-env-smoke（决策 C01；proposal-r1 F2）。权威定义见 `spec/environments.md` §14.3、§14.5～§14.7，`spec/test-results.md`「按模块限定 smoke 范围的运行约定」，功能规格 §2.98。本节在既有前置门、环境一致性与部署身份核对之前插入「目标模块与部署上下文」判定，并订正 `--auto` 的 smoke 命令文本。
+
+### 参与者
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| D | 用户 / AI driver | 执行 `openlogos smoke --env <id>` |
+| CLI | `openlogos smoke` | 判启用 → 定目标模块与上下文 → 选用例与命令 → 执行 → 判定 |
+| P | 活跃提案目录 | `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL` |
+| L | 部署账本 | 环境最近一条 deploy 记录、smoke 记录 |
+| X | smoke 命令 | `smoke.modules.<m>.command` 或项目级 `smoke.command` |
+
+### 时序
+
+```mermaid
+sequenceDiagram
+    participant D as 用户或 AI driver
+    participant CLI as openlogos smoke
+    participant P as 活跃提案目录
+    participant L as 部署账本
+    participant X as smoke 命令
+
+    D->>CLI: Step 1: smoke --env team-prod
+    CLI->>CLI: Step 2: 启用判定，未启用则走既有流程
+    CLI->>CLI: Step 3: 目标模块，team-prod 唯一属于 team 则取 team
+    alt 目标模块等于活跃提案模块
+        CLI->>P: Step 4a: 提案上下文，既有前置与 DEPLOY_DONE 分类
+    else 目标模块不同于提案模块或无活跃提案
+        CLI->>L: Step 4b: 版本上下文，取该环境最近 deploy 记录作为部署身份，不读提案标记
+    end
+    CLI->>CLI: Step 5: 应覆盖用例为 team 前缀与全局规格，选 smoke.modules.team 或项目级命令
+    CLI->>X: Step 6: 清空结果文件后执行，注入 OPENLOGOS_SMOKE_MODULE=team 与 OPENLOGOS_SMOKE_ENV
+    X-->>CLI: Step 7: 结果行
+    CLI->>CLI: Step 8: 只保留应覆盖集合 S 内的结果，其余已定义 ID 忽略并计数，按 S 判定覆盖与门禁
+    alt 提案上下文
+        CLI->>L: Step 9a: 追加账本 smoke 行
+        CLI->>P: Step 10a: 写 SMOKE_PASS 或 SMOKE_FAIL
+    else 版本上下文
+        CLI->>L: Step 9b: 只追加账本 smoke 行，slug 为 null，不写任何提案标记
+    end
+    CLI-->>D: Step 11: 输出 JSON，顶层带 scope
+```
+
+### 步骤说明
+
+1. **Step 2**：启用条件见 `spec/environments.md` §14.1；未启用时本节全部步骤不发生，行为逐字节不变。
+2. **Step 3**：`--env` 唯一属于模块 m 时目标模块为 m；未传 `--env`、环境不属于任何模块或为共享环境时，有活跃提案取提案模块，无活跃提案不限定模块（全部用例、项目级命令）。目标模块声明含失效引用时在此拒绝，`ENV_GATE_REFERENCE_UNKNOWN`。
+3. **Step 4a**：提案上下文沿用既有四项前置（smoke 需求、部署决策、`DEPLOY_DONE`、`[deploy]` 全勾）、`DEPLOY_DONE` 分类与部署身份核对。
+4. **Step 4b**（proposal-r1 F2）：版本上下文不套用活跃提案前置——core 有未部署的活跃提案时，team 版本部署后的 smoke 不会因 core 缺 `DEPLOY_DONE` 被 `SMOKE_DEPLOY_NOT_DONE` 拒绝；部署身份与无活跃提案分支同一规则。
+5. **Step 5～6**：用例范围与命令选择见 `spec/environments.md` §14.5；runner 覆盖诊断只按实际所用命令判定。
+6. **Step 5、8**（delta-r1 F2）：应覆盖集合 S = 目标模块前缀规格 ∪ 全局规格 ∪ C，C 在提案上下文为本提案新增或修改的 smoke 用例（可属其他模块前缀），在版本上下文为空（不读取无关活跃提案的变更用例）。覆盖与结果过滤用同一个 S：已定义但不在 S 中的结果计入 `scope.out_of_scope_result_count` 并忽略；S 内结果全部保留——其他模块前缀的变更用例 pass 满足覆盖、fail 阻断、缺结果 uncovered；未定义 ID 照旧判定。
+7. **Step 9b**：版本上下文不读不写 `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL`，活跃提案的 `proposal_step` 保持不变。
+8. **未声明环境的目标模块**（如 core）：按无登记表原逻辑，`--env` 可选、只作标签，不做环境证据门禁与部署身份核对，不写账本。core 提案下 `smoke --env team-prod` 不属于此类：Step 3 已按环境归属把目标模块定为 team，进入版本上下文（delta-r1 F1）。
+
+### 订正：`--auto` 的 smoke 命令
+
+前文「`--auto` 下宿主 driver 自动运行 `openlogos smoke`」细化为：`next --auto` 在 `ready-to-smoke` 生成的 `auto_execute.command`，于活跃提案 `DEPLOY_DONE` 记录了 `environment` 时为 `openlogos smoke --env <environment>`；旧空格式、`environment` 为 null 或读取失败时为 `openlogos smoke`。与是否启用按模块区分无关（`spec/environments.md` §14.7）。
+
+### 异常与边界
+
+- **模块不确定**：`scope.mode=project`，`fallback_reason` 取 `no_env_no_proposal`、`env_unattributed` 或 `env_shared`，用全部用例与项目级命令。
+- **smoke.modules 未登记的模块 id**：警告 `smoke_module_unknown`，忽略该项，不影响门禁。
+- **模块未配置 smoke.modules**：用项目级命令，用例仍按目标模块限定。
+- **core 有活跃提案、team 版本部署后 smoke**：见 Step 4b、9b；core 的阶段与全部标记不变。
+- **环境不属于目标模块**：`ENV_MODULE_MISMATCH`，零副作用。
+
+### 追溯
+
+- 规范：`spec/environments.md` §14.3、§14.5～§14.7；`spec/cli-json-output.md`「smoke / env / next 按模块区分增量」；`spec/test-results.md`「按模块限定 smoke 范围的运行约定」。
+- 测试：`core-S19-test-cases.md`「按模块限定 smoke 与 next 带 --env 测试」（UT-S19-74 起、ST-S19-30 起）；smoke：SMOKE-core-289 起。

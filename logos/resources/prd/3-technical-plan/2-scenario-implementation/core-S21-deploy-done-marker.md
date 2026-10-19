@@ -256,3 +256,49 @@ sequenceDiagram
 
 - 场景：S43（`core-S43-environment-promotion-approval.md`）；功能规格：§2.95.4；决策：D14。
 - 测试：`core-S43-test-cases.md` UT-S43-11。
+
+## 按模块的环境校验（module-scoped-env-smoke）
+
+> 来源变更：module-scoped-env-smoke（决策 C01；proposal-r1 F1）。权威定义见 `spec/environments.md` §14.2、§14.4，功能规格 §2.98.3、§2.98.5。本节在「环境校验、版本声明与部署账本」的 `--env` 解析之前插入按模块判定；未启用按模块区分的项目不变。
+
+### 规则
+
+`deploy-done` 只服务活跃提案，目标模块为提案模块（`resolveProposalModuleContext`）。启用时按顺序：
+
+1. **引用失效**：提案模块的 `deployment_gates.<m>.environments` 含任一解析不了的项 → `ENV_GATE_REFERENCE_UNKNOWN`（退出码 1），在 `--ref` 解析、`[deploy]` 勾选、账本与 `DEPLOY_DONE` 写入之前拒绝，零写入；不降级为未声明，因此无法借失效声明绕过受门环境的 `DEPLOY_DONE_GATED_ENV`。
+2. **未声明环境**（`environments` 缺失或为空数组）：按「没有登记表」原逻辑落标——`--env` 可选，`DEPLOY_DONE.environment` 为原始标签或 null，不写部署账本；但 `--env` 解析为另一模块已声明的环境时报 `ENV_MODULE_MISMATCH`，不得把本模块提案标记为部署到他模块环境。
+3. **E(m) 非空**：未传 `--env` → `ENV_REQUIRED`；`--env` 不属于 E(m)（含未登记）→ `ENV_MODULE_MISMATCH`（`details.module_environments` 列出 E(m)）；属于 E(m) → 进入既有流程（受门环境拒绝、`--ref` 解析、快照与写入）。
+
+### 时序
+
+```mermaid
+sequenceDiagram
+    participant U as 用户或 AI
+    participant CLI as openlogos deploy-done
+    participant Y as logos-project.yaml
+    participant P as 活跃提案目录
+
+    U->>CLI: Step 1: deploy-done --env X
+    CLI->>Y: Step 2: 启用判定并取提案模块的声明
+    alt 声明含失效引用
+        CLI-->>U: Step 3a: ENV_GATE_REFERENCE_UNKNOWN，零写入
+    else 未声明且 X 属于他模块
+        CLI-->>U: Step 3b: ENV_MODULE_MISMATCH，零写入
+    else 未声明
+        CLI->>P: Step 3c: 按无登记表落标，environment 为原始标签
+    else E(m) 非空且 X 不属于 E(m)
+        CLI-->>U: Step 3d: ENV_MODULE_MISMATCH，零写入
+    else X 属于 E(m)
+        CLI->>P: Step 3e: 既有流程，受门环境拒绝后快照、勾选、账本、DEPLOY_DONE
+    end
+```
+
+### 异常与边界
+
+- 未启用（单模块或无任何声明）：步骤 1～3 不发生，行为逐字节不变。
+- 拒绝一律零写入：不勾选 `[deploy]`、不清理旧 smoke 标记、不写账本与 `DEPLOY_DONE`。
+- 其他模块的失效引用不影响本提案模块的落标。
+
+### 追溯
+
+- 测试：`core-S21-test-cases.md`「按模块的环境校验测试」（UT-S21-20 起）。

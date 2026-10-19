@@ -591,3 +591,39 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 - 提案部署身份被取代（版本通道发布、后续失败或结果未知）：UT-S19-72、ST-S19-29。
 - 无活跃提案的部署身份与已验证口径：UT-S19-73。
 - 与 `openlogos deploy` 的端到端衔接（真实版本通道部署后 smoke 被拒绝）由 `core-S42-test-cases.md` 与安装态 SMOKE-core-256 覆盖。
+
+## S19 按模块限定 smoke 与 next 带 --env 测试（module-scoped-env-smoke）
+
+> 覆盖场景 `core-S19-smoke-gate.md`「按模块限定 smoke（module-scoped-env-smoke）」，功能规格 §2.98.4、§2.98.6、§2.98.7，`spec/environments.md` §14.3、§14.5～§14.7，`spec/test-results.md`「按模块限定 smoke 范围的运行约定」，`spec/cli-json-output.md`「smoke / env / next 按模块区分增量」，proposal-r1 F2。既有 S19 用例（含无登记表零回归）不变。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S19"`；「标记不变」以调用前后提案目录字节快照取证。
+>
+> **夹具 MM**：`mktemp -d` 一次性 git 项目，`logos-project.yaml` 登记 `core`（launched，不声明 `deployment_gates`）与 `team`（initial，`deployment_gates.team.environments: [team-prod]`）；登记表 `logos/environments.yaml` 含 `test`、`prod`、`team-prod`（别名 `Team-Production`），`team-prod` 配置 `deploy`（script，夹具内记录型脚本）；smoke 规格为 `core-smoke-test-cases.md`、`team-smoke-test-cases.md` 与全局 `shared-smoke-test-cases.md`；`smoke.command` 与 `smoke.modules.team.command` 为两个记录型 runner（把被调用的模块、`OPENLOGOS_SMOKE_MODULE`、`OPENLOGOS_SMOKE_ENV` 写入项目外一次性调用日志，并为各自模块用例写结果）。**夹具 S1**：单模块项目带同一登记表；**夹具 M0**：同 MM 但不写任何 `deployment_gates` 与 `smoke.modules`。「零回归基准」为修改前（0.16.9）CLI 对同一输入的实测输出，入库为夹具，不在测试内复述。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S19-74 | 最终应覆盖集合 S 的构成（delta-r1 F2） | §14.5 | MM；变体 P：team 活跃提案（提案上下文），本提案修改了 `core-smoke-test-cases.md` 中的用例 X；变体 V：core 活跃提案修改了 core 用例 Y，且无 team 活跃提案，执行 `smoke --env team-prod`（版本上下文）；变体 N：无活跃提案、不传 `--env` | 计算三种变体的应覆盖集合 | P：S = team 与全局规格的全部 `SMOKE-*` ∪ {X}，不含其他 core 用例；V：S = team 与全局规格的全部 `SMOKE-*`，不含 Y——不读取 core 提案的变更用例，也不回退读取全局 guard；N：全部用例 |
+| UT-S19-75 | 未触达的其他模块结果忽略并计数 | §14.5 | 变体 P；runner 另输出两条**未被本提案修改**的 core 用例结果与一条未定义 ID | `smoke --env team-prod --format json` | `scope.out_of_scope_result_count=2`，两条 core 结果不计入覆盖与门禁；未定义 ID 按既有规则判定 |
+| UT-S19-76 | 命令选择与注入 | §14.5 | MM；变体 A：`smoke.modules.team` 只写 `command`；变体 B：另写 `result_path`；变体 C：不配置 `smoke.modules.team` | team 提案执行 `smoke --env team-prod`；无提案不传 `--env` | A：执行 team 命令，结果路径与报告路径回落项目级，调用日志 `OPENLOGOS_SMOKE_MODULE=team`；B：读写 B 的结果路径；C：执行项目级命令、用例仍按 team 限定，`scope.command_source="project"`；不限定模块时不注入 `OPENLOGOS_SMOKE_MODULE` |
+| UT-S19-77 | 未登记模块 id 警告 | §14.5 | `smoke.modules.portal`（未登记） | `smoke --format json` | `diagnostics` 含 `smoke_module_unknown`，该项被忽略，门禁不受影响 |
+| UT-S19-78 | 未声明环境的模块按无登记表；他模块环境按归属路由（delta-r1 F1） | §14.3、§14.4 | MM；core 活跃提案已落标（`DEPLOY_DONE.environment=null`）；账本中 team-prod 最近一条为 `result=done` 的版本通道 deploy 记录 | ① `smoke`（不传 `--env`）；② `smoke --env team-prod --format json` | ① 照常执行项目级命令，不做环境证据门禁与部署身份核对，不写部署账本；② 不报 `ENV_MODULE_MISMATCH`：执行 team 命令，`scope.module="team"`、`scope.context="version"`，部署身份取自该账本记录，core 提案目录字节不变（core 已落标这一事实不改变路由）；core 提案 `deploy-done --env team-prod` 的拒绝见 UT-S21-20 |
+| UT-S19-79 | 版本上下文不读写提案标记（proposal-r1 F2） | §14.3 | MM；core 活跃提案处于 ready-to-deploy（无 `DEPLOY_DONE`）；账本中 team-prod 最近一条为 `channel=version`、`result=done` 的 deploy 记录 | `smoke --env team-prod --format json` | 不报 `SMOKE_DEPLOY_NOT_DONE`；执行 team 命令；`scope.module="team"`、`scope.context="version"`；`environment_evidence` 的 `deploy_id`、`ref` 取自该账本记录，`ledger_written=true`、账本 smoke 行 `slug=null`；core 提案目录字节不变（无 `SMOKE_PASS` / `SMOKE_FAIL`） |
+| UT-S19-80 | JSON `scope` 与报告「范围」行；未启用不输出 | §14.6 | MM 与 M0、S1 | `smoke --env team-prod --format json` 与报告；M0、S1 执行 `smoke --env test` | MM：`scope` 七个字段齐全、报告 Summary 含「范围」行；M0、S1：JSON 与报告与零回归基准逐字节相同（无 `scope`、无「范围」行） |
+| UT-S19-81 | next --auto 带 --env | §14.7 | 活跃提案处于 ready-to-smoke；`DEPLOY_DONE` 依次为：合法且 `environment="test"`、合法且 `environment=null`、0 字节旧格式、不可读 | `next --auto --format json` | 第一种 `auto_execute.command="openlogos smoke --env test"`；其余三种为 `"openlogos smoke"`；字段集合与类型不变；不传 `--auto` 时不输出 `auto_execute` |
+| UT-S19-82 | 跨模块变更用例的结果保留并参与判定（delta-r1 F2） | §14.5 | 变体 P（team 提案修改了 core 用例 X）；runner 另输出若干未触达 core 用例结果 | 三次运行，X 的结果分别为 pass、fail、不输出 | pass：X 计入覆盖，`gate.result=PASS`（其余条件满足时）；fail：X 进入 `failed_cases`，`gate.result=FAIL`；不输出：X 进入 `uncovered_cases`，门禁不通过；三次中 X 都不计入 `scope.out_of_scope_result_count`，未触达 core 结果始终被忽略并计数 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S19-30 | core 有活跃提案时 team 版本部署与 team smoke 完整链（proposal-r1 F2） | Step 1～11 | 真实 CLI；MM；core 有活跃提案且尚未部署（`proposal_step` 为 ready-to-deploy） | ① `deploy --env team-prod --ref <commit>`；② `smoke --env team-prod --format json`；③ `status --format json` | ① 版本通道成功；② 通过，执行 team 命令且只覆盖 team 与全局用例，`scope.context="version"`，部署身份取自 ① 的账本记录；③ core 提案 `proposal_step` 仍为 ready-to-deploy；core 提案目录在 ①② 前后字节不变（无 `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL`） |
+| ST-S19-31 | 未启用零回归与 next 修复 | §14.1、§14.7 | 真实 CLI；S1、M0 | ① 依次 `deploy-done --env test`、`smoke --env test --format json`；② ready-to-smoke 时 `next --auto --format json` | ① 与零回归基准逐字节相同；② `auto_execute.command="openlogos smoke --env test"`，照此命令执行成功 |
+
+### 覆盖度校验
+
+- 应覆盖集合 S（含版本上下文不读无关提案变更用例）、范围外结果、跨模块变更用例结果保留：UT-S19-74、UT-S19-75、UT-S19-82。
+- 命令选择与注入、未登记警告：UT-S19-76、UT-S19-77。
+- 未声明模块、他模块环境按归属路由（F1）：UT-S19-78。
+- 版本上下文隔离（F2）：UT-S19-79、ST-S19-30。
+- JSON 与报告、未启用零回归：UT-S19-80、ST-S19-31。
+- next 带 --env：UT-S19-81、ST-S19-31。

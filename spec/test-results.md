@@ -631,3 +631,29 @@ coverage = |covered| / |eligible|
 ### 与 reporter 的关系
 
 reporter 不需要感知模块范围：照常写全部执行过的用例结果，范围裁剪由 CLI 完成。reporter 写出了范围外模块的结果行也不会造成失败，只计入 `out_of_scope_result_count`。
+
+## 按模块限定 smoke 范围的运行约定（module-scoped-env-smoke）
+
+> 来源变更 module-scoped-env-smoke（决策 C01），功能规格 §2.98；启用条件、目标模块与部署上下文的权威定义见 `spec/environments.md` §14。本节约定 smoke runner 与结果文件在按模块区分启用时的行为，对未启用的项目（单模块；多模块但没有任何模块声明 `deployment_gates.<module>.environments` 且没有 `smoke.modules`）不产生任何变化。
+
+### 应覆盖用例
+
+- 目标模块为 m 时，最终应覆盖集合 S = 目标模块 `m-` 前缀规格（已登记模块 id 最长匹配）中的 `SMOKE-*` ∪ 不带任何已登记模块前缀的全局规格中的 `SMOKE-*` ∪ C，其中 C 为**提案上下文**下本提案新增或修改的 smoke 用例（可能属于其他模块前缀规格）；**版本上下文**下 C 为空——不从无关的活跃提案读取变更用例，也不回退读取全局 guard。其他模块前缀规格中不属于 C 的用例不计入。覆盖预检与门禁只用 S 这一个集合。
+- 不限定模块（`scope.mode=project`）时用全部 smoke 规格（现状）。
+- 覆盖预检（`smoke_runner_missing` / `smoke_reporter_missing` / `smoke_cases_uncovered`）只按本次实际所用命令与本次应覆盖用例判定。
+
+### 执行哪条命令
+
+- `logos.config.json` 的 `smoke.modules.<m>` 存在时用其 `command`、`result_path`、`report_path`，未写的字段回落项目级 `smoke.*`；不存在时用项目级配置。沙箱字段（`sandbox_mode` 等）一律沿用项目级。
+- 同一次 `openlogos smoke` 只执行一条命令（目标模块的或项目级的），不跨模块串行执行。
+
+### 注入的环境变量
+
+- 目标模块确定时注入 `OPENLOGOS_SMOKE_MODULE=<m>`，不限定模块时不注入。runner 可据此只运行本模块的用例，但 CLI 的判定不依赖 runner 是否读取该变量。
+- `OPENLOGOS_SMOKE_ENV`（目标环境注入，见上节）与 `OPENLOGOS_SMOKE_RESULT_PATH` 的规则不变；结果路径取本次所用配置。
+
+### 结果收集
+
+- 运行命令前清空本次所用的结果文件（既有行为），因此计入门禁的行都来自本次运行。
+- 结果行的 ID 在 smoke 规格中已定义、但不在 S 中时忽略不计，计数进 `scope.out_of_scope_result_count`；在 S 中的结果（含属于其他模块前缀的变更用例）一律保留，参与覆盖与失败判定；未定义 ID 照旧按既有规则判定。
+- 结果行格式、`target_environment` 与环境证据判定（`spec/environments.md` §6）不变。

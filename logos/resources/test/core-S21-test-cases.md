@@ -98,3 +98,17 @@
 
 - 「零副作用」断言以调用前后提案目录文件集合、`tasks.md` 字节与账本字节比对取证，不得只断言退出码。
 - 「逐字不变」断言以引入前实现生成的基线输出为对照。
+
+## S21 按模块的环境校验测试（module-scoped-env-smoke）
+
+> 覆盖场景 `core-S21-deploy-done-marker.md`「按模块的环境校验（module-scoped-env-smoke）」，功能规格 §2.98.3、§2.98.5，`spec/environments.md` §14.2、§14.4，proposal-r1 F1。既有 UT-S21-01～UT-S21-19、ST-S21-01～ST-S21-05 不变，作为零回归守护。测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S21"`；「零写入」以调用前后提案目录、部署账本与 `[deploy]` 勾选状态的字节快照比对取证。
+>
+> **夹具 MM**：`mktemp -d` 一次性 git 项目，`logos-project.yaml` 登记 `core`（launched，不声明 `deployment_gates`）与 `team`（initial，`deployment_gates.team.environments: [team-prod]`）；登记表 `logos/environments.yaml` 含 `test`、`prod`、`team-prod`（别名 `Team-Production`），`team-prod` 配置 `deploy`（script，夹具内记录型脚本）；smoke 规格为 `core-smoke-test-cases.md`、`team-smoke-test-cases.md` 与全局 `shared-smoke-test-cases.md`；`smoke.command` 与 `smoke.modules.team.command` 为两个记录型 runner（把被调用的模块、`OPENLOGOS_SMOKE_MODULE`、`OPENLOGOS_SMOKE_ENV` 写入项目外一次性调用日志，并为各自模块用例写结果）。**夹具 S1**：单模块项目带同一登记表；**夹具 M0**：同 MM 但不写任何 `deployment_gates` 与 `smoke.modules`。「零回归基准」为修改前（0.16.9）CLI 对同一输入的实测输出，入库为夹具，不在测试内复述。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S21-20 | 未声明环境的模块按无登记表落标 | §14.4 | MM，core 活跃提案既有前置全满足 | ① `deploy-done`（不传 `--env`）；② `deploy-done --env local-macos`（未登记）；③ `deploy-done --env team-prod` | ① ② 成功，`DEPLOY_DONE.environment` 分别为 null 与 `"local-macos"`，`[deploy]` 勾选，部署账本不存在或字节不变；③ `ENV_MODULE_MISMATCH`（`details.module=core`、`module_environments=[]`），零写入 |
+| UT-S21-21 | 声明了环境的模块只能用自己的环境 | §14.4 | MM，team 活跃提案既有前置全满足 | ① `deploy-done --env prod`；② `deploy-done`（不传）；③ `deploy-done --env Team-Production` | ① `ENV_MODULE_MISMATCH`，列出 `["team-prod"]`；② `ENV_REQUIRED`；均零写入；③ 进入既有流程，`DEPLOY_DONE.environment="team-prod"` 并追加账本 |
+| UT-S21-22 | 引用失效先于受门环境与写入拒绝 | §14.2、proposal-r1 F1 | MM 变体：team 声明的别名已从登记表删除；`team-prod` 配置 `require_approval: true`；team 活跃提案既有前置全满足 | `deploy-done --env team-prod`；另在 core 活跃提案下执行 `deploy-done` | team：`ENV_GATE_REFERENCE_UNKNOWN`，不出现 `DEPLOY_DONE_GATED_ENV` 以外的成功路径，零写入；core 照常落标，不受 team 失效引用影响 |
