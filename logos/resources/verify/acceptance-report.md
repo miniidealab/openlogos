@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 2435 |
+| Defined cases | 2459 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 2435 |
-| Passed | 2410 |
+| Executed cases | 2459 |
+| Passed | 2434 |
 | Failed | 0 |
 | Skipped | 25 |
 | Uncovered | 0 |
@@ -21,8 +21,8 @@
 
 - Mode: `final`
 - Attempted slice: `null`
-- Confirmed slices: `slice-01-guard-module-ownership`, `slice-02-module-aware-instructions-release`
-- Eligible tests: 2435
+- Confirmed slices: `slice-01-next-smoke-env`, `slice-02-env-module-ownership`, `slice-03-module-scoped-smoke-release`
+- Eligible tests: 2459
 - Pending tests: 0
 - Final: true
 
