@@ -1013,3 +1013,55 @@ public_release_commit: 3d851a71a17c86d081ce9d69adf2ea88331a94fe
 - 结果: done
 - log_path: logos/.openlogos-runtime/deploy-logs/5f29414e-6871-4e35-a7eb-ce1b1d43c713.log
 - previous_ref: 02355709cf742bfe095124ca2e285437f6153694
+
+## 部署记录 2026-10-19T02:36:44.432Z → test
+
+- 目标环境: test
+- 通道 / 执行方式: proposal / script
+- deploy_id: 85fa0560-47e5-42c2-84f2-d7af5e0542d3
+- ref_requested: 9df66b44efce20e7619d51441015bb3aee63f680（HEAD）
+- ref: 9df66b44efce20e7619d51441015bb3aee63f680
+- 执行脚本: scripts/deploy-local.mjs（workdir: worktree）
+- 耗时: 60164 ms
+- 结果: done
+- log_path: logos/.openlogos-runtime/deploy-logs/85fa0560-47e5-42c2-84f2-d7af5e0542d3.log
+- previous_ref: ef5e0db175e3d68bc567880e8093c03b7e24a030
+
+# 部署报告：module-lifecycle-guard / OpenLogos 0.16.9 本机全局发布（2026-10-19，**已部署：本机测试环境 test**）
+
+按部署方案「OpenLogos 0.16.9 本机测试环境发布（module-lifecycle-guard）」经 `openlogos deploy --env test` 提案通道部署（登记表 `test.deploy` = script，`scripts/deploy-local.mjs`，workdir: worktree）。`next --auto` 以 deliver 门 `gate_auto_passed=true` 为执行依据。不 npm publish、不打 tag、不 push。
+
+## 一、部署前置
+
+- `openlogos verify` PASS（`VERIFY_PASS` 在场）；请求提交已提交：`2976e34` 规格合并、`f898ee4` 代码、`9df66b4` 验收报告，工作区干净。
+- `openlogos env check`：未发现问题；`openlogos deploy --env test --dry-run`：全部检查通过，`channel=proposal`，`mode=script`，请求版本 HEAD → `9df66b44efce20e7619d51441015bb3aee63f680`。
+- 部署前全局：`openlogos --version` = 0.16.8（module-scoped-verify 的本机全局版本），入口 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`。
+
+## 二、部署结果与安装态读回
+
+- `deploy_id` = `85fa0560-47e5-42c2-84f2-d7af5e0542d3`，`ref` = `9df66b44efce20e7619d51441015bb3aee63f680`，`result=done`，耗时 60.2 秒；`DEPLOY_DONE` 由提案通道写入，`[deploy]` 三项由提案通道勾选。
+- 回执 `logos/.openlogos-runtime/local-install/last-deploy.json`：`candidate_version=0.16.9`，`previous_version=0.16.8`。
+- 新 shell 复核：`openlogos --version` = 0.16.9；入口 realpath 等于回执 `entry_realpath`（全局包内 `dist/index.js`）；其 SHA-256 `5b25f357876ae60f5b742233bbc8b5a264622eb27ee802e7ce645a7d5c8f1fdb` 等于回执 `candidate_entry_sha256`（入口文件本身两版未变，差异在 `dist/lib`、`dist/commands` 与随包模板）。
+- 候选 tarball：`logos/.openlogos-runtime/local-install/candidates/85fa0560-47e5-42c2-84f2-d7af5e0542d3.tgz`，SHA-256 `9562184f9eb8606c7e8a0d45f8a143e92eb253e68db432e25f1804d3700a79bf`。
+- 回滚制品：`logos/.openlogos-runtime/local-install/rollback/85fa0560-47e5-42c2-84f2-d7af5e0542d3.tgz`，SHA-256 `d686c495712ccadff91267d6753c89045789db48cae1e6431f4dee7723dc92c0`，包内为部署前的本机全局版本。
+- 环境视图：`test.current_ref` = `9df66b44efce…`，`previous_ref` = `ef5e0db175e3…`（上一版的部署提交）。
+
+## 三、两仓 sync 与同源核对
+
+- **本仓**执行 `openlogos sync`：托管 guard `.claude/openlogos/bin/guard-check`、引擎 `guard-post-check.cjs` 与 `openlogos-phase` 和全局包 `claude-plugin-template/bin/` 同名文件逐字节一致；`logos/spec/` 下 `pretooluse-guard.md`、`agents-md.md`、`logos-project.md` 与全局包 `spec/` 逐字节一致；本仓为单模块（core，launched）项目，AGENTS.md / CLAUDE.md 与 sync 前逐字节一致。
+- `sync` 再次向本仓 `.claude/settings.json` 追加了重复的 SessionStart 条目（与上一版部署时观察到的同一已知缺陷），按部署方案还原为 sync 前内容，不提交该重复项。
+- **runlogos 仓库**：项目根 `/Users/huangxianglong/gitlab/runlogos`，执行一次 `openlogos sync`（sync 前该仓已有用户未提交改动，未触碰）。读回：
+  - `.claude/openlogos/bin/guard-check` 与 `guard-post-check.cjs` 和全局包同名文件逐字节一致；
+  - AGENTS.md、CLAUDE.md 托管段均含「按模块生命周期豁免（initial 模块）」小节，列出 `team`（`team-` 前缀规格与场景 S86～S94 的 API 规格；未声明 `paths`，写明「代码仍需提案」），不含「禁止修改任何源代码」与「存在任何 launched 模块 → 必须先创建变更提案」两条全局禁令；
+  - 该仓当前有归属 `team` 的活跃提案 `team-edition-requirements`；只读判定（hook 输入，不写文件）Write `logos/resources/prd/1-product-requirements/team-99-smoke-probe.md` 放行；
+  - sync 在该仓同样追加了重复的 SessionStart 条目；按部署方案只记录、不在 runlogos 中还原或修改任何文件。
+  - runlogos 中 sync 产生的变更（不由本流程提交，由用户处理）：`.claude/openlogos/bin/guard-check`、`.claude/openlogos/bin/guard-post-check.cjs`、`.claude/openlogos/bin/openlogos-phase`、`.claude/settings.json`、`AGENTS.md`、`CLAUDE.md`、`logos/.openlogos-sync.json`、`logos/spec/agents-md.md`、`logos/spec/pretooluse-guard.md`。
+
+## 四、回滚
+
+- 成功部署后要回到上一版：`openlogos deploy --env test --rollback`（账本 `previous_ref` 为 `ef5e0db…`，含 `scripts/deploy-local.mjs`）；回到上一版后用上一版在本仓与 runlogos 各执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件（runlogos 由用户处理）。
+- 脚本失败时 `deploy-local.mjs` 自动以回滚制品回装（本次未触发）。
+
+## 五、后续
+
+- 安装态 smoke：`openlogos smoke --env test`（SMOKE-core-285～288，runner `scripts/smoke-module-lifecycle-guard-0-16-9.js`；SMOKE-core-288 以上述回滚制品安装基线），本工作单元不执行。
