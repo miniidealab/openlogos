@@ -5063,3 +5063,84 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 - 测试：UT-S13-104～UT-S13-121、ST-S13-27～ST-S13-32；安装态 smoke：SMOKE-core-280～SMOKE-core-284，以及通用的 SMOKE-core-268～SMOKE-core-271。
 - 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
 - 来源提案：module-scoped-verify（决策 C01～C03）。
+
+## OpenLogos 0.16.9 本机测试环境发布（module-lifecycle-guard）
+
+> 本节引用「本机测试环境脚本部署（scripts/deploy-local.mjs）」通用方案，只写本次的差异：版本号、CHANGELOG、源码回归范围、本仓与 runlogos 仓库的 `openlogos sync` 与安装态 smoke。冻结、回滚制品、构建候选、试装、全局安装、复核与回执一律按通用方案第三～七节执行，不在本节复写。
+
+### 部署目标与授权边界
+
+把 guard 按模块生命周期判定（来源提案 `module-lifecycle-guard`，功能规格 §2.97）装进本机全局安装态，并同步到使用仓库，使 runlogos 的 initial 模块 `team` 从 Phase 2 起不再需要立提案。新行为只在全局 `openlogos` 升级、且使用仓库执行 `openlogos sync` 更新托管 guard 副本与托管指令后才生效。
+
+- **目标环境**：`test`（登记表 `proposal_default_env: test`，来源提案决策 C03，`source: policy`）。登记表中 `test.deploy` 为 `mode: script`、`script: scripts/deploy-local.mjs`。
+- **入口**：提案通道 `openlogos deploy --env test`，部署请求 HEAD；由 CLI 追加部署报告并写 `DEPLOY_DONE`。
+- **授权**：半自动模式逐次由用户明确授权；`next --auto` 模式以本次 deliver-entry 门的 `gate_auto_passed=true` 为执行依据。`test` 未配置 `promote_from` / `require_approval`，不涉及晋级与审批门禁。
+- **版本号边界**：0.16.9 只作本机全局版本，不进入 npm registry。本方案**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`；公开发布另立 release 提案。
+- **其他仓库**：本次唯一被改写的其他仓库是 runlogos，且只在其项目根执行一次 `openlogos sync`（来源提案 defaults）。不在 runlogos 执行其他命令，不替 runlogos 提交或推送。
+
+### 部署前置与版本
+
+1. 本提案 delta 已 merge，`[code]` 切片实现并提交，`openlogos verify` PASS；`openlogos env check` 无 error，`openlogos deploy --env test --dry-run` 通过（通用方案第三节）。
+2. **版本事实复核**：读取 `cli/package.json` 当前版本（计划时为 `0.16.8`，即 module-scoped-verify 的本机全局版本，未发布到 npm），候选为下一 patch `0.16.9`；执行 `npm view @miniidealab/openlogos@0.16.9 version`，应返回 E404。若实施前已有其他提案升版，或 registry 已存在候选版本号，候选改为「当时版本与 registry 最高版本中较大者的下一 patch」，并在部署记录写明实际值。
+3. **升版**：在实现中执行 `node cli/scripts/bump-version.mjs 0.16.9`，由脚本一次更新全部版本载体，并调用既有生成器重算 `cli/asset-manifest.json`，**禁止手改** manifest。脚本会把 `cli/src/lib/local-release-candidate.ts` 的回滚版本设为升版前版本，应为 `0.16.8`（当前本机全局安装的版本，回滚制品由此打包）。不符时改为 `0.16.8`，并在部署记录说明。
+4. **CHANGELOG**：在 `## [Unreleased]` 之后新增 `## [0.16.9]` 条目，注明「本机全局发布（未发布到 npm）」，不改既有条目。各小节内容：
+   - **Changed**：guard 在混合生命周期项目中按文件归属的模块生命周期判定（前缀规格、API 规格按场景、`paths` 代码）；五个宿主、事后检查引擎与 SessionStart 同判；AGENTS.md / CLAUDE.md、宿主指令段与 Cursor policy 的变更管理条款按模块限定。
+   - **Added**：共享测试向量 `plugin/test-vectors/guard-module-lifecycle.json`。
+   - **升级提示**：全部 initial 与没有 initial 模块的项目行为不变；混合生命周期项目需在升级后执行 `openlogos sync`，项目内的 guard 副本与托管指令才会更新。
+
+### 源码回归范围
+
+部署前的 verify 负责源码回归，脚本不跑测试（通用方案第八节）。升版后复跑以下检查，必须全绿：
+
+- `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`、`npm run build`。
+- 范围包括 `core-S09-test-cases.md` 中「S09 guard 按模块生命周期判定测试」的 UT-S09-467～UT-S09-480 与 ST-S09-206～ST-S09-209，以及既有 S09 guard 全部用例（含「S09 guard 按版本控制内容判定测试」与共享向量 `plugin/test-vectors/guard-protected.json`），用来证明全 initial 与全 launched 项目零回归。
+
+### 部署、sync 与部署后检查
+
+1. 执行 `openlogos deploy --env test`（提案通道）。按通用方案第七节第 1、2 条读回回执与账本：
+   - 全局 `--version` 为 `0.16.9`；
+   - 入口 realpath 等于回执 `entry_realpath`；
+   - 全局 `dist/index.js` 的 SHA-256 等于 `candidate_entry_sha256`；
+   - 记录候选 tarball 与回滚制品的路径与 SHA-256。
+
+   回滚制品由脚本第 ③ 步从当前全局安装打包，计划时应为本机全局的 `0.16.8`。部署前账本 `test.current_ref` 为 `ef5e0db175e3d68bc567880e8093c03b7e24a030`（0.16.8），部署成功后它成为 `previous_ref`。
+2. **本仓 sync**：本次改动随包规范（`spec/pretooluse-guard.md`、`spec/agents-md.md`、`spec/logos-project.md`）与托管 guard（`plugin/bin/guard-check`、`plugin/bin/guard-post-check.cjs`、`plugin/bin/openlogos-phase`、共享测试向量）。在主工作树执行一次 `openlogos sync` 并读回：
+   - `.claude/openlogos/bin/guard-check` 与全局包内 `claude-plugin-template/bin/guard-check` 逐字节一致；
+   - `logos/spec/` 下上述规范的托管副本与全局包内同名文件逐字节一致；
+   - 本仓是单模块（`core`，launched）项目，AGENTS.md / CLAUDE.md 托管段的变更管理条款与 sync 前逐字节一致。
+
+   sync 产生的托管文件变化随部署记录一起由流程提交，不 push。若 sync 再次向 `.claude/settings.json` 追加重复的 SessionStart 条目（0.16.8 部署时观察到的已知缺陷），按 0.16.8 部署记录同样还原该重复条目，并在部署记录写明。
+3. **runlogos 仓库 sync**：在 runlogos 项目根执行一次 `openlogos sync`，读回：
+   - `.claude/openlogos/bin/guard-check` 与全局包内同名文件逐字节一致；
+   - AGENTS.md / CLAUDE.md 托管段对 `team` 模块按 initial 给出免提案条款（`team-` 前缀规格；`team` 的 `paths`，未声明时写明代码仍需提案），且不再含覆盖 `team` 的全局禁令（不加限定的「无 guard 文件 → 禁止修改任何源代码」与「存在任何 launched 模块 → 必须先创建变更提案」）。
+
+   runlogos 中 sync 产生的变更**不由本流程提交**；部署记录列出变更文件清单与读回结果，由用户在 runlogos 仓库自行处理。同样记录是否出现重复 SessionStart 条目，但不在 runlogos 中还原或修改任何文件。
+4. 经授权执行 `openlogos smoke --env test`：
+   - 本次行为用例：「OpenLogos 0.16.9 guard 按模块生命周期判定安装态 smoke（SMOKE-core-285～288）」；
+   - 通用安装态用例：「本机测试环境脚本部署安装态 smoke（SMOKE-core-268～SMOKE-core-271）」。
+
+### 失败处置与回滚
+
+回滚目标是 **0.16.8**，处置按通用方案第五节，本次差异如下：
+
+- **部署前置或 dry-run 失败**：不执行部署，修正后重试，或回流实现。
+- **脚本失败（部署未成功）**：脚本自动回装第 ③ 步的回滚制品（计划时为本机全局 0.16.8），复核 `--version` 为 `0.16.8`；账本记 `result=failed`，不推进。
+- **成功部署后要回到 0.16.8**：执行 `openlogos deploy --env test --rollback`，账本 `previous_ref` 为 `ef5e0db…`（0.16.8 的部署提交），该提交含 `scripts/deploy-local.mjs`。回到 0.16.8 后，用 0.16.8 在本仓与 runlogos 仓库各执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件（runlogos 由用户处理）。
+- **成功落账后 smoke 失败**：按通用方案第五节「(c)」处置：停止后续完成流程，保留失败证据，回流修复后以 `openlogos deploy --env test` 部署修复提交并重跑 smoke。不得手工回装旧包。
+- **runlogos sync 失败或读回不符**：不影响本仓部署结论的判定顺序——先按上条判断 smoke；读回不符（托管 guard 与全局包不一致、指令仍含覆盖 `team` 的全局禁令）视为本次部署后检查失败，回流本提案。
+- 本次无数据迁移，账本与结果账本格式不变；`logos-project.yaml` 字段只读，回到 0.16.8 不需要任何数据处理。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`，不部署官网。
+- 除在 runlogos 项目根执行一次 `openlogos sync` 外，不改写其他仓库，不替 runlogos 提交。
+- 不为本仓 `logos-project.yaml` 新增模块或改动 `lifecycle` / `paths`。
+
+### 追溯
+
+- 功能规格：§2.97。
+- 根规范：`spec/pretooluse-guard.md`「按文件归属的模块生命周期判定（module-lifecycle-guard，规范性）」；`spec/agents-md.md`「混合生命周期项目的变更管理条款生成（module-lifecycle-guard）」；`spec/logos-project.md` §modules、§scenarios。
+- 场景：S09「S09-H 混合生命周期项目中 initial 模块免提案写入」。
+- 测试：UT-S09-467～UT-S09-480、ST-S09-206～ST-S09-209；安装态 smoke：SMOKE-core-285～SMOKE-core-288，以及通用的 SMOKE-core-268～SMOKE-core-271。
+- 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
+- 来源提案：module-lifecycle-guard（决策 C01～C03）。

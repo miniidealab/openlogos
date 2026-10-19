@@ -1,6 +1,7 @@
 # S09: 创建、合并、归档变更提案 — 测试用例
 
 ## 一、单元测试用例
+
 | ID | 描述 | 来源 | 前置条件 | 输入 | 预期输出 |
 |----|------|------|---------|------|---------|
 | UT-S09-01 | 扫描 delta 目录 | scanDeltas | 有 prd/test delta | change slug | 返回映射 |
@@ -9,7 +10,7 @@
 | UT-S09-10 | 扫描 delta 时忽略 reference 目录 | scanDeltas | 存在 `deltas/reference/` | change slug | 不把 reference 文件计入可 merge delta |
 | UT-S09-11 | guard-check: launched + 无 guard → 阻断 Edit | guard-check 脚本 | launched 模块，无 guard 文件 | Edit tool_input file_path=src/index.ts | exit 2，reason 含"变更管理拦截" |
 | UT-S09-12 | guard-check: launched + 有 guard → 放行 Edit | guard-check 脚本 | launched 模块，有 guard 文件 | Edit tool_input file_path=src/index.ts | exit 0 |
-| UT-S09-13 | guard-check: initial lifecycle → 放行 | guard-check 脚本 | 所有模块 initial | Edit tool_input file_path=src/index.ts | exit 0 |
+| UT-S09-13 | guard-check: 所有模块 initial → 放行（项目级短路） | guard-check 脚本 | 所有模块 initial（混合生命周期项目按文件归属判定，见 UT-S09-469） | Edit tool_input file_path=src/index.ts | exit 0 |
 | UT-S09-14 | guard-check: 白名单路径 logos/changes/ → 放行 | guard-check 脚本 | launched 模块，无 guard | Edit tool_input file_path=logos/changes/my-change/proposal.md | exit 0 |
 | UT-S09-15 | guard-check: 白名单路径 CLAUDE.md → 放行 | guard-check 脚本 | launched 模块，无 guard | Write tool_input file_path=CLAUDE.md | exit 0 |
 | UT-S09-16 | guard-check: Bash 写入命令 → 阻断 | guard-check 脚本 | launched 模块，无 guard | Bash command="sed -i 's/a/b/' src/foo.ts" | exit 2 |
@@ -1202,7 +1203,7 @@
 | UT-S09-386 | 不可豁免项先于白名单与 exempt | G-repo 与 G-ignored-spec 各跑；`git config core.excludesFile <项目内 .config/ignore>`；另一轮 `core.excludesFile` 指向项目外文件 | ① `guard.exempt: ["docs/"]` 时 `docs/.gitignore`；② `guard.exempt: ["logos/"]` 时 `logos/logos.config.json`；③ 白名单 `.claude/` 下的 `.claude/.gitignore`；④ `a/b/.gitignore`、`.git/info/exclude`、`.config/ignore`、`.git/hooks/pre-commit`；⑤ `guard.exempt: ["logos/"]` 时 `logos/.openlogos-runtime/pending-reports.jsonl`；⑥ 读取分发源 `WHITELIST_PREFIXES`；⑦ 项目外 excludesFile | ①～⑤ 均返回保护（命中序 2～4，先于序 5 白名单与序 6 exempt）；同一配置下 `docs/a.md`、`logos/resources/prd/x.md`（exempt `logos/`）返回不保护作为对照；⑥ 不含 `.gitignore`；⑦ 返回不保护（序 1 先命中） |
 | UT-S09-387 | 被忽略规格仍保护、被忽略目录下已跟踪文件仍保护 | G-ignored-spec + G-forced | `is_protected`：`logos/resources/test/t.md`、`logos/resources/prd/new.md`（被忽略未跟踪）、`logos/resources/reference/r.md`、`dist/app.dmg`、`dist/other.txt` | 前两者保护（序 6）；reference 不保护（序 3）；`dist/app.dmg` 保护（序 7）；`dist/other.txt` 不保护（序 8） |
 | UT-S09-388 | `guard.exempt` 缺省 / 显式 / 空数组 / 语法拒绝 | G-repo；分别配置 `guard.exempt` 缺省、`["docs/notes/"]`、`[]`；另以 `["src/"]`、`[".gitignore"]`、`[".git/info/exclude"]`、`["a/.gitignore"]`、`["logos/logos.config.json"]`、`[".git/"]` 调用配置校验 | `is_protected`：`logos/resources/reference/a.md`、`docs/notes/a.md`、`logos/resources/verify/baseline-seed-runs/r1/staging/a.md` | 缺省：reference 与 staging 不保护，`docs/notes/a.md` 保护；显式 `["docs/notes/"]`：`docs/notes/a.md` 不保护，reference 保护；`[]`：三者均保护（不回落内置默认）；`["src/"]` 合法且使 `src/a.js` 不保护；保护范围来源、`logos/logos.config.json` 与 `.git/` 条目被校验拒绝 |
-| UT-S09-389 | 前提不满足时新判据不启用 | N-repo、N-nogit、G-repo + 活跃提案、G-repo + 所有模块 initial | 调用判定入口：Write `src/a.js`、Bash `sed -i s/a/b/ src/a.js` | N-repo / N-nogit：走现行判定，结论与修改前分发源对同一输入的实测基准逐条相同（基准由修改前实现生成，不在测试内复述）；活跃提案：proposal_step 收窄逻辑不变；initial：放行 |
+| UT-S09-389 | 前提不满足时新判据不启用 | N-repo、N-nogit、G-repo + 活跃提案、G-repo + 所有模块 initial | 调用判定入口：Write `src/a.js`、Bash `sed -i s/a/b/ src/a.js` | N-repo / N-nogit：走现行判定，结论与修改前分发源对同一输入的实测基准逐条相同（基准由修改前实现生成，不在测试内复述）；活跃提案：proposal_step 收窄逻辑不变；所有模块 initial：放行（项目级短路，与修改前相同）；混合生命周期项目中 `src/a.js` 不是 initial 归属文件，结论与 launched 相同（按文件归属判定见 UT-S09-469、UT-S09-472） |
 | UT-S09-390 | 独立 git / openlogos 调用切段识别 | 无 | 切段函数输入：`git checkout feature`、`cd /r && git pull`、`git add -A && git commit -m "a && b"`、`openlogos sync`、`cd /r && openlogos status && git status`；`cd /r`；`git status && node m.js`、`git diff > src/a.ts`、`git log \| head`、`git apply $(cat p)`、`` git show `x` ``、`(git pull)`、`git pull &`、`git apply <<EOF`、`openlogos sync && node m.js` | 前五条判为独立调用（引号内 `&&` 不切段；git 与 openlogos 混合亦可）；单独 `cd` 不是独立调用；其余各条均非独立调用，并返回首个违规记号 |
 | UT-S09-391 | Bash 事前轻判 | G-repo | 判定入口：`echo x > src/a.js`、`rm src/b.js`、`cp README.md src/c.js`、`Remove-Item src\a.js`（PowerShell）、`cmd > dist/build.log`、`mkdir -p dist/x`、`sed -i s/a/b/ src/a.js`、`node -e "require('fs').writeFileSync('src/a.js','x')"`、`rm $VAR`、`touch $D/a.md`、`npm ci`、`ls -la`、`cat src/a.js`、`git status`、`echo x \| tee src/a.js` | 前四条 exit 2（可提取目标受保护）；`dist/` 两条 exit 0 且不报告；`sed -i`、`node -e`、`rm $VAR`、`touch $D/a.md`、`npm ci`、`tee` 管道 exit 0 并拍快照；`ls -la`、`cat`、`git status`（只读白名单、无重定向 / 复合）exit 0 且**不**拍快照；断言「解析不出即阻断」不再出现、安全白名单命中与否不改变 exit 码 |
 | UT-S09-392 | Edit / Write / MultiEdit / NotebookEdit 事前判定 | G-repo；G-repo + 活跃提案 | Write `src/new.js`；Edit `src/a.js`；MultiEdit `logos/resources/prd/x.md`；NotebookEdit `notebook_path=dist/n.ipynb`；Write `dist/a.txt`；Edit `.gitignore`；活跃提案（delta-writing 阶段）下 Write `src/a.js` | 前三者与 Edit `.gitignore` exit 2（stdout JSON + stderr 变更管理指引）；`dist/` 两者 exit 0；活跃提案下按 proposal_step 收窄结论与修改前一致 |
@@ -1552,4 +1553,69 @@
 
 - guard 用例以真实 `plugin/bin/guard-check` 与 sync 部署副本执行，不以函数级桩替代；Cursor 用例以真实 runtime 处理函数执行。
 - 「文件字节不变」以判定前后 SHA-256 比对取证；不访问真实宿主。
+- 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。
+
+## S09 guard 按模块生命周期判定测试
+
+> 覆盖场景 S09「S09-H 混合生命周期项目中 initial 模块免提案写入」Step 1～22 与 EX-9H.1～EX-9H.9；需求「guard 按模块生命周期判定需求」AC-GUARD-MOD-01～09；功能规格 §2.97；根规范 `spec/pretooluse-guard.md`「按文件归属的模块生命周期判定（module-lifecycle-guard，规范性）」、`spec/agents-md.md`「混合生命周期项目的变更管理条款生成（module-lifecycle-guard）」；来源变更 module-lifecycle-guard（C01、C02；proposal r1 评审 F1）。
+>
+> **夹具口径**：
+> - **M-repo**（默认）：`mktemp -d` 一次性隔离项目，`git init` 并完成一次初始提交；`logos/logos-project.yaml` 的 `modules` 为 `core`（`lifecycle: launched`，`paths: ["src/**"]`）与 `team`（`lifecycle: initial`，`paths: ["team/**"]`）；`scenarios` 为 `S01`（`module: core`）、`S44`（`module: team`）、`S45`（不写 `module`）；已跟踪 `src/main.ts`、`team/app.ts`、`scripts/release.sh`、`logos/resources/prd/1-product-requirements/core-01-requirements.md`、`logos/resources/prd/1-product-requirements/team-01-requirements.md`；**无** `logos/.openlogos-guard`。Claude hook 输入默认带 `permission_mode: "default"`。
+> - **M-shared**：M-repo 的两个模块 `paths` 都加入 `shared/**`，已跟踪 `shared/protocol.ts`。
+> - **M-nopaths**：M-repo 中 `team` 不写 `paths`。
+> - **M-prefix**：M-repo 再登记 initial 模块 `core-api`（无 `paths`），用于最长前缀。
+> - **M-core-proposal**：M-repo 上以 CLI 创建归属 `core` 的活跃提案；按用例分别构造 plan 阶段（无 `PLAN_APPROVED`）、`delta-writing`、`ready-to-merge` 三种 `proposal_step`。
+> - **M-nogit**：M-repo 的文件布局但**不** `git init`，夹具先断言 `git rev-parse --is-inside-work-tree` 失败。
+> - **A-initial**：`core`、`team` 都是 `initial`；**A-launched**：两者都是 `launched`；其余同 M-repo。
+> - **零回归基准**：A-initial、A-launched 下的判定结论、SessionStart 注入文本与生成指令，由修改前（0.16.8）分发源对同一输入实测生成并入库为夹具，不在测试内复述。
+> - **共享测试向量**：新增 `plugin/test-vectors/guard-module-lifecycle.json`，每条含 yaml 夹具名、路径、期望归属结论（`initial` / `launched` / `unattributed` / `cross` / `not-applicable`）与命中步骤号；各运行时以同一份向量校验。
+> - UT 以函数层直接调用分发源中的真实实现（bash 归属函数、`guard-post-check.cjs` 的 `protectVerdict`、各宿主 runtime 的判定函数、`createAgentsMd` 等生成器），不得另写规则副本。ST 以 stdin JSON + cwd + env 驱动分发源或 sync 部署副本，并真实执行被测命令。
+> - 夹具不得修改本仓或用户其他仓库的真实文件；运行前后本仓项目根字节快照相等。
+> - 测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S09"`。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|---|---|---|---|---|
+| UT-S09-467 | 归属规则与共享向量（引擎实现） | M-repo、M-shared、M-nopaths、M-prefix；向量文件 | 以 `guard-post-check.cjs` 导出的归属函数逐条判定：`logos/resources/prd/1-product-requirements/team-01-requirements.md`；`logos/resources/test/team-S44-test-cases.md`；`logos/resources/api/S44-seats.yaml`；`logos/resources/api/S01-login.yaml`；`logos/resources/api/S45-x.yml`；`logos/resources/api/S99-x.yaml`（未登记场景）；`team/app.ts`；`src/main.ts`；`scripts/release.sh`；`shared/protocol.ts`（M-shared）；`team/app.ts`（M-nopaths）；`logos/resources/prd/1-product-requirements/core-api-01-requirements.md`（M-prefix）；`logos/logos.config.json`；`logos/changes/x/proposal.md`；`logos/resources/verify/test-results.jsonl`；`team/.gitignore`；`logos/.openlogos-runtime/x`；`paths` 含非法条目 `/abs`、`../x`、`""` 时的 `team/app.ts` | 依次为 initial、initial、initial、launched、launched（S45 缺省 `core`）、unattributed、initial、launched、unattributed、cross、unattributed、initial（最长前缀 `core-api`）、not-applicable、not-applicable、not-applicable、not-applicable（不可豁免）、not-applicable（不可豁免）；非法条目被忽略，合法条目 `team/**` 仍使 `team/app.ts` 为 initial；全部结论与命中步骤号与向量文件一致 |
+| UT-S09-468 | bash guard-check 与共享向量逐条一致 | 同 UT-S09-467 | 以 `plugin/bin/guard-check` 中的 bash 归属函数逐条判定向量文件全部条目；另以 yaml 中 `lifecycle` 加引号、行尾 CRLF、`paths` 用流式与块式两种写法各跑一轮 | 每条结论与向量相同；书写形态不改变结论；不依赖 python |
+| UT-S09-469 | Edit / Write / MultiEdit / NotebookEdit，无活跃提案 | M-repo、M-shared | Write `logos/resources/prd/1-product-requirements/team-01-requirements.md`；Edit `team/app.ts`；MultiEdit `logos/resources/api/S44-seats.yaml`；NotebookEdit `notebook_path=team/n.ipynb`；Write `src/main.ts`；Write `logos/resources/prd/1-product-requirements/core-01-requirements.md`；Write `scripts/release.sh`；Write `shared/protocol.ts`（M-shared） | 前四条 exit 0；后四条 exit 2，stdout JSON 与 stderr 的 reason 与修改前对同一路径的阻断相同 |
+| UT-S09-470 | 其他模块有活跃提案时不受 `proposal_step` 收窄；launched 目标结论不变 | M-core-proposal 三种阶段；Claude Code（`plugin/bin/guard-check`）与 Qoder / WorkBuddy / ZCode runtime | 各宿主、各阶段：Write `team/app.ts`、Write `logos/resources/prd/1-product-requirements/team-01-requirements.md`、Write `src/main.ts`；plan 阶段另判 Write `logos/changes/core-x/deltas/prd/1-product-requirements/core-01-requirements.md` | 各宿主、各阶段前两条均放行（Qoder / WorkBuddy / ZCode 在 delta-writing、ready-to-merge 下由 deny 变为放行）。`src/main.ts` 与修改前同一宿主同阶段的实测基准相同，且显式断言：Claude Code 三阶段均 exit 0（提案期只收窄 plan 阶段的本提案 delta）；Qoder / WorkBuddy / ZCode 在 delta-writing、ready-to-merge 下 deny。plan 阶段的非原型 delta 在 Claude Code 上 exit 2（既有 plan 收窄保留）。不得出现与基准不同的 launched 目标结论（review delta-r1 F2） |
+| UT-S09-471 | 不可豁免项与受限命令先于归属判定 | M-repo，`team` 的 `paths` 为 `["team/**"]`；另备一份已配置门禁的 `logos/environments.yaml` | Write `team/.gitignore`；Write `logos/.openlogos-runtime/x`；Write `logos/logos.config.json`；Edit 已配置门禁的 `logos/environments.yaml`；Bash `openlogos exempt add team/`；Bash `openlogos approve --env prod --ref v1`；以上在无活跃提案与 M-core-proposal 下各跑一次 | 每条结论与修改前同一输入的实测基准相同（保护范围来源 / 自有状态 / 门禁登记表 / 受限命令的既有处理），不因归属 `team` 而放行 |
+| UT-S09-472 | Bash 事前判定（git 判据生效） | M-repo | `echo x > team/app.ts`；`rm team/app.ts`；`cp README.md logos/resources/prd/1-product-requirements/team-02-x.md`；`echo x > team/c.ts && echo y > src/main.ts`；`echo x > src/main.ts`；`node -e "require('fs').writeFileSync('team/b.ts','x')"` | 前三条 exit 0；第四条 exit 2，reason 只列 `src/main.ts`；第五条 exit 2；`node -e` exit 0 并拍快照 |
+| UT-S09-473 | 事后检查不报告 initial 归属变化 | M-repo；以引擎 `snapshot` / `check` 函数驱动 | ① 快照后改 `team/app.ts` 并新增 `team/b.ts`，`check`；② 快照后改 `team/app.ts` 与 `src/main.ts`，`check`；③ 快照后改 `shared/protocol.ts`（M-shared），`check`；④ M-core-proposal 下快照、改 `team/app.ts`、删 guard 后 `check` | ① exit 0，不写待报告项；② exit 2，反馈只列 `src/main.ts`，恢复命令只针对 `src/main.ts`；③ exit 2，列出 `shared/protocol.ts`；④ 不报告 `team/app.ts` |
+| UT-S09-474 | 非 git 回落逐路径同判 | M-nogit | Write `team/app.ts`；Write `src/main.ts`；Bash `echo x > team/app.ts`；Bash `echo x > team/a && echo y > src/main.ts`；Bash `rm $VAR` | Write `team/app.ts` exit 0、`src/main.ts` exit 2；Bash 第一条 exit 0、第二条 exit 2（reason 只列 `src/main.ts`）；`rm $VAR` 的结论与修改前非 git 回落的实测基准相同（解析不出即阻断） |
+| UT-S09-475 | 目录目标、yaml 异常与 lifecycle 非法 | M-repo；另备 `team/.gitignore` 已跟踪的变体；另备 ignored 规格变体：`.gitignore` 忽略 `logos/resources/prd/1-product-requirements/core-02-private.md`，该文件存在且未跟踪，不在 `guard.exempt` 内；另备 `team/build/` 被忽略、含产物文件的变体 | ① Bash `rm -rf team/src`（其下文件全部归 `team`）；② 变体下 `rm -rf team`；③ `rm -rf logos/resources/prd`；④ `logos-project.yaml` 改为不可解析内容后 Write `team/app.ts`；⑤ `team` 的 `lifecycle` 缺省、为 `Initial`、为 `draft` 各一轮 Write `team/app.ts`；⑥ ignored 规格变体下 Bash `rm -rf logos/resources/prd/1-product-requirements`，并对比直接判定 Write `logos/resources/prd/1-product-requirements/core-02-private.md`；⑦ `team/build/` 变体下 `rm -rf team/build` 与 `rm -rf team`（无 `team/.gitignore`）；⑧ 注入候选采集失败（git 查询非零退出）后 `rm -rf team/src` | ① exit 0；② exit 2（目录下含不可豁免项）；③ exit 2（含 `core` 规格）；④ 结论与修改前对同一输入的实测基准相同（不做按文件判定）；⑤ 均 exit 2（不构成豁免）；⑥ 目录删除 exit 2，与直接判定该 ignored core 规格的结论一致（被忽略但受保护的后代计入枚举，review delta-r1 F3）；⑦ 两条均 exit 0（被忽略且不受保护的产物不影响结论）；⑧ exit 2（枚举失败不豁免） |
+| UT-S09-476 | 四个非 Claude 宿主运行时同判 | M-repo、M-shared、M-nopaths | 以 `plugin-cursor/hooks/runtime.cjs`（`beforeShellExecution`、`afterFileEdit`）、`plugin-qoder/hooks/runtime.cjs`、`plugin-workbuddy/hooks/runtime.cjs`、`plugin-zcode/runtime/hook-runtime.js` 的判定函数逐条判定共享向量，并重放 UT-S09-469 的写入矩阵；以各运行时处理 shell 写入目标的判定入口重放 UT-S09-475 的目录用例 ①②③⑥⑦（Qoder / WorkBuddy / ZCode 不使用 git 判据，按非 git 枚举其下全部现存文件，结论相同；⑧ 只适用 git 判据，由 Claude 与 Cursor 覆盖） | 各运行时的归属结论与向量逐条相同；写入矩阵与目录用例的放行 / 阻断与 Claude 侧相同；Cursor 的 `afterFileEdit` 对 initial 归属文件不报告 |
+| UT-S09-477 | 全 initial 与全 launched 项目零回归 | A-initial、A-launched；零回归基准 | 以五个宿主运行时与引擎重放 UT-S09-469～UT-S09-475 的全部输入，以及既有向量 `plugin/test-vectors/guard-protected.json` | 结论逐条与基准相同 |
+| UT-S09-478 | SessionStart 按模块提示 | M-repo、M-nopaths、A-initial、A-launched | 分别执行 `plugin/bin/openlogos-phase` 与 `plugin-codex/session-start.sh`，取注入上下文 | M-repo：除既有项目级段落外，含 `team` 一行（initial、按 Phase 推进、无需变更提案、`team-` 前缀规格、`paths: team/**`）与 `core` 一行（launched、变更须先立案）；M-nopaths：`team` 行写明「代码仍需提案」；A-initial、A-launched：注入文本与基准逐字节相同 |
+| UT-S09-479 | 生命周期视图与 AGENTS.md / CLAUDE.md 托管段 | M-repo、M-nopaths、A-initial、A-launched；`locale` 为 `zh` 与 `en` | 以生命周期视图 helper 求视图；以 `createAgentsMd` 生成 `agents` 与 `claude` 两个 target | 视图依次为 `mixed`、`mixed`、`initial`、`launched`；yaml 不可解析时为 `initial`（与修改前 `readProjectLaunched` 返回 false 一致）。`mixed` 文本：含「按模块生命周期豁免」小节，列出 `team`、`team-` 前缀规格、`S44` 等该模块场景的 API 规格与 `paths: team/**`（M-nopaths 下写明「代码仍需提案」），并写明其他模块有活跃提案时也不受该提案范围限制；「无 guard 文件」「有 guard 文件」「修改代码前」各条限定为 launched 模块文件、共享配置与未归属文件；不含不加限定的「无 guard 文件 → 禁止修改任何源代码」，也不含「存在任何 launched 模块 → 必须先创建变更提案，再修改任何代码或文档」；保护范围配置、环境门禁与硬红线段落与 launched 文本相同。`initial`、`launched` 视图文本与基准逐字节相同 |
+| UT-S09-480 | 宿主指令段、Cursor policy 与各入口取视图 | 同 UT-S09-479 | ① 以 `createZCodeAgentsInstruction`、`createQoderAgentsInstruction`、`createWorkBuddyAgentsInstruction`、`createCursorAgentsInstruction` 与 `generatePolicyMdc` 生成三种视图文本；② 对 `sync`、`init --ai-tool`、`adopt` 打桩记录传给 `writeInstructionFiles` 的视图；③ A-initial 上对 `launch core` 打桩（门禁满足），以及 `core` 已 launched 时 `launch team` | ① `mixed` 各段含同一豁免信息并按 UT-S09-479 限定禁令，`initial`、`launched` 与基准逐字节相同；② 三个入口都经同一 helper 取视图；③ `launch core` 后视图为 `mixed`，`launch team` 后为 `launched`；Skills 与宿主资产部署收到的「是否存在 launched 模块」布尔值与修改前相同 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S09-206 | 无活跃提案：sync 后指令与 hook 同口径 | Step 1～17 | M-repo，`aiTool: claude` | ① 以构建产物 `cli/dist/index.js` 执行 `openlogos sync`；② 读回 AGENTS.md 与 CLAUDE.md 托管段；③ 以 sync 部署副本 `.claude/openlogos/bin/guard-check` 依次判定 Write `team-01-requirements.md`、Write `team/app.ts`、Write `src/main.ts`、Write `scripts/release.sh`；④ 以真实 PreToolUse → 执行 → PostToolUse 链路执行 `node -e` 写 `team/b.ts` | ② 托管段明确允许直接开发 `team-` 前缀规格与 `team/**` 代码，`core`、共享与未归属文件仍需提案，不含覆盖 `team` 的全局禁令；③ 依次 exit 0、0、2、2；④ PostToolUse exit 0，`logos/.openlogos-runtime/` 下无待报告项 |
+| ST-S09-207 | `core` 有活跃提案：initial 模块独立推进 | Step 18～22 | M-repo，`aiTool: claude` | ① 以构建产物执行 `openlogos change core-x`；② `openlogos sync` 并读回托管段；③ 在 plan 阶段（无 `PLAN_APPROVED`）与写入 `PLAN_APPROVED` 后的 `delta-writing` 阶段，各以部署副本判定 Write `team/app.ts`、Write `src/main.ts`；④ 以 PreToolUse → 执行 → PostToolUse 链路执行 `echo x > team/c.ts` | ② 托管段写明 initial 模块文件在其他模块有活跃提案时也不受该提案范围限制，「只能在该提案范围内修改」限定为 launched 模块、共享与未归属文件；③ `team/app.ts` 两阶段均 exit 0；`src/main.ts` 两阶段均 exit 0，与修改前同阶段基准相同（Claude Code 提案期不收窄非 delta 路径，review delta-r1 F2）；plan 阶段另判 Write `logos/changes/core-x/deltas/prd/1-product-requirements/core-01-requirements.md` 为 exit 2（既有 plan 收窄保留）；④ exit 0，不报告 |
+| ST-S09-208 | launch 切换下指令与 hook 随视图变化 | Step 1～3 | A-initial，`core` 与 `team` 均满足 launch 门禁（verify 报告 PASS，`deployment_required: false`） | ① `openlogos sync` 读回托管段；② `openlogos launch core`，读回托管段并判定 Write `team/app.ts`、Write `src/main.ts`；③ `openlogos launch team`，读回托管段并判定 Write `team/app.ts` | ① 与 A-initial 基准逐字节相同；② 托管段为 `mixed` 文本（列出 `team`），判定依次 exit 0、exit 2；③ 托管段与 A-launched 基准逐字节相同，`team/app.ts` exit 2 |
+| ST-S09-209 | 五个宿主一致 | Step 7～13 | M-repo，`aiTool: all` | ① `openlogos sync`；② 读回 AGENTS.md 中 ZCode / Qoder / WorkBuddy / Cursor 宿主指令段；③ 以各宿主部署后的运行时（`.claude/openlogos/bin/guard-check`、`.cursor/hooks/openlogos-runtime.cjs` 与 Qoder / WorkBuddy / ZCode 的部署副本）判定 UT-S09-469 的写入矩阵 | ② 各宿主指令段含 `team` 的豁免信息，无覆盖 `team` 的全局禁令；③ 五个运行时对矩阵中每条路径的放行 / 阻断相同（Cursor 文件编辑按部分强度：`afterFileEdit` 对 initial 归属不报告、对 `src/main.ts` 报告） |
+
+### 追溯与覆盖
+
+- 归属规则与共享向量（AC-GUARD-MOD-01、03、04、06）：UT-S09-467、UT-S09-468、UT-S09-476。
+- Edit / Write 放行与保护（AC-GUARD-MOD-01、03）：UT-S09-469、UT-S09-471、ST-S09-206。
+- 其他模块有活跃提案（AC-GUARD-MOD-02）：UT-S09-470、ST-S09-207。
+- Bash、事后检查与非 git 回落（AC-GUARD-MOD-05）：UT-S09-472、UT-S09-473、UT-S09-474、UT-S09-475。
+- 各宿主同判（AC-GUARD-MOD-06）：UT-S09-476、ST-S09-209。
+- SessionStart（AC-GUARD-MOD-07）：UT-S09-478。
+- 持久化指令（AC-GUARD-MOD-08，review F1）：UT-S09-479、UT-S09-480、ST-S09-206、ST-S09-207、ST-S09-208、ST-S09-209。
+- 零回归（AC-GUARD-MOD-09）：UT-S09-477、UT-S09-478、UT-S09-479、UT-S09-480、ST-S09-208；既有锚 UT-S09-13、UT-S09-389（已改写为项目级短路的回归锚）。
+- 分发（AC-GUARD-MOD-10）：安装态 smoke SMOKE-core-285～SMOKE-core-288。
+
+### 自动化与证据要求
+
+- guard 用例以真实分发源 `plugin/bin/guard-check`、`plugin/bin/guard-post-check.cjs` 与各宿主 runtime 执行；ST 以 sync 部署副本执行，不以函数级桩替代。
+- 「与修改前实测基准相同」「与基准逐字节相同」类断言的基准由 0.16.8 分发源对同一输入集实测生成并入库为夹具，不在测试代码中手写期望。
+- 生成指令的断言按托管段 `OPENLOGOS:BEGIN` / `OPENLOGOS:END` 之间的内容比较；禁令「不出现」的断言以固定字符串与 en 对应文案各检查一次。
 - 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。

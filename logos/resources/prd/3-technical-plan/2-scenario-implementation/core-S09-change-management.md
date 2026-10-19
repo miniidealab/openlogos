@@ -1181,3 +1181,133 @@ sequenceDiagram
 - 根规范：`spec/flow-spec.md` §12.4（plan 门派生）、「ordering 例外与 flow-derive 判据」、§12.3 R4；`spec/cli-json-output.md` plan_state 派生规则（不改）。
 - 决策：C03（不改 `plan_approved` 投影口径）、C04（窄判断置于全勾判断之前、不删除零勾选条件）。
 - 测试：`core-S09-test-cases.md`「S09 原型任务勾选不越过 plan 批准门测试」。
+
+## S09-H 混合生命周期项目中 initial 模块免提案写入
+
+> 来源变更：module-lifecycle-guard（决策 C01、C02；proposal r1 评审 F1 处置）。承接「guard 按版本控制内容判定」各时序图与功能规格 §2.97；权威判据见 `spec/pretooluse-guard.md`「按文件归属的模块生命周期判定（module-lifecycle-guard，规范性）」与 `spec/agents-md.md`「混合生命周期项目的变更管理条款生成（module-lifecycle-guard）」。复现：runlogos 仓库 `core` 已 launched、新增 initial 模块 `team` 后，写 `team-01-*.md` 被 guard 拦截，只能立提案、merge 才能落盘。
+
+### 场景目标
+
+在同一仓库里，launched 模块走变更提案，initial 模块按 Phase 推进：
+
+- 确定只归属 initial 模块的规格与代码，无需活跃提案即可写入；其他模块有活跃提案时也不受该提案范围限制；
+- 共享配置、未归属文件、同时归属 launched 模块的文件，以及不可豁免项，仍按 launched 保护；
+- AI 在会话开始时读到的 SessionStart 提示、磁盘上的 AGENTS.md / CLAUDE.md 与各宿主指令，与 hook 判定同口径；
+- 全部 initial、全部 launched 的项目行为不变。
+
+### 参与者与前置条件
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| U | 用户 | 维护 `logos-project.yaml` 的 `modules[]`（`lifecycle`、`paths`）与 `scenarios[]` |
+| AI | AI 宿主会话 | 读取指令与 SessionStart 上下文，发起 Edit / Write / Bash |
+| CLI | `openlogos sync` / `launch` / `init` / `adopt` | 计算生命周期视图并重写托管指令 |
+| SS | SessionStart（`openlogos-phase` / Codex `session-start.sh`） | 注入按模块的提示 |
+| G | PreToolUse 运行时（guard-check 与各宿主 runtime） | 事前判定，含文件归属 |
+| E | 事后检查引擎 `guard-post-check.cjs` | Bash / PowerShell 结束后对比受保护变化，含文件归属 |
+| FS | 项目文件 | `logos/logos-project.yaml`、`logos/.openlogos-guard`、目标文件 |
+
+前置条件：`modules[]` 中 `core` 为 launched（`paths: ["src/**"]`），`team` 为 initial（`paths: ["team/**"]`）；`scenarios[]` 中 `S44` 的 `module` 为 `team`；项目根为 git 工作树。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant CLI as openlogos sync
+    participant SS as SessionStart
+    participant AI as AI 宿主
+    participant G as PreToolUse 运行时
+    participant E as 事后检查引擎
+    participant FS as 项目文件
+
+    U->>CLI: Step 1: 执行 openlogos sync
+    CLI->>FS: Step 2: 读 modules 与 scenarios，得到生命周期视图 mixed
+    CLI->>FS: Step 3: 重写托管指令，列出 team 的豁免范围，禁令限定为 launched、共享与未归属文件
+    AI->>SS: Step 4: 新会话启动
+    SS->>FS: Step 5: 读 modules
+    SS-->>AI: Step 6: 注入按模块提示，team 按 Phase 推进，core 变更须立案
+    AI->>G: Step 7: Write team-01-requirements.md
+    G->>FS: Step 8: 读 modules、scenarios，按前缀归属到 team
+    G-->>AI: Step 9: team 为 initial，放行
+    AI->>G: Step 10: Write team/app.ts
+    G-->>AI: Step 11: paths 归属 team，放行
+    AI->>G: Step 12: Write src/main.ts
+    G-->>AI: Step 13: 归属 core 为 launched，按既有规则拦截
+    AI->>G: Step 14: Bash 执行 node 脚本写 team/b.ts
+    G->>E: Step 15: 无可确定目标，事前放行并拍快照
+    E->>FS: Step 16: 结束后对比，变化 team/b.ts 归属 team
+    E-->>AI: Step 17: 不报告
+    U->>CLI: Step 18: openlogos change 为 core 立案
+    AI->>G: Step 19: Write team/app.ts，core 提案处于 delta-writing
+    G-->>AI: Step 20: initial 归属文件不受提案范围限制，放行
+    AI->>G: Step 21: Write src/main.ts
+    G-->>AI: Step 22: 按该宿主既有提案期规则判定，结论与修改前相同
+```
+
+### 步骤说明
+
+1. **Step 1～3**：`sync`（以及 `init`、`init --ai-tool`、`launch`、`adopt`）通过同一 helper 读取 `logos-project.yaml` 得到生命周期视图 `initial` / `launched` / `mixed`。`mixed` 时，AGENTS.md / CLAUDE.md 托管段、各宿主指令段与 Cursor policy 在既有 launched 文字基础上新增「按模块生命周期豁免」小节，并把「无 guard 文件 → 禁止修改」「有 guard 文件 → 只能在该提案范围内修改」限定为 launched 模块文件、共享配置与未归属文件。`launch` 按目标模块切换后的状态计算视图：launch 一个模块后若仍有 initial 模块即为 `mixed`。
+2. **Step 4～6**：SessionStart 在混合项目中追加按模块提示，initial 模块附豁免范围；全部 initial、全部 launched 项目文本不变。
+3. **Step 7～9**：保护范围变更审批、已配置门禁的登记表、guard 自有状态三项检查先于归属判定，结论不变。随后按归属顺序（不可豁免项 → 流程产物与白名单 → 共享配置 → 前缀规格 → API 规格 → `paths`）求归属集合；`team-01-requirements.md` 的最长前缀为 `team`，`team` 为 initial，放行。
+4. **Step 10～11**：`team/app.ts` 不在 `logos/resources/` 下，按 `paths` 命中 `team`，放行。
+5. **Step 12～13**：`src/main.ts` 命中 `core`（launched），进入既有判定：无活跃提案时按受保护判定阻断，reason 与修改前相同。
+6. **Step 14～17**：git 判据生效时，Bash 写入目标解析不出，事前放行并建执行记录；事后检查对比得到的变化逐个归属，仅归属 initial 模块的变化不报告。若同一次调用还改了 `src/main.ts`，只报告该文件。
+7. **Step 18～22**：存在 `core` 的活跃提案时，initial 归属文件在活跃提案检查之前已放行，不受任何 `proposal_step`（含 plan 阶段未批准）收窄。launched 模块文件按该宿主提案期既有规则判定，本场景不改变其结论（review delta-r1 F2）：Claude Code 有活跃提案时只在 plan 阶段收窄本提案的 delta，`src/main.ts` 放行；Qoder / WorkBuddy / ZCode 按各自 `proposal_step` 表收窄，`delta-writing` 下 `src/main.ts` deny。
+
+### 异常与边界
+
+#### EX-9H.1：文件同时归属 initial 与 launched 模块
+
+`core` 与 `team` 的 `paths` 都含 `shared/**` 时，`shared/protocol.ts` 的归属集合为 `{core, team}`，含 launched 模块，按 launched 保护。
+
+#### EX-9H.2：未归属文件
+
+`scripts/release.sh` 不命中任何 `paths`、也不是前缀规格，按 launched 保护。`logos/resources/` 下不带已登记前缀的规格同样先尝试 `paths`，仍未命中即按 launched 保护。
+
+#### EX-9H.3：共享配置与不可豁免项
+
+`logos/logos.config.json` 不参与归属。`team/.gitignore` 虽在 `team/**` 内，属于保护范围来源（不可豁免），按保护范围规则处理；`logos/.openlogos-runtime/` 恒阻断；已配置门禁的 `logos/environments.yaml` 走宿主原生审批。
+
+#### EX-9H.4：Bash 多路径混合
+
+`echo x > team/c.ts && echo y > src/main.ts`：两个目标都可确定，`team/c.ts` 为 initial 归属，`src/main.ts` 受保护 → 阻断，reason 只列 `src/main.ts`。非 git 回落时逐段判定同理；解析不出目标的段仍按既有规则阻断。
+
+#### EX-9H.4a：目录目标
+
+`rm -rf team/src` 只有在其下每个受 guard 保护的现存后代都归属 initial 模块时才放行。被 git 忽略但仍受保护的 `logos/resources/` 规格计入枚举：`logos/resources/prd/1-product-requirements/` 下即使只有被忽略、未跟踪的 `core-02-private.md` 属于 core，删除整个目录也按 launched 保护；被忽略且不受保护的产物（如 `team/build/`）不影响结论；枚举失败不豁免（review delta-r1 F3）。
+
+#### EX-9H.5：事后检查
+
+一次调用同时改了 `team/b.ts` 与 `src/x.ts`：只报告 `src/x.ts`。执行记录、待报告项与恢复命令的既有机制不变，只是 initial 归属的变化不进入待报告项。
+
+#### EX-9H.6：initial 模块未声明 paths
+
+`team` 未写 `paths`：`team-01-*.md` 等前缀规格放行，`team/app.ts` 归不到模块，按 launched 保护；托管指令在 `team` 条目下写明「代码仍需提案」。
+
+#### EX-9H.7：另一模块已有活跃提案
+
+见 Step 18～22：initial 归属文件放行，与提案处于哪个阶段无关；托管指令写明「其他模块有活跃提案时也不受该提案范围限制」。
+
+#### EX-9H.8：API 规格
+
+`S44-team-seats.yaml` 按 `S44` 的场景 `module`（`team`）归属；`S44` 未登记时继续按 `paths` 判定，仍未命中即按 launched 保护。场景未写 `module` 时视为 `core`。
+
+#### EX-9H.9：yaml 不可读或 lifecycle 非法
+
+`logos-project.yaml` 缺失或无法解析时，不做按文件判定，保持修改前的项目级行为。模块 `lifecycle` 缺省或不是 `initial` / `launched` 时，该模块不构成豁免。
+
+### 不变量
+
+- 只有「归属集合非空且全部为显式 `initial`」的文件才会因本场景放行；其余任何文件的结论与修改前相同。
+- 不可豁免项、保护范围变更审批、部署审批受限命令先于归属判定，结论不变。
+- 五个宿主运行时与事后检查引擎对同一路径的归属结论相同，以共享测试向量 `plugin/test-vectors/guard-module-lifecycle.json` 校验。
+- 磁盘指令、SessionStart 与 hook 三者对 initial 模块文件的口径一致。
+- 全部 initial、全部 launched 项目：判定、注入文本与生成的指令逐字节不变。不新增配置字段、hook 或判定阶段。
+
+### 追溯
+
+- 需求：`core-01-requirements.md`「guard 按模块生命周期判定需求」（AC-GUARD-MOD-01～10）。
+- 功能规格：§2.97。
+- 根规范：`spec/pretooluse-guard.md`「按文件归属的模块生命周期判定（module-lifecycle-guard，规范性）」、§判定逻辑、§版本控制内容保护与事后检查；`spec/agents-md.md`「混合生命周期项目的变更管理条款生成（module-lifecycle-guard）」；`spec/logos-project.md` §modules、§scenarios。
+- 测试：`core-S09-test-cases.md`「S09 guard 按模块生命周期判定测试」（UT-S09-467～UT-S09-480、ST-S09-206～ST-S09-209）；smoke：SMOKE-core-285～SMOKE-core-288。

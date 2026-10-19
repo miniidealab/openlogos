@@ -181,9 +181,9 @@ OpenLogos 生成内容必须包裹在固定 marker 内：
 - `openlogos init --ai-tool <tool>`：为已初始化项目补齐目标 AI 工具时刷新托管片段；不得覆盖托管片段外用户内容。
 - `openlogos adopt`：接入已有项目时生成 OpenLogos 基础设施；若已有项目已经维护 `AGENTS.md` / `CLAUDE.md`，必须合并写入 OpenLogos 托管片段。
 - `openlogos sync`：手动触发重新生成（当项目配置变化时，同时重新部署 Skills 并刷新 Active Skills 段）；只替换 OpenLogos 托管片段。
-- `openlogos launch`：切换 launched 生命周期后刷新变更管理规则；只替换 OpenLogos 托管片段。
+- `openlogos launch`：切换 launched 生命周期后刷新变更管理规则；只替换 OpenLogos 托管片段。按目标模块切换后的状态计算生命周期视图，launch 后仍有 initial 模块时生成 `mixed` 文字。
 - `project-init` Skill：AI 初始化项目时生成，行为应与 CLI 托管片段策略一致。
-
+- 以上 CLI 入口的变更管理条款统一按生命周期视图（`initial` / `launched` / `mixed`）生成，视图由同一 helper 读取 `logos-project.yaml` 得出，见「混合生命周期项目的变更管理条款生成（module-lifecycle-guard）」。
 
 ## 多平台适配
 
@@ -244,6 +244,7 @@ OpenLogos 生成内容必须包裹在固定 marker 内：
 - launched 无 guard：明确禁止修改源码，下一动作是创建 change。
 - launched 有 guard：按磁盘 `proposal_step` 输出精确阶段范围；delta-writing 仅允许当前提案 `deltas/**` 和对应 `tasks.md`，ready-to-merge 停止写 delta。
 - adopted + launched：与 launched 指令一致，不因存量接入降低 guard；下一主路径仍可直接 change。
+- mixed（混合生命周期项目）：在 launched 指令基础上列出 initial 模块的豁免范围，并把「无 guard 禁止修改」与提案范围限定为 launched 模块文件、共享配置与未归属文件，见「混合生命周期项目的变更管理条款生成（module-lifecycle-guard）」。
 - launch/sync 后提示 ZCode 开启新 session 获取新指令和 Hook 配置快照；不得声称现有 session 已热更新。
 
 ### 一致性与验证
@@ -285,6 +286,7 @@ OpenLogos 生成内容必须包裹在固定 marker 内：
 - launched 无 guard：禁止源码/规格写入，下一主动作是创建 change。
 - launched 有 guard：按磁盘 `proposal_step` 给出精确范围；delta-writing 仅当前提案 deltas/tasks，ready-to-merge 停止写 delta。
 - adopted + launched：与 launched 一致，不因存量接入降低 guard；可直接进入 change。
+- mixed（混合生命周期项目）：在 launched 内容基础上列出 initial 模块的豁免范围，禁源码 / 规格写入与提案范围限定为 launched 模块文件、共享配置与未归属文件，见「混合生命周期项目的变更管理条款生成（module-lifecycle-guard）」。
 - sync/launch 后提示通过新 Qoder CLI session 或受支持的 memory refresh 读取新静态记忆/插件快照；不得声称更新 AGENTS 等同 hard guard。
 
 ### 一致性与验证
@@ -341,6 +343,7 @@ OpenLogos 生成内容必须包裹在固定 marker 内：
 - Registry 是 WorkBuddy 指令与插件资产生成的唯一入口；生命周期命令不得拼接宿主分支。
 - 静态清单、plugin manifest 与 `0.13.28` tarball 实际组件必须一致；缺失、重复 identity 或非法 frontmatter/Hook 配置阻断预检。
 - UT/ST 覆盖用户内容保留、marker、zh/en、initial/launched/adopted、workbuddy/all 与记忆零写入。
+- 混合生命周期项目中，静态指令的变更管理条款按 `mixed` 视图生成（列出 initial 模块豁免范围、禁令限定为 launched 模块文件、共享配置与未归属文件），见「混合生命周期项目的变更管理条款生成（module-lifecycle-guard）」。
 - staging 由真实 WorkBuddy 5.3.5+ 新 session 证明静态指令和组件可用，同时由 PreToolUse 独立证明 hard guard。
 
 ### 权威参考
@@ -358,6 +361,7 @@ OpenLogos 生成内容必须包裹在固定 marker 内：
 3. **托管 `.mdc` 迁移**：历史 `.cursor/rules/<skill>.mdc` 与 `openlogos-policy.mdc` 在 Skills 部署成功后同次执行内清理；清理清单由 OpenLogos Skill 名单静态派生，用户自有 rules 一律保留。
 4. **guard 强度如实呈现**：AGENTS.md 托管段与 CLI 反馈必须声明 Cursor 下写入门禁为部分强度（`beforeShellExecution` 事前判定 shell 写入 + `afterShellExecution` 事后检查 shell 写入 + `afterFileEdit` 编辑事后检测）；OpenLogos 未接入 `preToolUse`，IDE 与 CLI 的文件编辑均只承诺事后报告，不得声称 Cursor IDE 获得完整 `preToolUse` 硬拦，也不得把 Cursor 表述成与 claude-code 等价（capability honesty，D09；guard-versioned-content-scope C11）。
 5. **边界**：OpenLogos 只拥有自身托管 Skills 目录、subagent 文件与 hooks 托管条目；用户 `.cursor/**` 其余内容在任何入口下不读改删。
+6. **混合生命周期项目**：Cursor 宿主指令段与 `generatePolicyMdc` 生成的 policy 规则按 `mixed` 视图生成变更管理条款，见「混合生命周期项目的变更管理条款生成（module-lifecycle-guard）」；部分强度声明不变。
 
 ## 变更管理例外文件清单与保护范围配置（guard-versioned-content-scope）
 
@@ -367,3 +371,42 @@ OpenLogos 生成内容必须包裹在固定 marker 内：
 2. 同一段追加一行：`.gitignore`、`.git/info/exclude` 与 `logos/logos.config.json` 决定 guard 的保护范围，不得直接修改；需要忽略或豁免路径时，直接执行 `openlogos ignore add|remove …` 或 `openlogos exempt add|remove …`（`list` 不受限），由宿主对这次命令弹出原生审批、用户批准后执行；若 guard 提示当前权限模式下宿主不会弹出审批，请用户在终端用 `! <命令原文>` 自行执行，或切换到默认权限模式后重试，不得以对话中的口头同意替代审批。
 3. 中英文模板同口径；en 文案：`` `.gitignore`, `.git/info/exclude` and `logos/logos.config.json` define the guard's protection scope and must not be edited directly. To ignore or exempt a path, run `openlogos ignore add|remove …` or `openlogos exempt add|remove …` directly (`list` is unrestricted); the host will show its native approval prompt for that command and it runs only after the user approves. If the guard reports that the current permission mode will not show an approval prompt, ask the user to run `! <command>` in the terminal or switch to the default permission mode and retry; a verbal "yes" in the conversation never replaces the approval. ``
 4. 生成时机与托管片段合并规则沿用本规范既有「托管片段合并规则」「生成时机」，`openlogos sync` 后存量项目的托管段同步更新，用户段外内容不动。
+
+## 混合生命周期项目的变更管理条款生成（module-lifecycle-guard）
+
+来源变更 module-lifecycle-guard（决策 C01、C02；proposal r1 评审 F1）。guard 在混合生命周期项目中按文件归属的模块生命周期判定（`spec/pretooluse-guard.md`「按文件归属的模块生命周期判定（module-lifecycle-guard，规范性）」）。生成的持久化指令必须与之同口径：否则 hook 已放行 initial 模块文件，AI 读到的磁盘指令仍要求先立案，两套规则相反。
+
+### 生命周期视图
+
+所有生成入口通过同一个 helper 读取 `logos/logos-project.yaml`，得到三种视图之一：
+
+| 视图 | 条件 | 变更管理条款 |
+|---|---|---|
+| `initial` | 没有 `lifecycle: launched` 的模块；yaml 缺失或不可解析 | 既有 initial 文字，逐字节不变 |
+| `launched` | 至少一个 launched 模块，且没有显式 `lifecycle: initial` 的模块 | 既有 launched 文字，逐字节不变 |
+| `mixed` | 至少一个 launched 模块，且至少一个显式 `lifecycle: initial` 的模块 | 本节规则 |
+
+- 入口：`openlogos init`、`init --ai-tool <tool>`、`sync`、`adopt`、`launch` 都用该 helper，不得各自推导。`launch` 按「目标模块已切换为 launched」后的状态计算：launch 后仍有 initial 模块即为 `mixed`，否则为 `launched`。`adopt` 按其写入后的 yaml 计算。
+- 视图只决定指令文字。Skills 部署、宿主资产部署等其他按「是否存在 launched 模块」分支的逻辑，继续使用原布尔值，不受影响。
+
+### `mixed` 视图的文字
+
+适用于 AGENTS.md / CLAUDE.md 托管段、ZCode / Qoder / WorkBuddy / Cursor 宿主指令段（`createZCodeAgentsInstruction`、`createQoderAgentsInstruction`、`createWorkBuddyAgentsInstruction`、`createCursorAgentsInstruction`）与 Cursor policy 规则（`generatePolicyMdc`），中英文同口径。以既有 launched 文字为基础：
+
+1. **新增「按模块生命周期豁免（initial 模块）」小节**，位于 Guard 机制说明之后。逐个列出 initial 模块：
+   - 模块 id；
+   - 豁免的规格：`logos/resources/**` 下 `<id>-` 前缀文件，以及 `scenarios[]` 中 `module` 为该模块的场景对应的 `logos/resources/api/SXX-*.yaml`；
+   - 豁免的代码：该模块的 `paths` 列表；未声明 `paths` 时写明「代码仍需提案」。
+
+   并说明：这些文件按 Phase 推进，无需变更提案；其他模块有活跃提案时，也不受该提案范围限制。同时归属 launched 模块的文件不在豁免之列。
+2. **限定既有禁令**：「无 guard 文件 → 禁止修改」「有 guard 文件 → 只能在该提案范围内修改」「修改代码前确认 guard 存在且在提案范围内」「发现 bug 时只输出分析、不直接修改」各条，适用对象写为「launched 模块的文件、共享配置（如 `logos/logos.config.json`）与归不到任何模块的文件」。不得保留不加限定的「禁止修改任何源代码」。
+3. **原样保留**：唯一例外清单、保护范围配置（`openlogos ignore` / `exempt` 与宿主原生审批）、两档授权语义、环境门禁与硬红线、提案级部署门禁各段。
+4. initial 视图中「存在任何 launched 模块 → 必须先创建变更提案，再修改任何代码或文档」一句不出现在 `mixed` 文字中。
+
+豁免信息来自 yaml，`modules[].lifecycle`、`paths` 或 `scenarios[].module` 变化后，由下一次 `sync` 重写托管段；生成器只读这些字段，不写入。
+
+### 一致性与验证
+
+- 指令文字与 guard 判定同一归属口径；判定以每次 PreToolUse 重读磁盘为准，指令只提供指导。
+- 自动化覆盖：三种视图 × `agents` / `claude` target × zh / en；四个宿主指令段与 Cursor policy；`initial`、`launched` 视图与修改前逐字节一致；`mixed` 视图在「无活跃提案」与「其他模块有活跃提案」两种项目状态下，sync 后读回的托管段都明确允许 initial 模块文件、仍要求 launched / 共享 / 未归属文件立案、且不含覆盖 initial 模块的全局禁令。
+- 托管片段合并规则、生成时机与用户内容保护沿用本规范既有各节。

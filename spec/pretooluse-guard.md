@@ -69,23 +69,30 @@ hook 从 stdin 接收 JSON：
 ## 判定逻辑
 
 ```
-┌─────────────────────────────────────────┐
-│ 1. 读取 logos/logos-project.yaml        │
-│    所有模块 lifecycle 均为 initial?      │
-│    → YES: exit 0（放行，不受限）         │
-│    → NO: 继续检查                       │
-├─────────────────────────────────────────┤
-│ 2. 检查 logos/.openlogos-guard          │
-│    文件存在?                            │
-│    → YES: exit 0（有活跃提案，放行）     │
-│    → NO: 继续检查白名单                 │
-├─────────────────────────────────────────┤
-│ 3. 检查白名单                           │
-│    目标文件/命令在白名单内?              │
-│    → YES: exit 0（豁免，放行）           │
-│    → NO: exit 2（阻断）                 │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│ 1. 读取 logos/logos-project.yaml             │
+│    1a. 所有模块 lifecycle 均为 initial?       │
+│        → YES: exit 0（放行，不受限）          │
+│    1b. 目标仅归属 initial 模块?               │
+│        （按文件归属判定，混合生命周期项目）   │
+│        → YES: exit 0（放行，不受提案范围限制）│
+│    → NO: 继续检查                            │
+├──────────────────────────────────────────────┤
+│ 2. 检查 logos/.openlogos-guard               │
+│    文件存在?                                 │
+│    → YES: exit 0（有活跃提案，放行）          │
+│    → NO: 继续检查白名单                      │
+├──────────────────────────────────────────────┤
+│ 3. 检查白名单                                │
+│    目标文件/命令在白名单内?                   │
+│    → YES: exit 0（豁免，放行）                │
+│    → NO: exit 2（阻断）                      │
+└──────────────────────────────────────────────┘
 ```
+
+- 第 1 步之前，保护范围变更与部署审批受限命令、已配置门禁的环境登记表、guard 自有状态的写入检查先行，结论不受 lifecycle 影响（见 §版本控制内容保护与事后检查（规范性））。
+- 第 1b 步「目标仅归属 initial 模块」即 `initial_owned`，归属规则、目录目标、Bash 逐路径与事后检查的接入点见 §按文件归属的模块生命周期判定（module-lifecycle-guard，规范性）；不可豁免项不参与归属。
+- 第 2 步「有活跃提案，放行」受 `proposal_step` 收窄（见各宿主合同与 plan 阶段写入 allowlist）；第 1b 步放行的目标先于第 2 步，不受任何提案的范围限制。
 
 ## 白名单规则
 
@@ -258,8 +265,9 @@ guard 对 Edit/Write 目标路径与 Bash 写入操作目标应用以下判定�
 - `plugin/bin/guard-check` 与其 sync 部署副本 `.claude/openlogos/bin/guard-check` 落实「plan 阶段写入 allowlist
   仅放行 `2-page-design/*.html` 原型路径」的判定（改源、sync 分发部署副本，对齐 dogfooding 铁律）。
 - plan 阶段的判定依据（`proposal_step` / `PLAN_APPROVED` 存在性）沿用既有派生，不新增状态源。
-- guard 的其余判定逻辑（§判定逻辑：initial 全放行 → guard 文件存在放行 → 白名单）与既有 Bash 安全白名单
+- guard 的其余判定逻辑（§判定逻辑：全部 initial 放行 / 仅归属 initial 模块的目标放行 → guard 文件存在放行 → 白名单）与既有 Bash 安全白名单
   （含 `^git push` 始终放行，见 §白名单规则「`git push` 始终放行」澄清）**均保持不变**，本节仅在 plan 阶段叠加此单一原型路径例外。
+- 仅归属 initial 模块的目标（`initial_owned`，§按文件归属的模块生命周期判定（module-lifecycle-guard，规范性））在活跃提案检查之前放行，plan 阶段写入 allowlist 不对其收窄；本节原型路径边界本身不变。
 
 ## ZCode PreToolUse 兼容层与 fail-closed 契约
 
@@ -292,7 +300,7 @@ ZCode Adapter 只做字段、输出和退出码转换，写入授权完全委托
 
 | 状态 | 写入规则 |
 |---|---|
-| initial | 保持既有 initial 规则 |
+| initial | 全部模块非 launched：保持既有 initial 规则；混合生命周期项目中 `initial_owned` 的目标放行，先于其余各行（§按文件归属的模块生命周期判定（module-lifecycle-guard，规范性）） |
 | launched 无 guard | 源码、规格和其它非安全写入 deny；只读不受影响 |
 | writing / ready-to-delta | 仅当前阶段明确许可的 proposal/tasks；GUI 原型例外沿用既有精确路径规则 |
 | delta-writing | 仅当前提案 `deltas/**` 与该提案 `tasks.md` 对应勾选写入 |
@@ -361,7 +369,7 @@ Qoder Adapter 不实现 allowlist，只调用共享 `GuardDecisionService`。服
 
 | 状态 | 写入规则 |
 |---|---|
-| initial | 沿用既有 initial 规则 |
+| initial | 全部模块非 launched：沿用既有 initial 规则；混合生命周期项目中 `initial_owned` 的目标放行，先于其余各行（§按文件归属的模块生命周期判定（module-lifecycle-guard，规范性）） |
 | launched 无 guard | 源码、规格及其它非安全写入 deny |
 | writing / ready-to-delta | 仅当前阶段 proposal/tasks 与精确 UI 原型例外 |
 | delta-writing | 仅当前提案 `deltas/**` 和该提案 `tasks.md` |
@@ -430,7 +438,7 @@ WorkBuddy Adapter 不实现 allowlist，只调用共享 `GuardDecisionService`�
 
 | 状态 | 写入规则 |
 |---|---|
-| initial | 沿用既有 initial 规则 |
+| initial | 全部模块非 launched：沿用既有 initial 规则；混合生命周期项目中 `initial_owned` 的目标放行，先于其余各行（§按文件归属的模块生命周期判定（module-lifecycle-guard，规范性）） |
 | launched 无 guard | 源码、规格及其它非安全写入 deny |
 | writing / ready-to-delta | 仅当前阶段 proposal/tasks 与既有精确例外 |
 | delta-writing | 仅当前提案 `deltas/**` 和对应 `tasks.md` |
@@ -842,7 +850,7 @@ Windows 上 guard-check 读取 `tool_name` 的两条路径同时失效：`python
 1. **git 判据生效条件**（下文简称「git 判据生效」）：`logos/logos-project.yaml` 中存在 `launched` 模块；项目根位于 git 工作树内（`git -C <项目根> rev-parse --is-inside-work-tree` 输出 `true`）；`git` 可执行；事后检查引擎存在且 node 可执行。四项同时满足才生效。
 2. **无活跃提案（无 `logos/.openlogos-guard`）**：按本节全部规则判定。
 3. **有活跃提案**：Edit / Write 的 proposal_step 收窄与 plan 阶段原型 allowlist 逻辑不变；Bash / PowerShell 照常拍快照建立执行记录（用于识别提案结束后仍在运行的后台调用），但各检查点只维护记录（最终对比、关闭、去重），不报告新变化；`openlogos change` 固定提案起点时存入的待报告项照常送达。
-4. **initial 生命周期**：沿用既有「全部放行」，唯一例外是「保护范围变更的人类确认」在 lifecycle 判定之前生效（保护范围配置会延续到 launch 之后）。
+4. **initial 生命周期**：所有模块均为 initial 时沿用既有「全部放行」；混合生命周期项目中，仅归属 initial 模块的目标（`initial_owned`，见 §按文件归属的模块生命周期判定（module-lifecycle-guard，规范性））同样放行，事后检查不报告其变化，有无活跃提案均如此。唯一例外是「保护范围变更的人类确认」在 lifecycle 判定之前生效（保护范围配置会延续到 launch 之后）；不可豁免项不参与归属。
 5. **非 git 回落（fail-closed）**：git 判据生效条件任一不满足时，沿用修改前的 Bash / PowerShell 判定要素（安全白名单 → 写入模式 → 路径提取与逐路径管辖判定 → 解析不出即阻断）与 Edit / Write 白名单判定，不拍快照、不做事后检查。Bash 一侧改为**逐段**套用上述要素，写入段的相对目标按有效工作目录解析，规则见 §Bash 非 git 回落的复合命令逐段判定（规范性）；PowerShell 一侧沿用既有 `ws_scan` 拆段判定。以下四处保守修改在两种模式下都生效：
    1. `.gitignore` 不在硬编码白名单内（§白名单规则「文件路径白名单（Edit/Write 工具）」）；
    2. 不可豁免项（guard 自有状态、保护范围来源、git 元数据，见「受保护判定」第 2–4 步）受保护，且先于白名单与 exempt 判定；
@@ -899,15 +907,16 @@ Windows 上 guard-check 读取 `tool_name` 的两条路径同时失效：`python
 
 1. **补查**：对全部未关闭执行记录做一次对比，新发现写入待报告项；不阻断当前调用。
 2. **保护范围变更受限命令**（任何 lifecycle、任何提案状态）：按「保护范围变更的宿主原生审批」处理，结论即最终结论。
-3. **lifecycle 全部 initial** → exit 0。
-4. **有活跃提案** → 沿用既有提案期判定；放行时照常拍快照（只维护记录，不报告）。
+3. **lifecycle 全部 initial** → exit 0。混合生命周期项目不在此短路，`initial_owned` 的目标在第 4、6 步与事后检查中处理。
+4. **有活跃提案** → 沿用既有提案期判定，`initial_owned` 的目标不做收窄；放行时照常拍快照（只维护记录，不报告）。
 5. **独立 git / openlogos 调用** → exit 0，按「独立 git / openlogos 调用豁免」处理基线。
-6. **可确定写入目标的形态**：在引号外按 `&&`、`||`、`;`、`|` 切段（复用 PowerShell 侧既有切段与重定向提取），对每段提取能确定的写入目标——重定向目标（既有 `WRITE_TARGET` 提取，PowerShell 含无空格形态）、`rm` / `cp` / `mv` / `mkdir` / `touch` / `chmod` / `chown`（PowerShell 含对应写入 cmdlet 与别名）的路径实参。任一已确定目标受保护（含不可豁免项）→ exit 2。含变量、命令替换、通配符等无法确定的目标**不再导致阻断**，交给事后检查。
+6. **可确定写入目标的形态**：在引号外按 `&&`、`||`、`;`、`|` 切段（复用 PowerShell 侧既有切段与重定向提取），对每段提取能确定的写入目标——重定向目标（既有 `WRITE_TARGET` 提取，PowerShell 含无空格形态）、`rm` / `cp` / `mv` / `mkdir` / `touch` / `chmod` / `chown`（PowerShell 含对应写入 cmdlet 与别名）的路径实参。任一已确定目标受保护（含不可豁免项；`initial_owned` 的目标不计为受保护）→ exit 2，reason 只列受保护的目标。含变量、命令替换、通配符等无法确定的目标**不再导致阻断**，交给事后检查。
 7. **其余** → exit 0，并在执行前调用引擎 `snapshot` 建立执行记录。只读优化：命令命中 `BASH_SAFE_PATTERNS` 中的只读模式（`ls`、`cat`、`grep`、`head`、`tail`、`pwd`、`git status` 等）且不含重定向、管道、复合形态、命令替换、后台符时，可跳过快照；命中与否不改变放行 / 阻断结论。
 
 - `BASH_SAFE_PATTERNS` 在 git 判据生效时只承担上述「可跳过快照」的优化职责，不再作为放行依据；`BASH_WRITE_PATTERNS` 只作为第 6 步的目标提取入口，不再作为「命中即阻断」的依据。未知命令、`node -e`、脚本、`find -delete`、`curl -o` 等写法一律事前放行，由事后检查发现受保护变化。
 - 「Windows shell 输入的判定顺序」中的写入信号识别继续用于第 6 步的目标提取；其「任一目标解析不出即阻断」在 git 判据生效时由事后检查取代。
 - 非 git 回落时，第 2 步之后沿用既有判定顺序（安全白名单先判、写入模式、解析不出即阻断），并叠加「适用条件与非 git 回落」第 5 条的四处保守修改。
+- 事后检查（引擎 `check` 及各检查点）不把 `initial_owned` 路径的变化写入待报告项；同一次调用中其余受保护变化照常报告（§按文件归属的模块生命周期判定（module-lifecycle-guard，规范性））。
 
 ### 执行记录与内容级快照（C09）
 
@@ -1251,3 +1260,81 @@ Cursor 侧同一张表写作 `/\| tee /`（`plugin-cursor/hooks/runtime.cjs`）�
 
 - `plugin/bin/guard-check`：`"| tee "` 改为 `"\\| tee "`；托管副本 `.claude/openlogos/bin/guard-check` 与源模板逐字节一致；`cli/asset-manifest.json` 由生成器重算。
 - 测试：UT-S09-459（模式表无空分支的静态守卫）、UT-S09-460（非 git 回落的跨平台同判行为矩阵），见 `logos/resources/test/core-S09-test-cases.md`。
+
+## 按文件归属的模块生命周期判定（module-lifecycle-guard，规范性）
+
+来源变更 module-lifecycle-guard（决策 C01、C02；proposal r1 评审 F1）。`spec/logos-project.md` 把生命周期定义为模块级，guard 此前却按项目级判定：任一模块 launched，整个项目都按 launched 拦截。本节把判定改为按「被写入的文件归属哪个模块」：确定只归属 initial 模块的文件不需要活跃提案即可写入，其余文件的判定不变。本节约束分发源 `plugin/bin/guard-check`、事后检查引擎 `plugin/bin/guard-post-check.cjs`、`plugin-cursor/hooks/runtime.cjs`、`plugin-qoder/hooks/runtime.cjs`、`plugin-workbuddy/hooks/runtime.cjs`、`plugin-zcode/runtime/hook-runtime.js`，以及 SessionStart 源模板 `plugin/bin/openlogos-phase` 与 `plugin-codex/session-start.sh`；托管副本经既有 init / sync 与资产 manifest 分发获得。
+
+### 术语
+
+| 术语 | 含义 |
+|---|---|
+| 混合生命周期项目 | `modules[]` 中至少一个模块为 `lifecycle: launched`，且至少一个为 `lifecycle: initial` |
+| 归属集合 `owners(rel_path)` | 按下文「归属判定」得到的模块 id 集合；对不参与归属的路径无定义（`not-applicable`） |
+| initial 归属 `initial_owned(rel_path)` | `owners` 非空且其中每个模块都是显式 `lifecycle: initial` |
+
+### 归属判定
+
+判定对象为既有归一化产出的项目根相对路径 `rel_path`（见 §管辖边界 与 §Claude Code guard 跨平台可移植性与输入 fail-closed（规范性）「路径比较」）。按顺序判定，先命中先返回：
+
+| 步骤 | 条件 | 结论 |
+|---|---|---|
+| 1 | 不可豁免项：§版本控制内容保护与事后检查「受保护判定」第 2–4 步（guard 自有状态、保护范围来源、git 元数据），以及已配置门禁的环境登记表 | `not-applicable`，沿用既有判定 |
+| 2 | 既有流程产物与白名单：`WHITELIST_PREFIXES`、`guard.exempt`（含内置默认）、`logos/resources/verify/` | `not-applicable`，沿用既有判定 |
+| 3 | 共享配置 `logos/logos.config.json` | `not-applicable`，按 launched 保护（它同时命中第 1 步） |
+| 4 | 位于 `logos/resources/` 下，文件名以 `<id>-` 开头且 `<id>` 为已登记模块 id（多个时取最长） | `{<id>}` |
+| 5 | 位于 `logos/resources/api/`，文件名匹配 `^S[0-9]+-.*\.ya?ml$`，且 `scenarios[]` 中有同 id 场景，其 `module`（缺省 `core`）为已登记模块 | `{该 module}` |
+| 6 | 其余：逐模块用其合法 `paths` 条目做 glob 整串匹配 | 命中的模块 id 集合（可为空） |
+
+- **glob 语义**与 `cli/src/lib/verify-scope.ts` 的 `globToRegExp` 相同：`**` 跨段（`a/**/b` 中可匹配零段）、`*` 段内任意字符、`?` 单个非 `/` 字符。**合法条目**与 `isValidModulePath` 相同：非空字符串、不以 `/` 开头、不含 `..` 段；非法条目不参与匹配，不影响同模块其他条目。
+- **前缀匹配**与 `prefixModule` 相同：按 id 长度降序取第一个满足 `basename.startsWith(id + "-")` 的模块。
+- **目录目标**（review delta-r1 F3）：按以下规则判定，任一不满足即不视为 `initial_owned`：
+  1. 目录本身不命中第 1 步，其下也不存在第 1 步路径；
+  2. **git 判据生效时**，枚举其下全部受 guard 保护的现存后代：复用事后检查引擎快照的候选采集（`guard-post-check.cjs` 中已跟踪文件、未跟踪未忽略文件、被忽略的 `logos/resources/` 文件、任意层级被忽略的 `.gitignore`、保护范围来源与 git 元数据），对位于该目录下的候选逐个做「受保护判定」，每个受保护的候选都 `initial_owned`。被 git 忽略且不受保护的后代（依赖、构建产物等）不影响结论；被忽略但受保护的规格（`logos/resources/` 下）计入枚举；
+  3. **非 git 回落时**，以及不使用 git 判据的宿主（Qoder / WorkBuddy / ZCode），枚举其下全部现存文件，每个都 `initial_owned`；
+  4. 枚举失败（git 查询非零退出或无法解析、遍历出错）时不视为 `initial_owned`，按既有规则判定。
+
+  目录不存在或为空时按目录路径本身判定。
+- **yaml 读取**：`logos/logos-project.yaml` 缺失、无法解析或 `modules` 不是数组时，不做按文件判定，`initial_owned` 恒为假，项目级判定与修改前一致。bash 运行时以纯 bash 解析所需子集（`modules[].id` / `lifecycle` / `paths`，`scenarios[].id` / `module`；支持引号、CRLF、`paths` 流式与块式写法），解析不出某字段时按该字段缺失处理，不得因此放宽。
+- **lifecycle 取值**：只有值恰为 `initial` 的模块计入 initial；缺省或其他值的模块使 `initial_owned` 为假。
+
+### 判定位置
+
+`initial_owned` 只把结论从「受保护 / 收窄」改为「放行」，不新增阻断。各流程中的插入点：
+
+1. **先于归属判定、结论不变**：保护范围变更受限命令与部署审批受限命令（C14、C05）、已配置门禁的环境登记表（C11）、guard 自有状态的写入检查。
+2. **项目级短路不变**：所有模块均非 launched（修改前的「全部 initial」）→ exit 0。
+3. **Edit / Write / MultiEdit / NotebookEdit**：在活跃提案检查之前，目标 `initial_owned` → exit 0。因此有无活跃提案、活跃提案处于哪个 `proposal_step`（含 plan 阶段未批准与原型 allowlist、delta-writing、ready-to-merge、coding）都放行。非 `initial_owned` 的目标沿用该宿主修改前的提案期规则，结论不变：Claude Code 有活跃提案时只在 plan 阶段收窄本提案的 delta、其余路径放行；Qoder / WorkBuddy / ZCode 按各自 `proposal_step` 表收窄。本节不为 launched 目标新增提案期收窄（review delta-r1 F2）。
+4. **Bash / PowerShell，git 判据生效**：§版本控制内容保护与事后检查「Bash / PowerShell 判定顺序」第 6 步中，`initial_owned` 的已确定目标不计为受保护；事后检查（引擎 `check`、PostToolUse / PostToolUseFailure / Stop / 补查）不把 `initial_owned` 路径的变化写入待报告项。有活跃提案时，提案期判定对 `initial_owned` 目标不做收窄。
+5. **Bash / PowerShell，非 git 回落**：逐段、逐路径管辖判定中，`initial_owned` 路径与白名单路径同样视为放行；解析不出写入目标仍按既有规则阻断。
+6. 阻断与报告的 reason 只列出非 `initial_owned` 的目标或变化。
+
+### 各宿主合同
+
+- **Claude Code**：`plugin/bin/guard-check` 以 bash 实现归属判定，并在 `is_protected` 调用点与 Edit / Write 提案期分支前按「判定位置」接入；`guard-post-check.cjs` 导出同一归属函数供 `protectVerdict` 与 Cursor 复用。
+- **Cursor**：`beforeShellExecution`、`afterShellExecution`、`afterFileEdit` 经引擎复用同一归属函数；部分强度声明不变。
+- **Qoder / WorkBuddy / ZCode**：各自的共享 `proposal_step` 决策中，表内 `initial` 行改为「全部模块非 launched：沿用既有 initial 规则；混合生命周期项目中 `initial_owned` 的目标：放行，先于其余各行」。它们仍不使用 git 判据，也不实现保护范围变更的宿主原生审批。
+- **codex / opencode**：无写入拦截，不涉及；Codex 只改 SessionStart 提示。
+
+### SessionStart 提示
+
+`plugin/bin/openlogos-phase` 与 `plugin-codex/session-start.sh` 在混合生命周期项目中，除既有项目级提示外追加按模块的一段：每个 initial 模块一行（模块 id、「按 Phase 推进，无需变更提案」、豁免范围：`<id>-` 前缀规格与 `paths` 列表，未声明 `paths` 时写明「代码仍需提案」），每个 launched 模块一行（模块 id、「变更须先立案」）。全部 initial、全部 launched 项目的注入文本不变。SessionStart 只提供指导，不是授权来源；授权以每次 PreToolUse 重读磁盘的结论为准。
+
+### 共享测试向量
+
+新增 `plugin/test-vectors/guard-module-lifecycle.json`：每条向量含 yaml 夹具标识、`rel_path`、期望结论（`initial` / `launched` / `unattributed` / `cross` / `not-applicable`）与命中步骤号。Claude bash 实现、引擎与四个非 Claude 宿主运行时以同一份向量校验，结论逐条相同。随包分发与 manifest 登记沿用 `guard-protected.json` 的既有机制。
+
+### 不变量
+
+- 只有 `initial_owned` 为真的路径会因本节放行；其余路径在任何宿主、任何模式下的结论与修改前相同。
+- 全部 initial、没有 initial 模块的项目：判定结论、reason 与 SessionStart 文本与修改前逐字节一致。
+- 不可豁免项、受限命令、门禁登记表先于归属判定；本节不改变它们。
+- 不新增 hook、不新增判定阶段、不新增配置字段；只读 `modules[].lifecycle`、`modules[].paths` 与 `scenarios[].module`。
+- 持久化指令中的变更管理条款与本节同口径，见 `spec/agents-md.md`「混合生命周期项目的变更管理条款生成（module-lifecycle-guard）」。
+
+### [code] 触点（本 delta 只定契约）
+
+- `plugin/bin/guard-check`、`plugin/bin/guard-post-check.cjs`、`plugin-cursor/hooks/runtime.cjs`、`plugin-qoder/hooks/runtime.cjs`、`plugin-workbuddy/hooks/runtime.cjs`、`plugin-zcode/runtime/hook-runtime.js`：实现归属判定并按「判定位置」接入。
+- `plugin/bin/openlogos-phase`、`plugin-codex/session-start.sh`：按模块提示。
+- `plugin/test-vectors/guard-module-lifecycle.json` 及其随包登记。
+- 托管副本经 init / sync 分发，不手改。

@@ -5336,3 +5336,86 @@ M = 提案归属模块 ∪ delta 目标前缀模块 ∪ 改动文件归属模块
 - 需求：`core-01-requirements.md`「S13 按模块限定 verify 范围验收补充」。
 - 场景：`core-S13-verify-results.md`「S13 按模块限定范围的 verify」。
 - 测试：`core-S13-test-cases.md`「S13 按模块限定 verify 范围测试」——启用条件 UT-S13-104、105；范围计算 UT-S13-106～113；用例与结果 UT-S13-114、115；执行 UT-S13-116、117；切片 UT-S13-118；JSON 与报告 UT-S13-119；配置诊断 UT-S13-120；`baseRef` UT-S13-121；端到端 ST-S13-27～32。smoke：SMOKE-core-280～284。
+
+## 2.97 guard 按模块生命周期判定
+
+> 来源变更：module-lifecycle-guard（决策 C01、C02；proposal r1 评审 F1 处置）。权威判据见 `spec/pretooluse-guard.md`「按文件归属的模块生命周期判定（module-lifecycle-guard，规范性）」，持久化指令生成见 `spec/agents-md.md`「混合生命周期项目的变更管理条款生成（module-lifecycle-guard）」，字段语义见 `spec/logos-project.md` §modules（`paths`）、§scenarios（`module`）；本节描述用户可见行为。场景：S09（「S09-H 混合生命周期项目中 initial 模块免提案写入」子场景）。
+
+### 2.97.1 术语
+
+- **混合生命周期项目**：`logos/logos-project.yaml` 的 `modules[]` 中至少一个模块为 `lifecycle: launched`，且至少一个模块为 `lifecycle: initial`。
+- **initial 归属文件**：按 §2.97.2 归属到至少一个模块，且归属的模块全部为 `lifecycle: initial` 的文件。只有显式写为 `initial` 的模块计入；`lifecycle` 缺省或为其他值的模块不构成豁免。
+- 全部模块 initial 的项目、没有 initial 模块的项目，不进入本节的按文件判定，行为与修改前一致（§2.97.8）。
+
+### 2.97.2 文件归属顺序
+
+判定对象为 guard 既有归一化后的项目根相对路径。按顺序取第一条成立的：
+
+1. **不可豁免项**（guard 自有状态 `logos/.openlogos-runtime/`、保护范围来源、git 元数据、已配置门禁的环境登记表）：不参与归属，沿用既有判定。即使位于某个 initial 模块的 `paths` 内（如 `team/.gitignore`）也不豁免。
+2. **既有流程产物与白名单**（硬编码白名单 `WHITELIST_PREFIXES`、`guard.exempt`，以及 `logos/resources/verify/`）：不参与归属，按现行规则判定。
+3. **共享配置** `logos/logos.config.json`：不参与归属，按 launched 保护（它同时是不可豁免的保护范围来源）。`logos/logos-project.yaml` 属于既有白名单，规则不变。
+4. **前缀规格**：`logos/resources/**` 下文件名以 `<module>-` 开头、`<module>` 为已登记模块 id 的文件，归该模块；多个 id 都能匹配时取最长者（与 `cli/src/lib/verify-scope.ts` 的 `prefixModule` 一致，`core-api-01.md` 归 `core-api` 而非 `core`）。
+5. **API 规格**：`logos/resources/api/` 下文件名匹配 `S<数字>-*.yaml` 或 `S<数字>-*.yml` 的文件，取 `S<数字>` 在 `scenarios[]` 中的同 id 场景，归该场景的 `module`（场景未写 `module` 时为 `core`）。场景未登记、或其 `module` 不是已登记模块时，本步不产生归属，继续第 6 步。
+6. **按 `paths`**：其余文件（含 `logos/resources/` 下不带已登记前缀的文件）按 `modules[].paths` 的 glob 匹配，命中的模块全部计入。glob 语义与 `verify-scope.ts` 的 `globToRegExp` 相同：`**` 跨段、`*` 段内、`?` 单个非 `/` 字符，整串匹配。非法条目（非字符串、空串、以 `/` 开头、含 `..` 段）不参与匹配，不影响同模块的其他条目。
+7. 第 4～6 步得到归属集合 H。H 非空且其中每个模块都是 `lifecycle: initial` → **initial 归属文件**；H 为空（未归属）或含任何非 initial 模块（跨模块）→ 按 launched 保护。
+
+与 0.16.8 按模块 verify 同一套归属口径，语义方向相反：verify 归不到时「宁多跑」回落全量；guard 归不到时「宁拦」按 launched 保护。
+
+**目录目标**（如 `rm -rf team/src`，review delta-r1 F3）：目录本身不是不可豁免项、其下不含不可豁免项，并且其下**每个受 guard 保护的现存后代**都是 initial 归属文件时，才按 initial 归属处理。git 判据生效时，受保护后代复用事后检查的候选采集枚举，包括已跟踪文件、未跟踪未忽略文件，以及**被 git 忽略但仍受保护**的 `logos/resources/` 规格与忽略规则来源；被忽略且不受保护的依赖、产物不影响结论。非 git 回落时枚举其下全部现存文件。枚举失败时不按 initial 归属处理。目录不存在或为空时按目录路径本身归属。
+
+**yaml 不可读**：`logos/logos-project.yaml` 缺失、无法解析或 `modules` 不是数组时，不做按文件判定；项目级判定保持修改前的行为。
+
+### 2.97.3 Edit / Write / MultiEdit / NotebookEdit
+
+在保护范围变更审批、已配置门禁的登记表检查与 guard 自有状态检查之后、活跃提案检查之前判定：
+
+- 全部模块 initial → 放行（既有）。
+- 目标是 initial 归属文件 → 放行。**有无活跃提案、活跃提案处于哪个 `proposal_step`（含 plan 阶段未批准、delta-writing、ready-to-merge）都放行**——initial 模块文件不在任何提案的管辖内。
+- 其余 → 沿用既有判定（有活跃提案按该宿主的提案期规则；无活跃提案按受保护判定），结论与修改前同一宿主、同一 `proposal_step` 相同。本节不新增阻断（review delta-r1 F2）：Claude Code 有活跃提案时只在 plan 阶段收窄本提案的 delta，其余路径放行；Qoder / WorkBuddy / ZCode 按各自 `proposal_step` 表收窄。因此「initial 模块文件不受提案范围限制」在 Qoder / WorkBuddy / ZCode 上表现为由 deny 变为放行，在 Claude Code 上结论不变。
+
+### 2.97.4 Bash / PowerShell 与事后检查
+
+- **git 判据生效**：事前「可确定写入目标」一步中，initial 归属的目标不计为受保护；事后检查不报告仅涉及 initial 归属文件的变化。同一次调用里只要有一个目标或变化不是 initial 归属且受保护，就按既有规则阻断或报告，且只列出那些文件。
+- **有活跃提案**：提案期判定对 initial 归属目标不适用收窄。
+- **非 git 回落**：逐段、逐路径判定时，initial 归属的路径视为放行；解析不出写入目标的命令仍按既有规则阻断。
+- 引擎 `plugin/bin/guard-post-check.cjs` 的 `protectVerdict` 与 Claude 侧 bash `is_protected` 共用同一归属规则；Cursor 直接复用引擎。
+
+### 2.97.5 各宿主同判（C02）
+
+Claude Code（`plugin/bin/guard-check`）、Cursor（`plugin-cursor/hooks/runtime.cjs`）、Qoder（`plugin-qoder/hooks/runtime.cjs`）、WorkBuddy（`plugin-workbuddy/hooks/runtime.cjs`）、ZCode（`plugin-zcode/runtime/hook-runtime.js`）与事后检查引擎各自实现 §2.97.2，不新增 hook、不新增判定阶段。新增共享测试向量 `plugin/test-vectors/guard-module-lifecycle.json`：每条向量给出 yaml 夹具、路径与期望的归属结论（`initial` / `launched` / `unattributed` / `cross` / `not-applicable`），全部运行时以同一份向量校验。
+
+### 2.97.6 SessionStart 提示按模块
+
+`plugin/bin/openlogos-phase` 与 `plugin-codex/session-start.sh` 在混合生命周期项目中，除既有项目级提示外，追加按模块的一段：
+
+- 每个 initial 模块一行：模块 id、「按 Phase 推进，无需变更提案」、豁免范围（`<id>-` 前缀规格；`paths` 列表，未声明时写明「代码仍需提案」）；
+- 每个 launched 模块一行：模块 id、「变更须先立案」。
+
+全部 initial、全部 launched 项目注入文本不变。
+
+### 2.97.7 持久化 AI 指令按模块（review F1）
+
+`init`、`init --ai-tool`、`sync`、`launch`、`adopt` 写入的变更管理条款按项目的**生命周期视图**生成：`initial`（无 launched 模块）、`launched`（无 initial 模块）、`mixed`（混合生命周期项目）。视图由同一个读取 `logos-project.yaml` 的 helper 得出；`launch` 按「目标模块已切换为 launched」后的状态计算。
+
+`mixed` 视图的文字 = 既有 launched 文字，并做以下修改（AGENTS.md / CLAUDE.md 托管段、ZCode / Qoder / WorkBuddy / Cursor 宿主指令段、Cursor policy 规则同口径）：
+
+1. 新增「按模块生命周期豁免」小节，逐个列出 initial 模块：豁免的前缀规格（`logos/resources/**` 下 `<id>-` 前缀文件、该模块场景的 `logos/resources/api/SXX-*.yaml`）与 `paths` 列表（未声明时写明「代码仍需提案」），说明这些文件按 Phase 推进、无需提案，其他模块有活跃提案时也不受该提案范围限制；同时归属 launched 模块的文件除外。
+2. 「无 guard 文件 → 禁止修改」「有 guard 文件 → 只能在该提案范围内修改」「修改代码前确认 guard 存在」等条款，限定为 launched 模块文件、共享配置与未归属文件。
+3. 不可豁免项、保护范围配置（`openlogos ignore` / `exempt`）、环境门禁与硬红线条款原样保留。
+
+`initial`、`launched` 视图的文字与修改前逐字节一致。Skills 部署、宿主资产部署等其他按「是否存在 launched 模块」分支的逻辑不变。不新增配置字段或指令文件。
+
+### 2.97.8 兼容性
+
+- 全部 initial 的项目：项目级「全部放行」不变。
+- 没有 initial 模块的项目：判定结果、SessionStart 文本与指令文字不变。
+- 混合生命周期项目：仅 initial 归属文件由拦截变为放行，其指令中的变更管理条款随之按模块限定。
+- 不改任何文件格式，只读 `modules[].lifecycle`、`modules[].paths` 与 `scenarios[].module`。
+
+### 2.97.9 非目标与追溯
+
+- 非目标：不改 plan 阶段 allowlist 的宿主口径不一致；不新增 lifecycle 切换命令；不新增场景编号；不 npm publish。
+- 需求：`core-01-requirements.md`「guard 按模块生命周期判定需求」（AC-GUARD-MOD-01～10）。
+- 场景：`core-S09-change-management.md`「S09-H 混合生命周期项目中 initial 模块免提案写入」。
+- 测试：UT-S09-467～UT-S09-480、ST-S09-206～ST-S09-209；smoke：SMOKE-core-285～SMOKE-core-288。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.9 本机测试环境发布（module-lifecycle-guard）」。

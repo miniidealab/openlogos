@@ -2495,3 +2495,43 @@
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`，`target_environment` 取本次 `OPENLOGOS_SMOKE_ENV`，skip 记录不声明；**失败不得写 pass**。
 - 判据以 `--format json` 的结构化字段、退出码、调用日志与报告 Summary 表行为准，不解析其余人类可读文案。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-280～SMOKE-core-284 均被 runner 覆盖。
+
+## OpenLogos 0.16.9 guard 按模块生命周期判定安装态 smoke（SMOKE-core-285～288）
+
+> 这组用例验证 guard 按模块生命周期判定（来源提案 module-lifecycle-guard，功能规格 §2.97）确实进入了本机全局安装态，并经 `openlogos sync` 落到使用仓库：混合生命周期项目中 initial 模块的前缀规格与 `paths` 内代码免提案写入；launched 模块文件、共享配置与未归属文件仍被拦截；sync 后 AGENTS.md / CLAUDE.md 托管段不再含覆盖 initial 模块的全局禁令；全 initial 项目零改动。
+>
+> 用例在 `mktemp -d` 一次性隔离 git 项目内执行：经全局 `openlogos init`（`aiTool: claude`）建立，再写入混合生命周期 `logos/logos-project.yaml`——`core`（launched，`paths: ["src/**"]`）与 `team`（initial，`paths: ["team/**"]`），`scenarios` 中 `S44` 的 `module` 为 `team`；已跟踪 `src/main.ts`、`team/app.ts`、`scripts/release.sh` 并完成初始提交；随后以全局 `openlogos sync` 部署项目内 guard 副本。guard 判定一律以该项目 sync 后的 `.claude/openlogos/bin/guard-check` 与 `guard-post-check.cjs` 为被测对象，向 stdin 喂 PreToolUse / PostToolUse hook JSON（`permission_mode: "default"`），以退出码判定。runner 以子进程直接调用全局 CLI，对全局安装态**只读**，不做安装或卸载；对本仓与 runlogos 仓库只做 SMOKE-core-285 ④⑤ 的只读比对与读回。版本以部署记录与 `cli/src/lib/local-release-candidate.ts` 的候选版本为准，断言写成关系式，不硬编码 `0.16.9`。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-285 | 安装态版本、制品身份与两仓 sync 同源 | 本机全局已安装本次候选；部署记录中有候选版本、tarball SHA-256 与 runlogos 项目根路径；本仓与 runlogos 已按部署方案执行 `openlogos sync` | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 检查全局包内存在共享向量 `guard-module-lifecycle.json`，且 `claude-plugin-template/bin/guard-check` 与 `guard-post-check.cjs` 含按模块归属判定；④ 逐字节比对本仓 `.claude/openlogos/bin/guard-check` 与全局包内同名文件；⑤ 逐字节比对 runlogos 仓 `.claude/openlogos/bin/guard-check` 与全局包内同名文件，并读回其 AGENTS.md / CLAUDE.md 托管段 | ① `--version` 等于部署记录候选版本，入口无 workspace link；② `payloadHash` 自洽；③ 全部成立；④⑤ 字节一致；⑤ 托管段对 `team` 按 initial 给出免提案条款，且不含不加限定的「无 guard 文件 → 禁止修改任何源代码」与「存在任何 launched 模块 → 必须先创建变更提案」 | 保留读取结果。①～③ 任一不符 → 停止后续流程，按部署方案以 `openlogos deploy --env test --rollback` 回到 0.16.8；④ 不一致 → 重新执行本仓 `openlogos sync` 后复核，仍不一致则回流本提案；⑤ 不一致 → 记录并回流本提案，不在 runlogos 中修改文件 |
+| SMOKE-core-286 | 安装态 initial 模块免提案写入，launched 与共享文件仍被拦 | 本机全局已安装本次候选；混合生命周期临时项目已 sync；无活跃提案 | 以项目内 guard-check 依次判定：Write `logos/resources/prd/1-product-requirements/team-01-requirements.md`；Write `team/app.ts`；Write `logos/resources/api/S44-seats.yaml`；Write `src/main.ts`；Write `scripts/release.sh`；Write `logos/logos.config.json`；Write `team/.gitignore`；Bash `echo x > team/c.ts && echo y > src/main.ts`；再以 PreToolUse → 真实执行 → PostToolUse 链路执行 `node -e` 写 `team/b.ts` | 前三条 exit 0；`src/main.ts`、`scripts/release.sh` exit 2；`logos/logos.config.json`、`team/.gitignore` 按保护范围来源处理（不放行）；Bash 复合命令 exit 2 且 reason 只列 `src/main.ts`；`node -e` 链路 PostToolUse exit 0，无待报告项 | 同上；任一不成立表示按模块判定未进入安装态，回装旧版并回流本提案 |
+| SMOKE-core-287 | 安装态 sync 后指令读回与其他模块有活跃提案 | 同 SMOKE-core-286 的临时项目 | ① 读回 AGENTS.md / CLAUDE.md 托管段；② 以全局 `openlogos change core-x` 创建 `core` 提案，`openlogos sync` 后再次读回托管段；③ 提案处于 plan 阶段（无 `PLAN_APPROVED`）时判定 Write `team/app.ts`、Write `src/main.ts` 与 Write `logos/changes/core-x/deltas/prd/1-product-requirements/core-01-requirements.md` | ① 托管段含「按模块生命周期豁免」小节，列出 `team`、`team-` 前缀规格与 `paths: team/**`，「无 guard 文件 → 禁止修改」限定为 launched 模块文件、共享配置与未归属文件；② 托管段写明 initial 模块文件在其他模块有活跃提案时也不受该提案范围限制；③ `team/app.ts` exit 0；`src/main.ts` exit 0，与 0.16.8 对同一输入的结论相同（Claude Code 提案期只收窄 plan 阶段的本提案 delta，review delta-r1 F2）；非原型 delta exit 2（既有 plan 收窄保留） | 同上；任一不成立表示持久化指令或提案期判定未进入安装态，回装旧版并回流本提案 |
+| SMOKE-core-288 | 安装态全 initial 与全 launched 零回归 | 本机全局已安装本次候选；两个临时项目：A 全部模块 initial、B 全部模块 launched，其余同上；对同一夹具以 0.16.8 回滚制品在一次性隔离 prefix 中执行同样命令作为基线 | 对 A、B 分别执行 `openlogos sync`、读回托管段，并以项目内 guard-check 判定 SMOKE-core-286 的全部写入；与基线比对 | 托管段与基线逐字节一致；每条判定的退出码与 reason 与基线相同 | 同上；任一不成立表示零回归被破坏，回装旧版并回流本提案 |
+
+### 二、执行边界
+
+- 全部写入只在 `mktemp -d` 的一次性项目与一次性基线 prefix 内进行，结束即删除。**不得**触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态目录或本机全局 prefix；对全局安装态只读；对本仓与 runlogos 仓库只做 SMOKE-core-285 ④⑤ 的只读比对与读回，不在 runlogos 中执行任何命令。
+- 不触发真实 CI、不访问任何远程服务。
+- 命令图中不得出现 `npm publish` / dist-tag / `git tag` / `gh release` / `git push`。
+- 断言中不硬编码主机路径、墙上时钟、本机全局安装现值或版本字面量；runlogos 项目根取自部署记录。
+
+### 三、追溯与覆盖
+
+- 功能规格：§2.97。
+- 需求：`core-01-requirements.md`「guard 按模块生命周期判定需求」（AC-GUARD-MOD-10）。
+- 根规范：`spec/pretooluse-guard.md`「按文件归属的模块生命周期判定（module-lifecycle-guard，规范性）」、`spec/agents-md.md`「混合生命周期项目的变更管理条款生成（module-lifecycle-guard）」。
+- 场景：`core-S09-change-management.md`「S09-H 混合生命周期项目中 initial 模块免提案写入」。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.9 本机测试环境发布（module-lifecycle-guard）」。
+- 仓库内对应用例：UT-S09-467～UT-S09-480、ST-S09-206～ST-S09-209。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-module-lifecycle-guard-0-16-9.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-285～SMOKE-core-288，不得依靠通配发现后无条件 PASS。runner 记录全局入口 realpath、安装态版本、每个隔离项目路径、每次判定的退出码与 reason 摘要。
+- 适用窗口：活跃变更为 `module-lifecycle-guard`，或 `OPENLOGOS_MLG_SMOKE=1`；窗口之外按既有留痕机制为全部 owned ID 写 skip。环境变量一律使用 `OPENLOGOS_MLG_` 前缀。
+- **适用性判定不得依赖自动流程不会设置的环境变量**：候选版本取自部署记录与 `cli/src/lib/local-release-candidate.ts`，候选版本早于 0.16.9 时按缺候选制品处理；只有部署记录、回滚制品、本仓或 runlogos 的 sync 确实缺失时才写显式 `skip` 并携带缺失项，不得标 `reason_code:"platform-unavailable"`。有 skip 时不得写 `SMOKE_PASS`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`，`target_environment` 取本次 `OPENLOGOS_SMOKE_ENV`，skip 记录不声明；**失败不得写 pass**。
+- 判据以退出码、托管段 marker 之间的文本与 hook stdout JSON 为准，不解析其余人类可读文案。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-285～SMOKE-core-288 均被 runner 覆盖。

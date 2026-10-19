@@ -204,7 +204,7 @@ deployment_gates:
 |------|------|------|------|
 | `id` | string | 是 | 场景唯一编号，格式为 `S` + 两位数字，如 `S01`、`S02` |
 | `name` | string | 是 | 场景名称（一句话描述） |
-| `module` | string | 否 | 所属模块 id，缺省为 `core`。多模块项目必填，用于 `openlogos status` 按模块计算 phase 进度。`openlogos sync` 会自动补全缺失的 `module` 字段。 |
+| `module` | string | 否 | 所属模块 id，缺省为 `core`。多模块项目必填，用于 `openlogos status` 按模块计算 phase 进度；guard 也据此判定 API 规格 `logos/resources/api/SXX-*.yaml` 的归属（API 规格文件名不带模块前缀，见 `spec/pretooluse-guard.md`「按文件归属的模块生命周期判定（module-lifecycle-guard，规范性）」）。`openlogos sync` 会自动补全缺失的 `module` 字段。 |
 
 **命名规则约定**（各阶段产出物通过 `<module>-SXX` 前缀与场景关联，无需在 yaml 中声明路径）：
 
@@ -570,7 +570,9 @@ modules:
 ### 消费者
 
 - `openlogos verify`：计算范围 M、选择模块级命令、核对范围内用例（功能规格 §2.96；`spec/test-results.md`「按模块限定 verify 范围的运行约定」）。
-- 其他命令不读取 `paths`。`openlogos module add`、`openlogos sync` 不写入、不修改该字段，由人维护。
+- guard（五个宿主的 PreToolUse 运行时与事后检查引擎）：在混合生命周期项目中判定代码文件归属哪个模块；文件只命中 `lifecycle: initial` 的模块时，写入无需活跃提案（`spec/pretooluse-guard.md`「按文件归属的模块生命周期判定（module-lifecycle-guard，规范性）」）。语义方向与 verify 相反：归不到任何模块时按 launched 保护；非法条目不参与匹配、不影响同模块其他条目，而不是回落。
+- 持久化指令生成（`init` / `sync` / `launch` / `adopt`）：在混合生命周期项目中把 initial 模块的 `paths` 列为免提案的代码范围（`spec/agents-md.md`「混合生命周期项目的变更管理条款生成（module-lifecycle-guard）」）；SessionStart 提示同样列出。
+- 以上消费者只读 `paths`。`openlogos module add`、`openlogos sync` 不写入、不修改该字段，由人维护。initial 模块未声明 `paths` 时，guard 只豁免其 `<id>-` 前缀规格，代码仍需提案。
 
 ### 示例
 
