@@ -16,6 +16,11 @@ import {
 } from './status.js';
 import { VERIFY_PASS_MARKER } from '../lib/proposal-markers.js';
 import { DEPLOY_LEDGER_REL, ENV_REGISTRY_REL, isGatedEnvironment, loadEnvironmentRegistry, resolveEnvironment } from '../lib/environments.js';
+import type { RegistryLoad } from '../lib/environments.js';
+import {
+  activeProposalModule, gateReferenceDetails, gateReferenceMessage, isModuleScopeEnabled, moduleMismatchDetails, moduleMismatchMessage,
+  modulesOwning, resolveModuleEnvironments,
+} from '../lib/module-env-scope.js';
 import type { DeployLedgerRecord } from '../lib/environments.js';
 import { appendLedgerLine, removeOwnLedgerLine } from '../lib/deployment-ledger.js';
 
@@ -137,8 +142,10 @@ function git(root: string, args: string[]): { ok: boolean; stdout: string } {
  */
 function resolveDeployTarget(
   root: string, environment: string | undefined, refInput: string | undefined, format: OutputFormat, locale: Locale,
+  undeclaredModule = false,
 ): ResolvedDeployTarget {
-  const reg = loadEnvironmentRegistry(root);
+  // module-scoped-env-smoke（§14.4）：未声明环境的提案模块按「没有登记表」处理，--env 只作原始标签
+  const reg: RegistryLoad = undeclaredModule ? { state: 'absent' } : loadEnvironmentRegistry(root);
   let resolvedEnv: string | null = environment ?? null;
   if (reg.state !== 'absent') {
     if (reg.state === 'unloadable' || reg.errors.length > 0) {
@@ -174,6 +181,41 @@ function resolveDeployTarget(
     fail(format, locale, 'ENV_REF_UNRESOLVED', 'deployDone.error.refUnresolved', { ref: refInput });
   }
   return { registryPresent: reg.state !== 'absent', environment: resolvedEnv, ref: parsed.stdout, refSource: 'explicit' };
+}
+
+/**
+ * module-scoped-env-smoke（spec/environments.md §14.4）：启用按模块区分时，deploy-done 的目标模块恒为提案模块；
+ * 依次校验引用失效（ENV_GATE_REFERENCE_UNKNOWN）与环境归属（ENV_MODULE_MISMATCH），排在既有前置与受门环境检查之前，
+ * 任一拒绝零写入。返回 true 表示提案模块未声明环境（按无登记表处理、不写部署账本）。未启用、无活跃提案或登记表非法时
+ * 返回 false，交由既有流程（含 NO_ACTIVE_CHANGE / ENV_REGISTRY_INVALID）处理。
+ */
+function checkDeployDoneModuleScope(root: string, environment: string | undefined, format: OutputFormat, locale: Locale): boolean {
+  if (!isModuleScopeEnabled(root)) return false;
+  const active = readActiveProposalGuard(root);
+  if (!active || !existsSync(active.proposalDir)) return false;
+  const proposalModule = activeProposalModule(root, active.slug, active.proposalDir, active.moduleId);
+  if (proposalModule === null) return false;
+  const reg = loadEnvironmentRegistry(root);
+  if (reg.state === 'unloadable' || (reg.state === 'loaded' && reg.errors.length > 0)) return false;
+  const map = resolveModuleEnvironments(root, reg.state === 'loaded' ? reg.environments : null);
+  const decl = map.decls.get(proposalModule);
+  if (!decl) return false;
+  if (decl.state === 'invalid') {
+    failRaw(format, 'ENV_GATE_REFERENCE_UNKNOWN', gateReferenceMessage(locale, decl), 'deploy-done', { details: gateReferenceDetails(decl) });
+  }
+  const resolved = reg.state === 'loaded' && environment !== undefined && environment.trim() !== ''
+    ? resolveEnvironment(reg.environments, environment)
+    : null;
+  const mismatch = (envId: string): never => failRaw(
+    format, 'ENV_MODULE_MISMATCH', moduleMismatchMessage(locale, decl, envId), 'deploy-done', { details: moduleMismatchDetails(decl, envId) },
+  );
+  if (decl.state === 'undeclared') {
+    // 不得把本模块提案标记为部署到另一模块已声明的环境
+    if (resolved?.ok && modulesOwning(map, resolved.id).length > 0) mismatch(resolved.id);
+    return true;
+  }
+  if (resolved?.ok && !decl.environments.includes(resolved.id)) mismatch(resolved.id);
+  return false;
 }
 
 /** 调用时 HEAD 与工作区状态：只作观察信息（spec/environments.md §5.2），不作为部署版本。 */
@@ -267,9 +309,9 @@ function fail(
  * S30：format 感知的原始 message 错误退出（json → envelope，否则 `Error: …`）。
  * command 为错误信封的 command 字段：`openlogos deploy` 复用提案通道前置时传 'deploy'（environment-deploy）。
  */
-function failRaw(format: OutputFormat, code: string, message: string, command = 'deploy-done'): never {
+function failRaw(format: OutputFormat, code: string, message: string, command = 'deploy-done', extra?: Record<string, unknown>): never {
   if (format === 'json') {
-    console.error(JSON.stringify(makeErrorEnvelope(command, code, message)));
+    console.error(JSON.stringify(makeErrorEnvelope(command, code, message, extra)));
   } else if (command === 'deploy-done') {
     console.error(`Error: ${message}`);
   } else {
@@ -566,12 +608,15 @@ export async function deployDone(format: OutputFormat = 'text', environment?: st
     fail(format, locale, 'PROJECT_NOT_INITIALIZED', 'deployDone.error.projectNotInitialized');
   }
 
+  // module-scoped-env-smoke：引用失效 → 归属，排在既有前置与受门环境检查之前（§14.4）
+  const undeclaredModule = checkDeployDoneModuleScope(root, environment, format, locale);
+
   const { active, moduleDefaults, finishVerify } = await preflightProposalDeploy(root, format, locale, {
     command: 'deploy-done', requireReport: true,
   });
 
   // environment-registry：环境与 --ref 判定是纯读前置，排在 cmd-gate verify 与任何写入之前
-  const target = resolveDeployTarget(root, environment, refInput, format, locale);
+  const target = resolveDeployTarget(root, environment, refInput, format, locale, undeclaredModule);
 
   const verifyResult = await finishVerify(); // cmd-gate：纯读前置之后执行 cmd；marker verify 已在前置中判定
 
@@ -585,8 +630,9 @@ export async function deployDone(format: OutputFormat = 'text', environment?: st
   };
 
   // 传入 --env 时追加账本 deploy 记录（spec/environments.md §5.1、§5.2）
+  // 未声明环境的模块不写部署账本（module-scoped-env-smoke，§14.4）
   let ledgerLine: string | null = null;
-  if (target.environment !== null) {
+  if (target.environment !== null && !undeclaredModule) {
     const record: DeployLedgerRecord = {
       kind: 'deploy',
       environment: target.environment,

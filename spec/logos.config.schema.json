@@ -156,6 +156,28 @@
           "type": "boolean",
           "default": true,
           "description": "是否禁止 smoke 命令写入仓库工作区；true 时必须阻断工作区写入"
+        },
+        "modules": {
+          "type": "object",
+          "description": "模块级 smoke 配置（可选，module-scoped-env-smoke，spec/environments.md §14.5）。键为 logos-project.yaml 中已登记的模块 id；command / result_path / report_path 与项目级同名字段同语义，未写的字段回落项目级；沙箱字段沿用项目级。只在按模块区分启用（多模块且至少一个模块声明了非空 deployment_gates.<module>.environments 或配置了本字段）且 smoke 的目标模块确定时使用；未登记的模块 id 产生警告 smoke_module_unknown 并被忽略",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "description": "该模块的冒烟测试命令；执行时注入 OPENLOGOS_SMOKE_MODULE=<模块 id>"
+              },
+              "result_path": {
+                "type": "string",
+                "description": "该模块的冒烟测试结果 JSONL 文件路径（相对项目根目录）；缺省回落项目级 smoke.result_path"
+              },
+              "report_path": {
+                "type": "string",
+                "description": "该模块的冒烟测试报告输出路径（相对项目根目录）；缺省回落项目级 smoke.report_path"
+              }
+            },
+            "additionalProperties": false
+          }
         }
       }
     },

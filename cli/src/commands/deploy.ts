@@ -28,6 +28,11 @@ import {
   parseTriggerOutput, viewRun, workflowMissingReason, type RefEvidence, type RunState,
 } from '../lib/deploy-ci.js';
 import {
+  activeProposalModule, gateReferenceDetails, gateReferenceMessage, isModuleScopeEnabled, moduleMismatchDetails, moduleMismatchMessage,
+  resolveModuleEnvironments, resolveTargetModule,
+} from '../lib/module-env-scope.js';
+import type { ModuleEnvDecl } from '../lib/module-env-scope.js';
+import {
   DEPLOYMENT_REPORT_PATH, observeWorkspace, preflightProposalDeploy, readActiveProposalGuard, resolveModuleDefaults,
   writeDeployCompletion, type ActiveProposalGuard, type DeployCompletionInput, type DeployCompletionResult,
 } from './deploy-done.js';
@@ -444,10 +449,44 @@ function recheckGate(root: string, locale: Locale, env: EnvironmentDef, requeste
   gate.approval_id = approvalId;
 }
 
-/** 默认通道：活跃提案处于 ready-to-deploy 时为提案通道，否则为版本通道（§11.5）。 */
-function defaultChannel(root: string): Channel {
+/**
+ * module-scoped-env-smoke（spec/environments.md §14.2～§14.4）：启用按模块区分时，按 §14.3 确定目标模块，
+ * 目标模块引用失效则在任何部署动作（含未决记录操作、取环境锁）之前以 ENV_GATE_REFERENCE_UNKNOWN 拒绝。
+ * 返回活跃提案模块的环境声明，供通道判定；未启用时返回 null（通道规则与引入前一致）。
+ */
+interface DeployModuleScope {
+  /** 活跃提案所属模块的声明；无活跃提案时为 null。 */
+  proposalDecl: ModuleEnvDecl | null;
+}
+
+function checkDeployModuleScope(root: string, envId: string, locale: Locale): DeployModuleScope | null {
+  if (!isModuleScopeEnabled(root)) return null;
+  const reg = loadEnvironmentRegistry(root);
+  if (reg.state !== 'loaded') return null;
+  const map = resolveModuleEnvironments(root, reg.environments);
+  const active = readActiveProposalGuard(root);
+  const proposalModule = active && existsSync(active.proposalDir)
+    ? activeProposalModule(root, active.slug, active.proposalDir, active.moduleId)
+    : null;
+  const target = resolveTargetModule(map, envId, proposalModule);
+  const decl = target.mode === 'module' ? map.decls.get(target.module) : undefined;
+  if (decl?.state === 'invalid') throw new DeployExit('ENV_GATE_REFERENCE_UNKNOWN', gateReferenceMessage(locale, decl), gateReferenceDetails(decl));
+  return { proposalDecl: proposalModule !== null ? map.decls.get(proposalModule) ?? null : null };
+}
+
+/** 环境属于活跃提案模块的 E(m)（§14.4）；未声明环境的提案模块恒为否。 */
+function envInProposalModule(scope: DeployModuleScope, envId: string): boolean {
+  return scope.proposalDecl !== null && scope.proposalDecl.environments.includes(envId);
+}
+
+/**
+ * 默认通道：活跃提案处于 ready-to-deploy 时为提案通道，否则为版本通道（§11.5）。启用按模块区分时另要求
+ * --env ∈ E(提案模块)，否则为版本通道（§14.4）。
+ */
+function defaultChannel(root: string, scope: DeployModuleScope | null = null, envId: string | null = null): Channel {
   const active = readActiveProposalGuard(root);
   if (!active || !existsSync(active.proposalDir)) return 'version';
+  if (scope !== null && envId !== null && !envInProposalModule(scope, envId)) return 'version';
   const step = detectProposalStepViaFlow(active.proposalDir, resolveModuleDefaults(root, active.moduleId));
   return step === 'ready-to-deploy' ? 'proposal' : 'version';
 }
@@ -662,6 +701,13 @@ async function runDeploy(root: string, locale: Locale, format: OutputFormat, opt
   }
   checkArgs(opts, locale);
   const { env } = loadTarget(root, opts.env, locale);
+  // module-scoped-env-smoke：目标模块引用失效在任何部署动作之前拒绝（§14.2）
+  const moduleScope = checkDeployModuleScope(root, env.id, locale);
+  // 显式 --channel proposal 而环境不属于提案模块（含提案模块未声明环境）：ENV_MODULE_MISMATCH，零执行零写入（§14.4）
+  if (opts.channel === 'proposal' && moduleScope?.proposalDecl && !envInProposalModule(moduleScope, env.id)) {
+    const decl = moduleScope.proposalDecl;
+    throw new DeployExit('ENV_MODULE_MISMATCH', moduleMismatchMessage(locale, decl, env.id), moduleMismatchDetails(decl, env.id));
+  }
   // --force-promote 只对配置了 promote_from 的环境有意义（§12.3）
   if (opts.forcePromote !== undefined && (env.gate?.promote_from ?? null) === null) {
     fail(locale, 'DEPLOY_ARGS_CONFLICT', 'deploy.error.argsConflict', { detail: t(locale, 'deploy.args.forcePromoteNotConfigured', { environment: env.id }) });
@@ -681,7 +727,7 @@ async function runDeploy(root: string, locale: Locale, format: OutputFormat, opt
   const holder = readHolder(root, env.id);
   if (holder) inProgress(locale, env.id, holder);
 
-  const channel: Channel = opts.rollback ? 'version' : (opts.channel as Channel | undefined) ?? defaultChannel(root);
+  const channel: Channel = opts.rollback ? 'version' : (opts.channel as Channel | undefined) ?? defaultChannel(root, moduleScope, env.id);
   let active: ActiveProposalGuard | null = null;
   let moduleDefaults: Parameters<typeof detectProposalStepViaFlow>[1] = {};
   let finishVerify: (() => Promise<{ passed: true; cmdEval?: CmdGateEval }>) | null = null;

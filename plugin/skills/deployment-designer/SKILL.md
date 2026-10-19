@@ -163,6 +163,7 @@ environments:
 - `id` 用小写字母、数字与连字符；`tier` 取 `dev | test | staging | prod`；id 与 alias 不区分大小写全局唯一。
 - `secrets` **只写环境变量名，不得写值**；方案中出现的真实密钥一律不进登记表。
 - `deployment_gates.<module>.environments` 中的每一项必须能按 id 或别名解析到登记表中的环境。
+- **多模块项目（module-scoped-env-smoke，`spec/environments.md` §14）**：`deployment_gates.<module>.environments` 同时是「环境归属哪个模块」的唯一来源。产出或更新登记表时，为每个要用登记环境的模块在该字段声明自己的环境（按 id 或别名）；一旦有模块声明，即启用按模块区分——未声明环境的模块按「没有登记表」处理（`deploy-done` / `smoke` 的 `--env` 只作标签，不写部署账本），声明了环境的模块只能部署与 smoke 到自己的环境，否则 `ENV_MODULE_MISMATCH`。须在部署方案中提示用户这一点；删除或改名环境、别名时同步修正声明，否则该模块的命令会报 `ENV_GATE_REFERENCE_UNKNOWN` 拒绝，不会降级。`proposal_default_env` 只对其环境属于的模块生效（change-writer 按提案模块判断）。模块有独立的 smoke 入口时，在 `logos.config.json` 的 `smoke.modules.<id>` 配置该模块的 `command`。
 - 只登记部署方案确实涉及的环境，不臆造；部署方案没有环境划分时不产出登记表（登记表是 opt-in）。
 - 登记表属于 `guard.exempt` 内置默认，修改不需立案；但只要任一环境配置了 `promote_from` 或 `require_approval`，它就成为门禁策略来源，AI 对它的修改须经宿主弹窗由用户批准，无人值守模式下被阻断（来源变更 environment-promotion-approval，决策 C11）。
 

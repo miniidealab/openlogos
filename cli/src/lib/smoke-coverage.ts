@@ -8,7 +8,9 @@ const IGNORED_DIRS = new Set(['.git', 'node_modules', 'dist', 'logos']);
 export type SmokeCoverageDiagnosticCode =
   | 'smoke_runner_missing'
   | 'smoke_reporter_missing'
-  | 'smoke_cases_uncovered';
+  | 'smoke_cases_uncovered'
+  /** module-scoped-env-smoke：smoke.modules.<id> 未登记（警告，不影响门禁；spec/environments.md §14.5）。 */
+  | 'smoke_module_unknown';
 
 export interface SmokeCoverageDiagnostic {
   code: SmokeCoverageDiagnosticCode;
@@ -17,6 +19,8 @@ export interface SmokeCoverageDiagnostic {
   command?: string | null;
   result_path?: string;
   runner_paths?: string[];
+  /** smoke_module_unknown：未登记的模块 id。 */
+  module?: string;
 }
 
 export interface SmokeCoverageCheck {
@@ -32,6 +36,11 @@ export interface SmokeCoverageCheck {
 
 export interface SmokeCoverageOptions {
   slug?: string;
+  /**
+   * 版本上下文（module-scoped-env-smoke，spec/environments.md §14.5）：变更用例集合 C 为空——不读取活跃提案的
+   * 变更用例，也不回退读取全局 guard。
+   */
+  versionContext?: boolean;
   command?: string | null;
   resultPath?: string;
 }
@@ -164,7 +173,7 @@ function readResultIds(root: string, resultPath: string): string[] {
 export function checkSmokeCoverage(root: string, options: SmokeCoverageOptions = {}): SmokeCoverageCheck {
   const resultPath = options.resultPath ?? 'logos/resources/verify/smoke-results.jsonl';
   const command = options.command ?? null;
-  const changedCaseIds = extractChangedSmokeIds(root, options.slug);
+  const changedCaseIds = options.versionContext ? [] : extractChangedSmokeIds(root, options.slug);
   const executedCaseIds = readResultIds(root, resultPath);
   const executedSet = new Set(executedCaseIds);
   const uncoveredCaseIds = changedCaseIds.filter(id => !executedSet.has(id));

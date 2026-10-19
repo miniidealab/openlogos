@@ -17,6 +17,17 @@ import {
   readDeploymentLedger, resolveEnvironment,
 } from '../lib/environments.js';
 import type { EnvView, EnvironmentDef, LedgerSnapshot, RegistryIssue } from '../lib/environments.js';
+import { isModuleScopeEnabled, modulesOwning, resolveModuleEnvironments } from '../lib/module-env-scope.js';
+
+/**
+ * 环境归属模块（module-scoped-env-smoke，spec/environments.md §14.4）：启用按模块区分时返回「环境 id → 声明了它的模块」
+ * 查询函数，未启用时返回 null（env list / show 不输出 modules，逐字节不变）。
+ */
+function moduleOwnership(root: string, environments: EnvironmentDef[]): ((envId: string) => string[]) | null {
+  if (!isModuleScopeEnabled(root)) return null;
+  const map = resolveModuleEnvironments(root, environments);
+  return envId => modulesOwning(map, envId);
+}
 
 /** 探测超时（spec/environments.md §7.2）。 */
 export const ENV_PROBE_TIMEOUT_MS = 5000;
@@ -106,11 +117,13 @@ function ensureProject(root: string, command: string, format: OutputFormat, loca
 
 const shortRef = (ref: string | null, locale: Locale) => (ref ? ref.slice(0, 12) : t(locale, 'env.view.unknownRef'));
 
-function printView(view: EnvView & { aliases?: string[] }, locale: Locale, proposalDefault = false): void {
+function printView(view: EnvView & { aliases?: string[]; modules?: string[] }, locale: Locale, proposalDefault = false): void {
   // 提案默认部署环境标注（spec/environments.md §13.3）；未配置时文本输出逐字不变
   const mark = proposalDefault ? t(locale, 'env.view.proposalDefault') : '';
   console.log(`  ${view.id}  ${view.name}  [${view.tier}]${mark}`);
   if (view.aliases && view.aliases.length > 0) console.log(`      ${t(locale, 'env.view.aliases', { aliases: view.aliases.join(', ') })}`);
+  // 归属模块只在启用按模块区分时出现（§14.4）
+  if (view.modules !== undefined) console.log(`      ${t(locale, 'env.view.modules', { modules: view.modules.length > 0 ? view.modules.join(', ') : '-' })}`);
   console.log(`      ${t(locale, 'env.view.currentRef', { ref: view.last_deploy ? shortRef(view.current_ref, locale) : t(locale, 'env.view.never') })}`);
   if (view.last_deploy) {
     console.log(`      ${t(locale, 'env.view.lastDeploy', { time: view.last_deploy.recorded_at, slug: view.last_deploy.slug ?? view.last_deploy.channel ?? '-' })}`);
@@ -154,7 +167,11 @@ export function envList(format: OutputFormat = 'text', root: string = process.cw
   if (loaded === undefined) return;
   const ledger = readDeploymentLedger(root);
   const deployEnabled = isDeployExecutionEnabled(loaded?.environments ?? [], ledger);
-  const environments = (loaded?.environments ?? []).map(env => ({ ...buildEnvView(env, ledger, { deployEnabled, root }), aliases: env.aliases }));
+  const owners = loaded ? moduleOwnership(root, loaded.environments) : null;
+  const environments = (loaded?.environments ?? []).map(env => ({
+    ...buildEnvView(env, ledger, { deployEnabled, root }), aliases: env.aliases,
+    ...(owners ? { modules: owners(env.id) } : {}),
+  }));
   const warnings = (loaded?.warnings ?? []).map(w => toIssueOut(locale, w));
 
   if (format === 'json') {
@@ -202,6 +219,8 @@ export function envShow(input: string | undefined, format: OutputFormat = 'text'
   const view = buildEnvView(env, ledger, { deployEnabled, root });
   const history = (ledger.byEnvironment.get(env.id)?.history ?? []).map(r => projectHistoryRecord(r, deployEnabled));
   const warnings = loaded.warnings.map(w => toIssueOut(locale, w));
+  const owners = moduleOwnership(root, loaded.environments);
+  const modules = owners ? { modules: owners(env.id) } : {};
 
   if (format === 'json') {
     console.log(JSON.stringify(makeEnvelope('env show', {
@@ -210,6 +229,7 @@ export function envShow(input: string | undefined, format: OutputFormat = 'text'
         health: env.health, version: env.version, secrets: env.secrets,
         // 配置了 deploy 时输出经 §11.2 校验的配置（实际部署引用，不含命令与密钥值，spec/environments.md §13.3）；未配置时不输出该键
         ...(env.deploy ? { deploy: env.deploy } : {}),
+        ...modules,
       },
       current_ref: view.current_ref,
       ...(deployEnabled
@@ -227,7 +247,7 @@ export function envShow(input: string | undefined, format: OutputFormat = 'text'
     return;
   }
   console.log('');
-  printView({ ...view, aliases: env.aliases }, locale);
+  printView({ ...view, aliases: env.aliases, ...modules }, locale);
   if (env.description) console.log(`      ${env.description}`);
   console.log(`\n  ${t(locale, 'env.show.history', { limit: String(ENV_HISTORY_LIMIT) })}`);
   for (const h of history) {

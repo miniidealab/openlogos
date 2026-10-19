@@ -19,7 +19,13 @@ import {
   ENV_REGISTRY_REL, computeVerified, isDeployExecutionEnabled, loadEnvironmentRegistry, readDeploymentLedger, resolveEnvironment,
 } from '../lib/environments.js';
 import { DEPLOY_LEDGER_REL } from '../lib/environments.js';
-import type { DeployLedgerRecord, EnvEvidence, SmokeLedgerRecord } from '../lib/environments.js';
+import type { DeployLedgerRecord, EnvEvidence, RegistryLoad, SmokeLedgerRecord } from '../lib/environments.js';
+import {
+  activeProposalModule, gateReferenceDetails, gateReferenceMessage, isModuleScopeEnabled, moduleMismatchDetails, moduleMismatchMessage,
+  modulesOwning, resolveModuleEnvironments, resolveTargetModule,
+} from '../lib/module-env-scope.js';
+import type { ModuleEnvDecl, TargetModule } from '../lib/module-env-scope.js';
+import { moduleSmokeConfig, resolveSmokeCaseSet, unknownSmokeModules } from '../lib/smoke-scope.js';
 import { appendLedgerLine, removeOwnLedgerLine } from '../lib/deployment-ledger.js';
 import type { Locale } from '../i18n.js';
 
@@ -64,6 +70,31 @@ export interface SmokeData {
   result_path: string;
   /** environment-registry：仅在项目存在 logos/environments.yaml 时输出（spec/cli-json-output.md）。 */
   environment_evidence?: SmokeEnvironmentEvidence;
+  /** module-scoped-env-smoke：启用按模块区分时输出（spec/cli-json-output.md「smoke `scope`」），未启用不输出。 */
+  scope?: SmokeScope;
+}
+
+/** smoke JSON 顶层 `scope`（spec/cli-json-output.md「smoke / env / next 按模块区分增量」）。 */
+export interface SmokeScope {
+  mode: 'module' | 'project';
+  module: string | null;
+  context: 'proposal' | 'version';
+  reasons: Array<'env' | 'proposal'>;
+  fallback_reason: { code: 'no_env_no_proposal' | 'env_unattributed' | 'env_shared'; detail: string } | null;
+  out_of_scope_result_count: number;
+  command_source: 'module' | 'project';
+}
+
+/** collectSmokeData 的按模块范围选项（module-scoped-env-smoke）；全部缺省时与引入前逐字一致。 */
+export interface SmokeCollectOptions {
+  resultPath?: string;
+  reportPath?: string;
+  /** 最终应覆盖集合 S 与全部已定义 ID：已定义但不在 S 中的结果行忽略并计数（§14.5）。 */
+  caseScope?: { caseIds: string[]; allDefined: string[] };
+  /** 输出到 data.scope；out_of_scope_result_count 由本函数回填。 */
+  scope?: SmokeScope;
+  /** 不影响门禁的警告诊断（smoke_module_unknown），在门禁判定之后追加到 diagnostics。 */
+  warnings?: SmokeCoverageDiagnostic[];
 }
 
 /** smoke 环境证据（spec/environments.md §5.2、§6）。 */
@@ -93,6 +124,22 @@ interface SmokeEnvContext {
    * 无活跃提案时也写账本（slug 为 null）。未启用时 smoke 行为与引入部署执行前逐字一致。
    */
   deployEnabled: boolean;
+  /** 目标模块未声明环境（module-scoped-env-smoke，§14.4）：按无登记表处理，不写部署账本。 */
+  moduleUndeclared: boolean;
+  /** 版本上下文（§14.3）：不读写任何提案标记（含按 guard 写 marker 的回退）。 */
+  versionContext: boolean;
+}
+
+/** 按模块区分的 smoke 目标模块判定结果：null 为未启用或不限定模块（沿用全项目口径）。 */
+type SmokeModuleScope = { kind: 'undeclared'; decl: ModuleEnvDecl } | { kind: 'declared'; decl: ModuleEnvDecl } | null;
+
+/** 启用按模块区分时的 smoke 计划（§14.3）：目标模块 / 部署上下文、目标模块声明与已登记模块 id。 */
+interface SmokeModulePlan {
+  target: TargetModule;
+  scope: SmokeModuleScope;
+  moduleIds: string[];
+  /** 不限定模块时的原因说明（scope.fallback_reason.detail）。 */
+  fallbackDetail: string;
 }
 
 function smokeReject(format: OutputFormat, code: string, message: string, extra?: Record<string, unknown>): never {
@@ -111,8 +158,10 @@ function smokeReject(format: OutputFormat, code: string, message: string, extra?
  */
 function resolveSmokeEnvironment(
   root: string, environment: string | undefined, facts: LifecycleFacts | null, format: OutputFormat, locale: Locale,
+  scope: SmokeModuleScope = null, versionContext = false,
 ): SmokeEnvContext {
-  const reg = loadEnvironmentRegistry(root);
+  // module-scoped-env-smoke（§14.4）：目标模块未声明环境时按「没有登记表」的原逻辑，--env 只作原始标签
+  const reg: RegistryLoad = scope?.kind === 'undeclared' ? { state: 'absent' } : loadEnvironmentRegistry(root);
   let target: string | null = environment ?? null;
   if (reg.state !== 'absent') {
     if (reg.state === 'unloadable' || reg.errors.length > 0) {
@@ -127,12 +176,17 @@ function resolveSmokeEnvironment(
     }
     const resolved = resolveEnvironment(reg.environments, environment);
     if (!resolved.ok) smokeReject(format, 'ENV_UNKNOWN', t(locale, 'smoke.env.unknown', { input: environment, available }));
+    // E(m) 非空的目标模块：--env 必须属于 E(m)（§14.4）
+    if (scope?.kind === 'declared' && !scope.decl.environments.includes(resolved.id)) {
+      smokeReject(format, 'ENV_MODULE_MISMATCH', moduleMismatchMessage(locale, scope.decl, resolved.id),
+        { details: moduleMismatchDetails(scope.decl, resolved.id) });
+    }
     target = resolved.id;
   }
 
   const ctx: SmokeEnvContext = {
     registryPresent: reg.state !== 'absent', target, slug: facts?.slug ?? null, deployId: null, ref: null, deployEnvConfirmed: false,
-    deployEnabled: false,
+    deployEnabled: false, moduleUndeclared: scope?.kind === 'undeclared', versionContext,
   };
   // 部署身份核对的依据：账本中该环境最近一条 deploy 记录（任意 result；同一 deploy_id 以最后一行为准）
   let latestDeploy: DeployLedgerRecord | null = null;
@@ -185,6 +239,55 @@ function resolveSmokeEnvironment(
     }
   }
   return ctx;
+}
+
+/**
+ * module-scoped-env-smoke（spec/environments.md §14.2～§14.4）：按 §14.3 确定目标模块，目标模块引用失效时在
+ * 任何前置判定、执行与写入之前以 ENV_GATE_REFERENCE_UNKNOWN 拒绝。未启用、登记表非法（交由既有流程报
+ * ENV_REGISTRY_INVALID）或不限定模块时返回 null。
+ */
+function resolveSmokeModuleScope(
+  root: string, environment: string | undefined, facts: LifecycleFacts | null, format: OutputFormat, locale: Locale,
+): SmokeModulePlan | null {
+  if (!isModuleScopeEnabled(root)) return null;
+  const reg = loadEnvironmentRegistry(root);
+  if (reg.state === 'unloadable' || (reg.state === 'loaded' && reg.errors.length > 0)) return null;
+  const map = resolveModuleEnvironments(root, reg.state === 'loaded' ? reg.environments : null);
+  const resolved = reg.state === 'loaded' && environment !== undefined && environment.trim() !== ''
+    ? resolveEnvironment(reg.environments, environment)
+    : null;
+  const envId = resolved?.ok ? resolved.id : null;
+  const proposalModule = facts ? activeProposalModule(root, facts.slug, facts.proposalDir, facts.moduleId) : null;
+  const target = resolveTargetModule(map, envId, proposalModule);
+  if (target.mode === 'project') {
+    const fallbackDetail = target.fallback === 'no_env_no_proposal'
+      ? 'no --env and no active proposal'
+      : target.fallback === 'env_unattributed'
+        ? `environment ${envId} is not declared by any module`
+        : `environment ${envId} is declared by modules ${modulesOwning(map, envId!).join(', ')}`;
+    return { target, scope: null, moduleIds: map.modules, fallbackDetail };
+  }
+  const decl = map.decls.get(target.module);
+  if (!decl) return null;
+  if (decl.state === 'invalid') {
+    smokeReject(format, 'ENV_GATE_REFERENCE_UNKNOWN', gateReferenceMessage(locale, decl), { details: gateReferenceDetails(decl) });
+  }
+  return { target, scope: { kind: decl.state === 'undeclared' ? 'undeclared' : 'declared', decl }, moduleIds: map.modules, fallbackDetail: '' };
+}
+
+/**
+ * smoke 命令的注入变量：有登记表且有目标环境时 OPENLOGOS_SMOKE_ENV（§6，既有规则）；确定了目标模块时另注入
+ * OPENLOGOS_SMOKE_MODULE 与本次所用配置的 OPENLOGOS_SMOKE_RESULT_PATH（module-scoped-env-smoke，§14.5）。
+ * 未启用或不限定模块时与引入前一致。
+ */
+function smokeExtraEnv(envCtx: SmokeEnvContext, targetModule: string | null, resultPath: string): { extraEnv?: Record<string, string> } {
+  const extra: Record<string, string> = {};
+  if (envCtx.registryPresent && envCtx.target !== null) extra.OPENLOGOS_SMOKE_ENV = envCtx.target;
+  if (targetModule !== null) {
+    extra.OPENLOGOS_SMOKE_MODULE = targetModule;
+    extra.OPENLOGOS_SMOKE_RESULT_PATH = resultPath;
+  }
+  return Object.keys(extra).length > 0 ? { extraEnv: extra } : {};
 }
 
 /** 按计入门禁的结果行判定环境证据（spec/environments.md §6）。 */
@@ -240,6 +343,13 @@ function readSmokeResults(root: string, resultPath: string) {
   return existsSync(fullResultPath) ? parseJsonl(readFileSync(fullResultPath, 'utf-8')) : [];
 }
 
+function scopeSummary(scope: SmokeScope): string {
+  const head = scope.mode === 'module'
+    ? `module ${scope.module} · ${scope.context} context`
+    : `project (${scope.fallback_reason?.code ?? '-'})`;
+  return `${head} · command: ${scope.command_source} · out-of-scope results: ${scope.out_of_scope_result_count}`;
+}
+
 function generateSmokeReport(data: SmokeData): string {
   const now = new Date().toISOString().slice(0, 10);
   let md = `# Smoke Report\n\n> Generated by \`openlogos smoke\` on ${now}\n`;
@@ -254,6 +364,8 @@ function generateSmokeReport(data: SmokeData): string {
   md += `| Uncovered | ${data.summary.uncovered_count} |\n`;
   md += `| Coverage | ${data.summary.coverage_pct}% |\n`;
   md += `| Pass rate | ${data.summary.pass_rate_pct}% |\n`;
+  // 「范围」行只在启用按模块区分时出现（spec/environments.md §14.6）；未启用时报告逐字不变
+  if (data.scope) md += `| 范围 (Scope) | ${scopeSummary(data.scope)} |\n`;
   md += `| **Gate 3.8** | **${data.gate.result}** |\n\n`;
 
   if (data.failed_cases.length > 0) {
@@ -303,11 +415,27 @@ function generateSmokeReport(data: SmokeData): string {
   return md;
 }
 
+/**
+ * 按最终应覆盖集合 S 过滤结果行（§14.5）：已定义但不在 S 中的行忽略并计数；S 内与未定义 ID 保留。
+ * 统计（collectSmokeData）与环境证据收尾（finalizeVerdict）共用本函数，保证两处只看同一批计入门禁的结果行
+ * （spec/environments.md §6「只看计入门禁的结果行」；code-r1 F1）。caseScope 缺省（未启用或不限定模块）时原样返回。
+ */
+export function filterScopedResults<T extends { id: string }>(
+  rows: T[], caseScope?: { caseIds: string[]; allDefined: string[] },
+): { kept: T[]; outOfScope: number } {
+  if (!caseScope) return { kept: rows, outOfScope: 0 };
+  const inScope = new Set(caseScope.caseIds);
+  const allDefined = new Set(caseScope.allDefined);
+  const kept = rows.filter(r => !allDefined.has(r.id) || inScope.has(r.id));
+  return { kept, outOfScope: rows.length - kept.length };
+}
+
 export function collectSmokeData(
   root: string,
   environment?: string,
   sandbox?: SandboxData,
   coverageCheck?: SmokeCoverageCheck,
+  options: SmokeCollectOptions = {},
 ): SmokeData {
   const configPath = join(root, 'logos', 'logos.config.json');
   let resultPath = DEFAULT_SMOKE_RESULT_PATH;
@@ -318,10 +446,20 @@ export function collectSmokeData(
     if (config.smoke?.result_path) resultPath = config.smoke.result_path;
     if (config.smoke?.report_path) reportPath = config.smoke.report_path;
   } catch { /* use defaults */ }
+  if (options.resultPath) resultPath = options.resultPath;
+  if (options.reportPath) reportPath = options.reportPath;
 
   const check = coverageCheck ?? checkSmokeCoverage(root, { resultPath });
-  const results = readSmokeResults(root, resultPath);
-  const defined = extractSmokeDefinedIds(root);
+  let results = readSmokeResults(root, resultPath);
+  let defined = extractSmokeDefinedIds(root);
+  // 按模块限定（§14.5）：覆盖与结果过滤只用同一个集合 S——已定义但不在 S 中的结果忽略并计数；S 内与未定义 ID 照旧判定
+  let outOfScope = 0;
+  if (options.caseScope) {
+    const scoped = filterScopedResults(results, options.caseScope);
+    outOfScope = scoped.outOfScope;
+    results = scoped.kept;
+    defined = [...options.caseScope.caseIds];
+  }
   const resultIds = new Set(results.map(r => r.id));
   const passed = results.filter(r => r.status === 'pass');
   const failed = results.filter(r => r.status === 'fail');
@@ -381,6 +519,8 @@ export function collectSmokeData(
     report_path: reportPath,
     result_path: resultPath,
   };
+  if (options.warnings && options.warnings.length > 0) data.diagnostics = [...data.diagnostics, ...options.warnings];
+  if (options.scope) data.scope = { ...options.scope, out_of_scope_result_count: outOfScope };
 
   const fullReportPath = join(root, reportPath);
   mkdirSync(dirname(fullReportPath), { recursive: true });
@@ -389,11 +529,12 @@ export function collectSmokeData(
   return data;
 }
 
-function readSmokeConfig(root: string): {
+function readSmokeConfig(root: string, moduleId: string | null = null): {
   command?: string;
   resultPath: string;
   reportPath: string;
   sandbox: ReturnType<typeof normalizeSandboxConfig>;
+  commandSource: 'module' | 'project';
 } {
   const configPath = join(root, 'logos', 'logos.config.json');
   let resultPath = DEFAULT_SMOKE_RESULT_PATH;
@@ -407,7 +548,15 @@ function readSmokeConfig(root: string): {
     if (config.smoke?.command) command = config.smoke.command;
     sandbox = normalizeSandboxConfig(config.smoke);
   } catch { /* use defaults */ }
-  return { command: resolveSmokeCommand(root, command) ?? undefined, resultPath, reportPath, sandbox };
+  // smoke.modules.<m>（§14.5）：目标模块配置了的字段覆盖项目级，未写的字段回落；沙箱沿用项目级
+  const mod = moduleId !== null ? moduleSmokeConfig(root, moduleId) : null;
+  if (mod?.result_path) resultPath = mod.result_path;
+  if (mod?.report_path) reportPath = mod.report_path;
+  if (mod?.command) command = mod.command;
+  return {
+    command: resolveSmokeCommand(root, command) ?? undefined, resultPath, reportPath, sandbox,
+    commandSource: mod?.command ? 'module' : 'project',
+  };
 }
 
 /**
@@ -466,7 +615,14 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
   // §2.67.1 前置 fail-closed 门：在读取配置、执行 smoke.command、进入 sandbox 之前判定。
   // 顺序 ①→②→③→④ 命中即停，只报第一个错误码；拒绝时零副作用——尤其不得先清空
   // smoke-results.jsonl（下方 command 分支会截断该文件），也绝不补写 DEPLOY_DONE。
-  const facts = readLifecycleFacts(root);
+  const activeFacts = readLifecycleFacts(root);
+  // module-scoped-env-smoke：目标模块与引用失效判定先于提案前置（§14.2，零副作用）
+  const plan = resolveSmokeModuleScope(root, environment, activeFacts, format, locale);
+  const moduleScope = plan?.scope ?? null;
+  const targetModule = plan?.target.mode === 'module' ? plan.target.module : null;
+  // 版本上下文（§14.3）：目标模块不是活跃提案模块——不套用提案前置、不读写任何提案标记，部署身份取账本
+  const versionContext = plan?.target.mode === 'module' && plan.target.context === 'version';
+  const facts = versionContext ? null : activeFacts;
   if (facts) {
     const rejection = evaluateSmokePrecondition(facts, (key, vars) => t(locale, key, vars));
     if (rejection) {
@@ -480,11 +636,11 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
   }
 
   // environment-registry：环境解析与 DEPLOY_DONE 分类（拒绝时零副作用，排在运行 smoke.command 之前）
-  const envCtx = resolveSmokeEnvironment(root, environment, facts, format, locale);
+  const envCtx = resolveSmokeEnvironment(root, environment, facts, format, locale, moduleScope, versionContext);
   // 有登记表时 JSON / 报告中的 environment 为解析后的 id；无登记表时为原始标签（逐字不变）
   const reportedEnvironment = envCtx.target ?? undefined;
 
-  const { command, resultPath, reportPath, sandbox } = readSmokeConfig(root);
+  const { command, resultPath, reportPath, sandbox, commandSource } = readSmokeConfig(root, targetModule);
   const allowedWritePaths = [resultPath, reportPath, 'logos/resources/verify/smoke-report.md'];
   let sandboxData = buildInitialSandboxData(sandbox);
   // 只有本次实际运行 smoke.command（运行前清空结果文件）时，结果才属于这次部署
@@ -505,7 +661,7 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
       sandbox,
       allowedWritePaths,
       freshSandbox: runOptions.freshSandbox === true,
-      ...(envCtx.registryPresent && envCtx.target !== null ? { extraEnv: { OPENLOGOS_SMOKE_ENV: envCtx.target } } : {}),
+      ...(smokeExtraEnv(envCtx, targetModule, resultPath)),
     });
     sandboxData = result.sandbox;
     if (result.command.status === 'fail') {
@@ -515,7 +671,30 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
     }
   }
 
-  const coverageCheck = checkSmokeCoverage(root, { command, resultPath });
+  const coverageCheck = checkSmokeCoverage(root, { command, resultPath, ...(versionContext ? { versionContext: true } : {}) });
+  // 按模块限定的应覆盖集合 S 与 scope（只在启用按模块区分时生效，§14.5、§14.6）
+  const collectOptions: SmokeCollectOptions = { resultPath, reportPath };
+  const unknownModules = unknownSmokeModules(root);
+  if (unknownModules.length > 0) {
+    collectOptions.warnings = unknownModules.map(id => ({
+      code: 'smoke_module_unknown' as const, module: id,
+      message: t(locale, 'smoke.module.unknown', { module: id }),
+    }));
+  }
+  if (plan) {
+    if (targetModule !== null) {
+      collectOptions.caseScope = resolveSmokeCaseSet(root, plan.moduleIds, targetModule, coverageCheck.changed_case_ids);
+    }
+    collectOptions.scope = {
+      mode: plan.target.mode,
+      module: targetModule,
+      context: plan.target.mode === 'module' ? plan.target.context : (activeFacts ? 'proposal' : 'version'),
+      reasons: plan.target.mode === 'module' ? plan.target.reasons : [],
+      fallback_reason: plan.target.mode === 'project' ? { code: plan.target.fallback, detail: plan.fallbackDetail } : null,
+      out_of_scope_result_count: 0,
+      command_source: commandSource,
+    };
+  }
   const io: SmokeWriteIo = { ...defaultSmokeWriteIo, ...runOptions.writeIo };
 
   /**
@@ -525,7 +704,8 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
   const finalizeVerdict = (data: SmokeData): void => {
     let evidence: SmokeEnvironmentEvidence | null = null;
     if (envCtx.target !== null) {
-      const rows = readSmokeResults(root, resultPath) as unknown as Array<Record<string, unknown>>;
+      // 与统计同一批计入门禁的结果行：范围外已定义结果不参与环境证据（code-r1 F1）
+      const rows = filterScopedResults(readSmokeResults(root, resultPath), collectOptions.caseScope).kept as unknown as Array<Record<string, unknown>>;
       const judged = evaluateEnvEvidence(rows, envCtx.target);
       if (envCtx.registryPresent && judged.env_evidence === 'mismatch' && data.gate.result === 'PASS') {
         data.gate.result = 'FAIL';
@@ -556,14 +736,15 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
 
     // 存在活跃提案且传入 --env 时先追加账本 smoke 行、再写 smoke marker（spec/environments.md §5.1，决策 C02）
     // 部署执行已启用而无活跃提案时也写账本（slug 为 null，只写账本、不写提案标记；environment-deploy 决策 C15）
-    if (evidence && (envCtx.slug !== null || envCtx.deployEnabled)) {
+    if (evidence && (envCtx.slug !== null || envCtx.deployEnabled) && !envCtx.moduleUndeclared) {
       writeLedgerThenMarkers(data, evidence, envCtx.slug);
       return;
     }
 
-    // 不写账本时（未传 --env 或无活跃提案）沿用既有行为：按 guard 写 marker，失败静默跳过
+    // 不写账本时（未传 --env 或无活跃提案）沿用既有行为：按 guard 写 marker，失败静默跳过。
+    // 版本上下文不读写任何提案标记（§14.3）
     const guardPath = join(root, 'logos', '.openlogos-guard');
-    if (existsSync(guardPath)) {
+    if (!envCtx.versionContext && existsSync(guardPath)) {
       try {
         const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
         const slug = guard.activeChange;
@@ -680,7 +861,7 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
 
   if (!existsSync(join(root, resultPath))) {
     if (coverageCheck.changed_case_ids.length > 0) {
-      const data = collectSmokeData(root, reportedEnvironment, sandboxData, coverageCheck);
+      const data = collectSmokeData(root, reportedEnvironment, sandboxData, coverageCheck, collectOptions);
       finalizeVerdict(data);
       if (format === 'json') {
         console.log(JSON.stringify(makeEnvelope('smoke', data)));
@@ -716,7 +897,7 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
     process.exit(1);
   }
 
-  const data = collectSmokeData(root, reportedEnvironment, sandboxData, coverageCheck);
+  const data = collectSmokeData(root, reportedEnvironment, sandboxData, coverageCheck, collectOptions);
   if (sandboxData.status === 'fail' && data.gate.result === 'PASS') {
     data.gate.result = 'FAIL';
     data.gate.reason = 'failed_cases';

@@ -32,6 +32,7 @@ import {
   type SliceVerificationState,
 } from '../lib/test-slice-manifest.js';
 import type { StateInconsistency } from '../lib/lifecycle-gate.js';
+import { readDeployDoneMarker } from '../lib/lifecycle-gate.js';
 
 export interface NextModuleItem {
   id: string;
@@ -407,6 +408,19 @@ function actionForProposalStep(locale: string, step: ProposalStep | null): { act
     default:
       return { action: t(locale as Parameters<typeof t>[0], 'next.fillProposal'), command: null, detailKey: 'next.fillProposalDetail' };
   }
+}
+
+/**
+ * module-scoped-env-smoke（spec/environments.md §14.7）：ready-to-smoke 的 auto 命令带上活跃提案
+ * DEPLOY_DONE 记录的环境；旧空格式、environment 为 null 或读取失败时保持 `openlogos smoke`。
+ */
+function smokeAutoCommand(root: string, slug: string): string {
+  const read = readDeployDoneMarker(join(root, 'logos', 'changes', slug));
+  if (read.kind !== 'valid' || typeof read.marker.environment !== 'string' || read.marker.environment === '') {
+    return 'openlogos smoke';
+  }
+  const env = read.marker.environment;
+  return `openlogos smoke --env ${/^[A-Za-z0-9._:@/+-]+$/.test(env) ? env : `'${env.replace(/'/g, `'\\''`)}'`}`;
 }
 
 export async function next(format: OutputFormat = 'text', moduleId?: string, auto: boolean = false) {
@@ -1082,7 +1096,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     && !blockedBySliceManifest && !recoverableGlobalVerify && topActiveChange) {
     let autoCmd: string | null = null;
     if (topProposalStep === 'ready-to-verify') autoCmd = 'openlogos verify';
-    else if (topProposalStep === 'ready-to-smoke') autoCmd = 'openlogos smoke';
+    else if (topProposalStep === 'ready-to-smoke') autoCmd = smokeAutoCommand(root, topActiveChange);
     else if (topProposalStep === 'verify-passed' || topProposalStep === 'deploy-done' || topProposalStep === 'smoke-passed') autoCmd = `openlogos archive ${topActiveChange}`;
     if (autoCmd) {
       autoExecute = true;

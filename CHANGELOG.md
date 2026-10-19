@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.10] - 2026-10-19
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- **按模块区分环境与 smoke**（module-scoped-env-smoke）：一个仓库按模块承载多个子系统时，环境登记表与 smoke 不再对全项目一刀切。
+  - 环境归属沿用 `logos/logos-project.yaml` 的 `deployment_gates.<module>.environments`（按 id 或别名），登记表格式不变；`logos/logos.config.json` 新增可选 `smoke.modules.<id>`（`command` / `result_path` / `report_path`，未写的字段回落项目级，未登记的 id 警告 `smoke_module_unknown` 并忽略）。
+  - 启用条件：多模块项目中有模块声明了非空 `environments`，或配置了 `smoke.modules`。未启用的项目（单模块；都没声明的多模块）行为与输出不变。
+  - 未声明环境的模块（如桌面端 `core`）的 `deploy-done` / `smoke` 按「没有登记表」处理：`--env` 可选、只作标签，不写部署账本。声明了环境的模块只能部署与 smoke 到自己的环境，否则 `ENV_MODULE_MISMATCH`；`deploy-done` 不得把提案标记为部署到另一模块的环境。
+  - 声明里有登记表解析不了的引用时，`deploy-done` / `smoke` / `deploy` 在任何执行与写入之前报 `ENV_GATE_REFERENCE_UNKNOWN`，不按「未声明」放宽。
+  - `deploy` 默认通道按环境归属：环境属于活跃提案模块时走提案通道，否则走版本通道（不碰提案文件）；显式 `--channel proposal` 而环境不属于提案模块时报 `ENV_MODULE_MISMATCH`。
+  - `smoke` 按环境归属确定目标模块：目标模块不是活跃提案模块时进入版本上下文——不套用提案前置、不读写提案标记，部署身份取账本最近一条 deploy 记录，只追加 `slug` 为 null 的账本 smoke 行。应覆盖用例 = 目标模块前缀规格 ∪ 全局规格 ∪ 提案上下文下本提案变更的用例；不在该集合中的已定义结果忽略并计数。执行目标模块的 smoke 命令并注入 `OPENLOGOS_SMOKE_MODULE`、`OPENLOGOS_SMOKE_RESULT_PATH`。
+  - `smoke --format json` 启用时新增 `scope`（`mode` / `module` / `context` / `reasons` / `fallback_reason` / `out_of_scope_result_count` / `command_source`），报告 Summary 新增「范围」行；`env list` / `env show` 启用时每个环境附 `modules`。
+
+### Fixed
+
+- `next --auto` 在 ready-to-smoke 时生成的命令带上 `DEPLOY_DONE` 记录的环境（`openlogos smoke --env <environment>`），有登记表的项目不再必然 `ENV_REQUIRED`；旧空格式、environment 为 null 或读取失败时仍为 `openlogos smoke`。
+
+### 升级提示
+
+- 未启用按模块区分的项目无需任何操作。
+- 多模块项目要按模块区分时，在 `deployment_gates.<module>.environments` 为需要登记环境的模块声明环境；需要独立 smoke 入口的模块配置 `smoke.modules.<id>.command`。
+
 ## [0.16.9] - 2026-10-19
 
 本机全局发布（未发布到 npm）。

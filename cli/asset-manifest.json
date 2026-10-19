@@ -1,6 +1,6 @@
 {
   "schema": "openlogos/asset-manifest@1",
-  "version": "0.16.9",
+  "version": "0.16.10",
   "planContractVersion": "1.4.0",
   "skills": [
     {
@@ -9,7 +9,7 @@
     },
     {
       "path": "skills/change-writer/SKILL.md",
-      "sha256": "6041eae6dfd82b2d1e47694e916f8ae3d34960f7300564bb3c25c5e2aaa91778"
+      "sha256": "538583139f6c978393e8619a4fbfe5cfebce53b88b25871da3548db93accb89b"
     },
     {
       "path": "skills/change-writer/SKILL.en.md",
@@ -29,7 +29,7 @@
     },
     {
       "path": "skills/deployment-designer/SKILL.md",
-      "sha256": "111156d4728c990ab8bf4df755eaf90e833087f2e4d099d78a9afdc3de82b121"
+      "sha256": "b22c507226c1df4c01edd897bb792d6ace158bcd0a16f1d4a95febaa40c7653f"
     },
     {
       "path": "skills/deployment-executor/SKILL.md",
@@ -47,7 +47,7 @@
   "templates": [
     {
       "path": "dist/i18n.js",
-      "sha256": "cd43371a2bb39e8dc6dd80bc3b1c130015739f1fdf3bda3d7a82dca19db1d464"
+      "sha256": "41f2ef08df7592aeced14e6eecbd1c04c58bacda82ab326be85955de0905d674"
     }
   ],
   "schemas": [
@@ -71,7 +71,7 @@
   "plugins": [
     {
       "path": "claude-plugin-template/.claude-plugin/plugin.json",
-      "sha256": "f530a8978e196699536f8c532ca7feac95be8638f804e1f8f76cd4b212fc9e05"
+      "sha256": "38c59202f7f7c86a5af06c048cb9bb4b6c0d6c775cbbee6552a7b1b1633f1971"
     },
     {
       "path": "claude-plugin-template/bin/guard-check",
@@ -99,7 +99,7 @@
     },
     {
       "path": "claude-plugin-template/skills/deployment-designer/SKILL.md",
-      "sha256": "638a08ae6da2cc5cb8648d9b42dfbc54a0f19c3ba2fd537555c6e6b9deec5466"
+      "sha256": "f149fa3457a32638f08f94f072282856a8a2229bb05ecddd60f169aaffc1f091"
     },
     {
       "path": "claude-plugin-template/skills/deployment-executor/SKILL.md",
@@ -114,5 +114,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "fbcc37cb044121e62fc3eeac54823737df9ed1fcd016f1ca4c2c4de68861ac02"
+  "payloadHash": "ad040e05d6722b178e4992e0180d6c2de602f2ec17c6541a0d07d3cfec06c592"
 }
