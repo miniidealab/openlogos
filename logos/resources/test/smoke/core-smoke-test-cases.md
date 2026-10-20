@@ -2572,3 +2572,47 @@
 - 适用性判定不得依赖自动流程不会设置的环境变量；只有部署记录、回滚制品或本仓 sync 确实缺失时才写显式 `skip` 并携带缺失项，不得标 `reason_code:"platform-unavailable"`。有 skip 时不得写 `SMOKE_PASS`。
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-289～SMOKE-core-293 均被 runner 覆盖。
+
+## OpenLogos 0.16.11 独立 smoke 模块应覆盖集合安装态 smoke（SMOKE-core-294～297）
+
+> 这组用例验证独立 smoke 模块的应覆盖集合规则（来源提案 smoke-scope-isolated-modules，决策 C01、proposal-r1 F1，功能规格 §2.98.6）确实进入了本机全局安装态。这是 CLI 运行时行为，只有全局 `openlogos` 升级后才对用户的各项目（含 runlogos 的 Team 版）生效。
+>
+> 用例在 `mktemp -d` 一次性隔离 git 项目内执行，经全局 `openlogos init` 建立后写入 runlogos 形态的配置：
+> - 多模块 `logos-project.yaml`：`core` 不声明环境；`team` 声明 `deployment_gates.team.environments: [team-prod]`。
+> - 登记表：`test`、`team-prod`；`team-prod` 配置 script 方式 `deploy`，脚本为夹具内的记录型脚本。
+> - smoke 规格：`core-smoke-test-cases.md`、`team-smoke-test-cases.md`，以及两份不带任何模块前缀、ID 段不统一的 core 发布规格。
+> - 两个记录型 smoke runner：项目级 `smoke.command`，与 `smoke.modules.team.command`。它们把被调用模块与注入变量写入项目外一次性调用日志，并按用例写结果。
+>
+> runner 以子进程直接调用全局 CLI，对全局安装态**只读**，不做安装或卸载；不触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态账本与用户其他仓库（包括 runlogos）。唯一读取本仓的是 SMOKE-core-294 ④ 的只读比对。版本以部署记录与 `cli/src/lib/local-release-candidate.ts` 的候选版本为准，断言写成关系式，不硬编码 `0.16.11`。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-294 | 安装态版本、制品身份与本仓 sync 同源 | 本机全局已安装本次候选；部署记录中有候选版本与 tarball SHA-256；本仓已按部署方案执行 `openlogos sync` | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 检查全局包内 `spec/environments.md` §14.5 含「独立 smoke 模块」定义；④ 逐字节比对本仓 `logos/spec/environments.md`、`logos/spec/test-results.md` 与全局包内同名文件 | ① `--version` 等于部署记录候选版本，入口无 workspace link；② `payloadHash` 自洽；③ 成立；④ 字节一致 | 保留读取结果；①～③ 任一不符 → 停止后续流程，按部署方案以 `openlogos deploy --env test --rollback` 回到 0.16.10；④ 不一致 → 重新执行本仓 `openlogos sync` 后复核，仍不一致则回流本提案 |
+| SMOKE-core-295 | 安装态独立模块不被不带前缀的规格拖住 | 本机全局已安装本次候选；多模块临时项目已初始提交；以全局 `openlogos change` 创建归属 core 的提案且尚未部署 | ① `deploy --env team-prod --ref <HEAD>`；② `smoke --env team-prod --format json`（team runner 只写 team 前缀用例结果）；③ 读取调用日志与 core 提案目录 | ① 版本通道成功；② 通过，`summary.defined_count` 等于 team 前缀用例数，不带前缀的发布用例不在 `uncovered_cases`，`scope.reasons` 含 `isolated_module`；③ 调用日志只有 team 命令一次；core 提案目录前后字节一致 | 同上；任一不成立表示独立模块规则未进入安装态，回装旧版并回流本提案 |
+| SMOKE-core-296 | 安装态非独立模块仍覆盖不带前缀的规格（含只配置路径覆盖） | 同 SMOKE-core-295 的临时项目；core 提案满足部署前置；另一变体在 `smoke.modules.core` 只写 `report_path` | ① core 提案 `deploy-done` 后 `smoke --format json`，项目级 runner 写全部结果；② 项目级 runner 把一条不带前缀的发布用例写为 `fail` 后重跑；③ 在只写 `report_path` 的变体上重复 ② | ① 通过，应覆盖集合含全部不带前缀的发布用例，不含 team 前缀用例；② `gate.result=FAIL`，该用例进入 `failed_cases`，不计入 `scope.out_of_scope_result_count`；③ 与 ② 相同，`scope.command_source="project"`，报告写入 `report_path` 所指位置 | 同上 |
+| SMOKE-core-297 | 安装态单模块零回归与无独立模块项目覆盖范围扩大（delta-r1 F1） | 本机全局已安装本次候选；以 0.16.10 回滚制品在一次性隔离 prefix 中执行同样命令作为基线。夹具甲：单模块临时项目带登记表（按模块区分未启用）。夹具乙：多模块临时项目，team 声明 `deployment_gates.team.environments: [team-prod]`（按模块区分已启用），不配置 `smoke.modules`（无独立模块）；smoke 规格中 core 前缀、team 前缀与不带前缀的发布规格各至少一条用例（均非空） | ① 夹具甲：`deploy-done --env test`、`smoke --env test --format json`；② 夹具乙：team 版本部署后 `smoke --env team-prod --format json`，项目级 runner 依次：为全部用例写 `pass`；把一条 core 前缀用例写为 `fail`；不写该 core 用例的结果——三次分别在候选与基线上执行 | ① 与基线一致（剔除时间戳、耗时、随机 id），无 `scope`；② 不要求与基线等值，按新版完整范围验收：全部 `pass` 时候选 `summary.defined_count` 等于全部 smoke 规格用例数，且大于基线的 `defined_count`（基线不计入 core 前缀用例），候选 `gate.result=PASS`；core 用例 `fail` 时候选将其列入 `failed_cases` 且 `gate.result=FAIL`（基线把该行当范围外结果忽略）；缺结果时候选将其列入 `uncovered_cases`、门禁不通过，且基线的 `uncovered_cases` 是候选 `uncovered_cases` 的子集 | 同上 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目、一次性调用日志目录与一次性基线 prefix 内进行，结束即删除。
+- **不得**触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态目录、用户其他仓库（包括 runlogos）或本机全局 prefix。
+- 不触发真实 CI、不访问任何远程服务；`team-prod` 的部署脚本只写临时目录内的调用日志。
+- 命令图中不得出现 `npm publish` / dist-tag / `git tag` / `gh release` / `git push`。
+
+### 三、追溯与覆盖
+
+- 功能规格：§2.98.6。需求：`core-01-requirements.md`「S41/S19/S21/S42 按模块区分环境与 smoke 验收补充」中的「异常：不带前缀的规格只计入非独立模块」「异常：只配置路径覆盖的模块不是独立模块」。
+- 根规范：`spec/environments.md` §14.5；`spec/test-results.md`「按模块限定 smoke 范围的运行约定」中的「应覆盖用例」。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.11 本机测试环境发布（smoke-scope-isolated-modules）」。
+- 仓库内对应用例：UT-S19-83～89、ST-S19-32，以及按新规则修订的 UT-S19-74、UT-S19-76、ST-S19-30。
+- SMOKE-core-297 ② 是覆盖范围扩大的行为验收（已启用但无独立模块的项目，S 由「目标模块前缀 ∪ 不带前缀」扩大为全部规格，与 UT-S19-87 同口径），不是零回归；只有 ① 的单模块（未启用）项目要求与基线等值（delta-r1 F1）。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-smoke-scope-isolated-modules-0-16-11.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-294～SMOKE-core-297，不得依靠通配发现后无条件 PASS。
+- 适用窗口：活跃变更为 `smoke-scope-isolated-modules`，或 `OPENLOGOS_SSIM_SMOKE=1`；窗口之外按既有留痕机制为全部 owned ID 写 skip。环境变量一律使用 `OPENLOGOS_SSIM_` 前缀。
+- 适用性判定不得依赖自动流程不会设置的环境变量。只有部署记录、回滚制品或本仓 sync 确实缺失时，才写显式 `skip` 并携带缺失项，不得标 `reason_code:"platform-unavailable"`；有 skip 时不得写 `SMOKE_PASS`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-294～SMOKE-core-297 均被 runner 覆盖。

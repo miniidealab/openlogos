@@ -3676,9 +3676,19 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 - **THEN** smoke 目标模块为 team、部署上下文为版本上下文：不套用 core 提案前置、不读写 core 的 `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL`，部署身份取账本中 team-prod 最近一条 deploy 记录，只追加账本 smoke 行（slug 为 null），执行 team 的 smoke 命令、只覆盖 team 用例；core 提案的 `proposal_step` 与全部标记保持不变
 
 #### 正常：smoke 用例与命令按模块
-- **GIVEN** smoke 规格有 `core-smoke-test-cases.md`、`team-smoke-test-cases.md` 与全局 `shared-smoke-test-cases.md`；`smoke.modules.team` 配置了 `command`
+- **GIVEN** smoke 规格有 `core-smoke-test-cases.md`、`team-smoke-test-cases.md` 与全局 `shared-smoke-test-cases.md`；`smoke.modules.team` 配置了非空 `command`（team 为独立 smoke 模块）
 - **WHEN** team 提案执行 `smoke --env team-prod`
-- **THEN** 应覆盖用例 = team 前缀与全局规格中的 `SMOKE-*`，加上 team 提案自身新增或修改的 smoke 用例（即使属于 core 规格，其结果保留并参与覆盖与失败判定）；未被本提案触达的 core 用例不计入；执行 team 命令并注入 `OPENLOGOS_SMOKE_MODULE=team`；结果行中的 core 用例被忽略并计入 `scope.out_of_scope_result_count`；JSON 输出 `scope.mode=module`、`scope.module=team`
+- **THEN** 应覆盖用例 = team 前缀规格中的 `SMOKE-*`，加上 team 提案自身新增或修改的 smoke 用例（即使属于 core 或不带前缀的规格，其结果保留并参与覆盖与失败判定）；不带前缀的 `shared-smoke-test-cases.md` 与未被本提案触达的 core 用例不计入；执行 team 命令并注入 `OPENLOGOS_SMOKE_MODULE=team`；结果行中这些范围外用例被忽略并计入 `scope.out_of_scope_result_count`；JSON 输出 `scope.mode=module`、`scope.module=team`，`scope.reasons` 含 `isolated_module`
+
+#### 异常：不带前缀的规格只计入非独立模块（smoke-scope-isolated-modules）
+- **GIVEN** runlogos 形态的项目：`team` 在 `smoke.modules.team` 配置了非空 `command`（独立 smoke 模块），只有 `team-smoke-test-cases.md`；`core` 没有配置独立命令；`logos/resources/test/smoke/` 另有多份不带任何模块前缀的 core 发布 smoke 规格（如 `official-release-package-1-0-4.md`），其 ID 段不统一
+- **WHEN** 分别执行 team 的 `smoke --env team-prod` 与 core 提案的 `smoke`
+- **THEN** team 的应覆盖用例只有 `team-` 前缀规格（加本提案变更用例），不带前缀的发布规格不计入，team runner 不产出它们的结果也不会因 uncovered 失败；core 的应覆盖用例 = 全部 smoke 规格扣除 `team-` 前缀规格（加本提案变更用例），不带前缀的发布规格照旧计入，缺结果仍 uncovered、fail 仍阻断——范围与 module-scoped-env-smoke 之前的全量口径一致，不漏测
+
+#### 异常：只配置路径覆盖的模块不是独立模块（smoke-scope-isolated-modules，proposal-r1 F1）
+- **GIVEN** 同上项目，`smoke.modules.core` 只写了 `report_path`（或只写 `result_path`、或为空对象），没有 `command`；core 的 smoke 仍执行项目级 runner
+- **WHEN** core 提案执行 `smoke`，项目级 runner 输出某条不带前缀发布用例的 `fail`
+- **THEN** core 不是独立 smoke 模块：应覆盖用例仍包含不带前缀的发布规格，该 `fail` 进入 `failed_cases` 并阻断门禁，不得被当作范围外结果忽略；`scope.command_source="project"`，`scope.reasons` 不含 `isolated_module`
 
 #### 正常：next --auto 带 --env
 - **GIVEN** 活跃提案处于 ready-to-smoke，`DEPLOY_DONE.environment` 为 `test`

@@ -1218,7 +1218,7 @@ sequenceDiagram
     else 目标模块不同于提案模块或无活跃提案
         CLI->>L: Step 4b: 版本上下文，取该环境最近 deploy 记录作为部署身份，不读提案标记
     end
-    CLI->>CLI: Step 5: 应覆盖用例为 team 前缀与全局规格，选 smoke.modules.team 或项目级命令
+    CLI->>CLI: Step 5: 应覆盖用例按目标模块是否为独立 smoke 模块确定，team 配置了独立命令则只取 team 前缀规格，选 smoke.modules.team 或项目级命令
     CLI->>X: Step 6: 清空结果文件后执行，注入 OPENLOGOS_SMOKE_MODULE=team 与 OPENLOGOS_SMOKE_ENV
     X-->>CLI: Step 7: 结果行
     CLI->>CLI: Step 8: 只保留应覆盖集合 S 内的结果，其余已定义 ID 忽略并计数，按 S 判定覆盖与门禁
@@ -1238,7 +1238,7 @@ sequenceDiagram
 3. **Step 4a**：提案上下文沿用既有四项前置（smoke 需求、部署决策、`DEPLOY_DONE`、`[deploy]` 全勾）、`DEPLOY_DONE` 分类与部署身份核对。
 4. **Step 4b**（proposal-r1 F2）：版本上下文不套用活跃提案前置——core 有未部署的活跃提案时，team 版本部署后的 smoke 不会因 core 缺 `DEPLOY_DONE` 被 `SMOKE_DEPLOY_NOT_DONE` 拒绝；部署身份与无活跃提案分支同一规则。
 5. **Step 5～6**：用例范围与命令选择见 `spec/environments.md` §14.5；runner 覆盖诊断只按实际所用命令判定。
-6. **Step 5、8**（delta-r1 F2）：应覆盖集合 S = 目标模块前缀规格 ∪ 全局规格 ∪ C，C 在提案上下文为本提案新增或修改的 smoke 用例（可属其他模块前缀），在版本上下文为空（不读取无关活跃提案的变更用例）。覆盖与结果过滤用同一个 S：已定义但不在 S 中的结果计入 `scope.out_of_scope_result_count` 并忽略；S 内结果全部保留——其他模块前缀的变更用例 pass 满足覆盖、fail 阻断、缺结果 uncovered；未定义 ID 照旧判定。
+6. **Step 5、8**（delta-r1 F2；smoke-scope-isolated-modules C01）：独立 smoke 模块指在 `smoke.modules.<m>` 中显式配置了有效非空 `command` 的已登记模块（`scope.command_source="module"`）；只写 `result_path` / `report_path`、空对象或缺省 `command` 的模块不是独立模块（proposal-r1 F1）。目标模块 m 为独立模块时 S = `m-` 前缀规格 ∪ C；否则 S = 全部 smoke 规格 − 其他独立模块前缀规格 ∪ C，不带前缀的规格只计入非独立模块。C 在提案上下文为本提案新增或修改的 smoke 用例（可属其他模块前缀或不带前缀），在版本上下文为空（不读取无关活跃提案的变更用例）。覆盖与结果过滤用同一个 S：已定义但不在 S 中的结果计入 `scope.out_of_scope_result_count` 并忽略；S 内结果全部保留——其他模块前缀的变更用例 pass 满足覆盖、fail 阻断、缺结果 uncovered；未定义 ID 照旧判定。
 7. **Step 9b**：版本上下文不读不写 `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL`，活跃提案的 `proposal_step` 保持不变。
 8. **未声明环境的目标模块**（如 core）：按无登记表原逻辑，`--env` 可选、只作标签，不做环境证据门禁与部署身份核对，不写账本。core 提案下 `smoke --env team-prod` 不属于此类：Step 3 已按环境归属把目标模块定为 team，进入版本上下文（delta-r1 F1）。
 
@@ -1250,9 +1250,11 @@ sequenceDiagram
 
 - **模块不确定**：`scope.mode=project`，`fallback_reason` 取 `no_env_no_proposal`、`env_unattributed` 或 `env_shared`，用全部用例与项目级命令。
 - **smoke.modules 未登记的模块 id**：警告 `smoke_module_unknown`，忽略该项，不影响门禁。
-- **模块未配置 smoke.modules**：用项目级命令，用例仍按目标模块限定。
+- **模块未配置 smoke.modules**：用项目级命令；该模块不是独立模块，应覆盖用例为全部规格扣除其他独立模块前缀规格（加 C），不带前缀的规格照旧计入（smoke-scope-isolated-modules）。
 - **core 有活跃提案、team 版本部署后 smoke**：见 Step 4b、9b；core 的阶段与全部标记不变。
 - **环境不属于目标模块**：`ENV_MODULE_MISMATCH`，零副作用。
+- **独立模块与不带前缀的规格**（smoke-scope-isolated-modules）：runlogos 形态项目中 team 配置了独立命令、core 没有，`logos/resources/test/smoke/` 另有不带模块前缀的 core 发布 smoke 规格。team smoke 只覆盖 `team-` 前缀规格（加 C），不被这些发布规格拖成 uncovered；core smoke 覆盖全部规格扣除 `team-` 前缀规格，发布规格照旧计入，不漏测。独立模块自己的 smoke 规格须带模块前缀。
+- **只配置路径覆盖的模块**（proposal-r1 F1）：`smoke.modules.core` 只写 `report_path` / `result_path` 或为空对象时 core 仍执行项目级 runner、不是独立模块，不带前缀的发布用例照旧计入其 S，项目 runner 输出的 fail 阻断门禁，不得被当作范围外结果忽略。
 
 ### 追溯
 

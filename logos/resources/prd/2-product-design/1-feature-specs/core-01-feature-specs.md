@@ -5456,10 +5456,16 @@ Claude Code（`plugin/bin/guard-check`）、Cursor（`plugin-cursor/hooks/runtim
 
 ### 2.98.6 smoke 用例范围与命令
 
-- 目标模块为 m 时，最终应覆盖集合 S = `m-` 前缀规格（已登记模块 id 最长匹配）∪ 不带任何已登记模块前缀的全局规格 ∪ C；C 为提案上下文下本提案新增或修改的 smoke 用例（可属其他模块前缀），版本上下文下 C 为空，不读取无关活跃提案的变更用例（delta-r1 F2）。不限定模块时为全部用例。
+- **独立 smoke 模块**（smoke-scope-isolated-modules，决策 C01；proposal-r1 F1）：已登记模块在 `smoke.modules.<m>` 中显式配置了有效的非空 `command`，即 smoke 时实际执行该模块自己的命令（`scope.command_source="module"`）。只写 `result_path` / `report_path`、空对象或缺省 `command` 的模块仍执行项目级 runner，不是独立模块；`smoke.modules` 中未登记的 id 照旧警告 `smoke_module_unknown` 并忽略，也不是独立模块。
+- 目标模块为 m 时，最终应覆盖集合 S（规格文件归属按已登记模块 id 最长匹配的文件名前缀判定）：
+  - m 是独立模块：S = `m-` 前缀规格 ∪ C；
+  - m 不是独立模块：S = 全部 smoke 规格 − 前缀属于**其他独立模块**的规格 ∪ C。
+  - 不带任何已登记模块前缀的规格只计入非独立模块。独立模块的 smoke 规格必须带模块前缀，否则不会进入该模块的范围。
+  - 没有任何独立模块时（含只配置了路径覆盖），每个模块的 S 都是全部规格加 C。
+- C 为提案上下文下本提案新增或修改的 smoke 用例（可属其他模块前缀或不带前缀），版本上下文下 C 为空，不读取无关活跃提案的变更用例（delta-r1 F2）。不限定模块时为全部用例。
 - 命令：`smoke.modules.<m>` 存在则用其字段（缺省回落项目级），否则项目级；注入 `OPENLOGOS_SMOKE_MODULE=<m>`（不限定模块时不注入）；runner 覆盖诊断只按实际所用命令判定。
-- 覆盖与结果过滤用同一个 S：已定义但不在 S 中的结果行忽略不计，计数进 `scope.out_of_scope_result_count`；S 内的结果一律保留——属于其他模块前缀的变更用例 pass 满足覆盖、fail 阻断、缺结果仍 uncovered；未定义 ID 照旧判定。
-- JSON 顶层新增可选 `scope`（`mode`、`module`、`context`、`reasons`、`fallback_reason`、`out_of_scope_result_count`、`command_source`），启用时输出；smoke 报告 Summary 新增「范围」行。
+- 覆盖与结果过滤用同一个 S：已定义但不在 S 中的结果行忽略不计，计数进 `scope.out_of_scope_result_count`；S 内的结果一律保留——属于其他模块前缀或不带前缀的变更用例 pass 满足覆盖、fail 阻断、缺结果仍 uncovered；非独立模块范围内的不带前缀用例同样参与判定，其 fail 不得被当作范围外结果忽略；未定义 ID 照旧判定。
+- JSON 顶层新增可选 `scope`（`mode`、`module`、`context`、`reasons`、`fallback_reason`、`out_of_scope_result_count`、`command_source`），启用时输出；目标模块为独立模块时 `scope.reasons` 另含 `isolated_module`（可选取值的增加，字段集合不变）；smoke 报告 Summary 新增「范围」行。
 
 ### 2.98.7 next --auto 带 --env（与是否启用无关）
 

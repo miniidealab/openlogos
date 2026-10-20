@@ -602,9 +602,9 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 
 | ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
 |----|------|------|---------|------|---------|
-| UT-S19-74 | 最终应覆盖集合 S 的构成（delta-r1 F2） | §14.5 | MM；变体 P：team 活跃提案（提案上下文），本提案修改了 `core-smoke-test-cases.md` 中的用例 X；变体 V：core 活跃提案修改了 core 用例 Y，且无 team 活跃提案，执行 `smoke --env team-prod`（版本上下文）；变体 N：无活跃提案、不传 `--env` | 计算三种变体的应覆盖集合 | P：S = team 与全局规格的全部 `SMOKE-*` ∪ {X}，不含其他 core 用例；V：S = team 与全局规格的全部 `SMOKE-*`，不含 Y——不读取 core 提案的变更用例，也不回退读取全局 guard；N：全部用例 |
+| UT-S19-74 | 最终应覆盖集合 S 的构成（delta-r1 F2；smoke-scope-isolated-modules） | §14.5 | MM（`smoke.modules.team.command` 已配置，team 为独立 smoke 模块；core 不是）；变体 P：team 活跃提案（提案上下文），本提案修改了 `core-smoke-test-cases.md` 中的用例 X；变体 V：core 活跃提案修改了 core 用例 Y，且无 team 活跃提案，执行 `smoke --env team-prod`（版本上下文）；变体 N：无活跃提案、不传 `--env` | 计算三种变体的应覆盖集合 | P：S = team 前缀规格的全部 `SMOKE-*` ∪ {X}，不含其他 core 用例，也不含不带前缀的 `shared-smoke-test-cases.md` 用例（team 为独立模块）；V：S = team 前缀规格的全部 `SMOKE-*`，不含 Y——不读取 core 提案的变更用例，也不回退读取全局 guard；N：全部用例 |
 | UT-S19-75 | 未触达的其他模块结果忽略并计数 | §14.5 | 变体 P；runner 另输出两条**未被本提案修改**的 core 用例结果与一条未定义 ID | `smoke --env team-prod --format json` | `scope.out_of_scope_result_count=2`，两条 core 结果不计入覆盖与门禁；未定义 ID 按既有规则判定 |
-| UT-S19-76 | 命令选择与注入 | §14.5 | MM；变体 A：`smoke.modules.team` 只写 `command`；变体 B：另写 `result_path`；变体 C：不配置 `smoke.modules.team` | team 提案执行 `smoke --env team-prod`；无提案不传 `--env` | A：执行 team 命令，结果路径与报告路径回落项目级，调用日志 `OPENLOGOS_SMOKE_MODULE=team`；B：读写 B 的结果路径；C：执行项目级命令、用例仍按 team 限定，`scope.command_source="project"`；不限定模块时不注入 `OPENLOGOS_SMOKE_MODULE` |
+| UT-S19-76 | 命令选择与注入 | §14.5 | MM；变体 A：`smoke.modules.team` 只写 `command`；变体 B：另写 `result_path`；变体 C：不配置 `smoke.modules.team` | team 提案执行 `smoke --env team-prod`；无提案不传 `--env` | A：执行 team 命令，结果路径与报告路径回落项目级，调用日志 `OPENLOGOS_SMOKE_MODULE=team`；B：读写 B 的结果路径；C：执行项目级命令，`scope.command_source="project"`，team 不是独立 smoke 模块（smoke-scope-isolated-modules），应覆盖用例为全部规格（无其他独立模块可扣除）；不限定模块时不注入 `OPENLOGOS_SMOKE_MODULE` |
 | UT-S19-77 | 未登记模块 id 警告 | §14.5 | `smoke.modules.portal`（未登记） | `smoke --format json` | `diagnostics` 含 `smoke_module_unknown`，该项被忽略，门禁不受影响 |
 | UT-S19-78 | 未声明环境的模块按无登记表；他模块环境按归属路由（delta-r1 F1） | §14.3、§14.4 | MM；core 活跃提案已落标（`DEPLOY_DONE.environment=null`）；账本中 team-prod 最近一条为 `result=done` 的版本通道 deploy 记录 | ① `smoke`（不传 `--env`）；② `smoke --env team-prod --format json` | ① 照常执行项目级命令，不做环境证据门禁与部署身份核对，不写部署账本；② 不报 `ENV_MODULE_MISMATCH`：执行 team 命令，`scope.module="team"`、`scope.context="version"`，部署身份取自该账本记录，core 提案目录字节不变（core 已落标这一事实不改变路由）；core 提案 `deploy-done --env team-prod` 的拒绝见 UT-S21-20 |
 | UT-S19-79 | 版本上下文不读写提案标记（proposal-r1 F2） | §14.3 | MM；core 活跃提案处于 ready-to-deploy（无 `DEPLOY_DONE`）；账本中 team-prod 最近一条为 `channel=version`、`result=done` 的 deploy 记录 | `smoke --env team-prod --format json` | 不报 `SMOKE_DEPLOY_NOT_DONE`；执行 team 命令；`scope.module="team"`、`scope.context="version"`；`environment_evidence` 的 `deploy_id`、`ref` 取自该账本记录，`ledger_written=true`、账本 smoke 行 `slug=null`；core 提案目录字节不变（无 `SMOKE_PASS` / `SMOKE_FAIL`） |
@@ -616,7 +616,7 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 
 | ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
 |----|------|-----------|---------|---------|---------|
-| ST-S19-30 | core 有活跃提案时 team 版本部署与 team smoke 完整链（proposal-r1 F2） | Step 1～11 | 真实 CLI；MM；core 有活跃提案且尚未部署（`proposal_step` 为 ready-to-deploy） | ① `deploy --env team-prod --ref <commit>`；② `smoke --env team-prod --format json`；③ `status --format json` | ① 版本通道成功；② 通过，执行 team 命令且只覆盖 team 与全局用例，`scope.context="version"`，部署身份取自 ① 的账本记录；③ core 提案 `proposal_step` 仍为 ready-to-deploy；core 提案目录在 ①② 前后字节不变（无 `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL`） |
+| ST-S19-30 | core 有活跃提案时 team 版本部署与 team smoke 完整链（proposal-r1 F2） | Step 1～11 | 真实 CLI；MM；core 有活跃提案且尚未部署（`proposal_step` 为 ready-to-deploy） | ① `deploy --env team-prod --ref <commit>`；② `smoke --env team-prod --format json`；③ `status --format json` | ① 版本通道成功；② 通过，执行 team 命令且只覆盖 team 前缀用例（team 为独立 smoke 模块，不带前缀的全局规格不计入，smoke-scope-isolated-modules），`scope.context="version"`，部署身份取自 ① 的账本记录；③ core 提案 `proposal_step` 仍为 ready-to-deploy；core 提案目录在 ①② 前后字节不变（无 `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL`） |
 | ST-S19-31 | 未启用零回归与 next 修复 | §14.1、§14.7 | 真实 CLI；S1、M0 | ① 依次 `deploy-done --env test`、`smoke --env test --format json`；② ready-to-smoke 时 `next --auto --format json` | ① 与零回归基准逐字节相同；② `auto_execute.command="openlogos smoke --env test"`，照此命令执行成功 |
 
 ### 覆盖度校验
@@ -627,3 +627,36 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 - 版本上下文隔离（F2）：UT-S19-79、ST-S19-30。
 - JSON 与报告、未启用零回归：UT-S19-80、ST-S19-31。
 - next 带 --env：UT-S19-81、ST-S19-31。
+
+## S19 独立 smoke 模块的应覆盖集合测试（smoke-scope-isolated-modules）
+
+> 覆盖场景 `core-S19-smoke-gate.md`「按模块限定 smoke（module-scoped-env-smoke）」异常「独立模块与不带前缀的规格」「只配置路径覆盖的模块」，功能规格 §2.98.6，`spec/environments.md` §14.5，`spec/test-results.md`「应覆盖用例」，决策 C01，proposal-r1 F1。既有 UT-S19-74～UT-S19-82、ST-S19-30～ST-S19-31 作为回归守护（UT-S19-74、UT-S19-76、ST-S19-30 已按独立模块规则修订预期）。测试实现必须写入 OpenLogos reporter（`logos/resources/verify/test-results.jsonl`），测试名包含对应 ID，`scenario_id="S19"`。
+>
+> **夹具 RL**（runlogos 形态）：`mktemp -d` 一次性 git 项目，`logos-project.yaml` 登记 `core`（launched）与 `team`（initial，`deployment_gates.team.environments: [team-prod]`）；登记表含 `test`、`team-prod`（script 方式 `deploy`）；`logos.config.json` 的 `smoke.command` 为项目级记录型 runner，`smoke.modules.team.command` 为 team 记录型 runner；smoke 规格为 `core-smoke-test-cases.md`、`team-smoke-test-cases.md`，以及两份不带任何模块前缀、ID 段不统一的 core 发布规格（如 `official-release-package-1-0-4.md` 含 `SMOKE-official104-01`、`release-1-0-3-rebuild-5.md` 含 `SMOKE-rebuild5-01`）。项目级 runner 为全部用例写结果，team runner 只为 team 前缀用例写结果。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S19-83 | 独立模块判定 | §14.5 | 夹具 RL 的 `smoke.modules` 依次为：`team: {command}`；`team: {command: ""}`（空串）；`team: {result_path}`；`team: {report_path}`；`team: {}`；`portal: {command}`（portal 未登记） | 调用独立模块判定函数 | 只有第一种 team 为独立 smoke 模块；空串、只写路径、空对象均不是；未登记的 portal 不是独立模块（另报 `smoke_module_unknown`）；core 在所有变体下都不是 |
+| UT-S19-84 | 独立模块不计入不带前缀的规格 | §14.5 | 夹具 RL；core 有活跃提案且尚未部署，账本中 team-prod 最近一条为版本通道 `result=done` 的 deploy 记录 | `smoke --env team-prod --format json`（版本上下文） | 应覆盖集合 = `team-` 前缀用例；`summary.defined_count` 等于 team 前缀用例数；两份不带前缀的发布规格与 core 规格不计入，`uncovered_cases` 为空，`gate.result=PASS`；`scope.reasons` 含 `isolated_module`、`scope.command_source="module"` |
+| UT-S19-85 | 非独立模块计入不带前缀的规格 | §14.5 | 夹具 RL；core 活跃提案已落标（`DEPLOY_DONE.environment=null`）；变体 ①：项目级 runner 写全部结果；变体 ②：项目级 runner 不写 `SMOKE-official104-01`；变体 ③：项目级 runner 把 `SMOKE-official104-01` 写为 `fail` | `smoke --format json`（目标模块 core） | 应覆盖集合 = core 前缀用例 ∪ 两份不带前缀的发布用例，不含 team 前缀用例；①：PASS；②：`SMOKE-official104-01` 进入 `uncovered_cases`，门禁不通过；③：进入 `failed_cases`，`gate.result=FAIL`；三者中 team 前缀结果都计入 `scope.out_of_scope_result_count`，不带前缀的结果都不计入 |
+| UT-S19-86 | 只配置路径覆盖的模块不是独立模块（proposal-r1 F1） | §14.5 | 夹具 RL，另加 `smoke.modules.core` 分别为：只写 `report_path`；只写 `result_path`；空对象 `{}`；core 活跃提案已落标；项目级 runner 把 `SMOKE-official104-01` 写为 `fail` | `smoke --format json` | 三种变体下 core 都不是独立模块：执行项目级 runner（`scope.command_source="project"`，`scope.reasons` 不含 `isolated_module`）；应覆盖集合仍含两份不带前缀的发布用例；`SMOKE-official104-01` 进入 `failed_cases`，`gate.result=FAIL`，不计入 `scope.out_of_scope_result_count`；只写 `report_path` / `result_path` 时报告、结果读写各自配置的路径 |
+| UT-S19-87 | 无独立模块时每个模块为全部规格 | §14.5 | 夹具 RL 去掉 `smoke.modules`（team 仍声明 `team-prod`，按模块区分仍启用）；或 `smoke.modules.team` 只写 `report_path` | team 版本上下文 `smoke --env team-prod`；core 提案 `smoke` | 两个模块的应覆盖集合都等于全部 smoke 规格（core、team 前缀与不带前缀的发布用例）；与引入独立模块规则前相比，没有任何模块的应覆盖集合缩小 |
+| UT-S19-88 | 变更用例 C 跨独立模块照旧计入 | §14.5 | 夹具 RL；team 活跃提案（提案上下文）已落标 team-prod，本提案修改了不带前缀的 `official-release-package-1-0-4.md` 中的 `SMOKE-official104-01` 与 core 用例 X；三次运行中这两条结果分别为 pass、fail、不输出 | `smoke --env team-prod --format json` | 应覆盖集合 = team 前缀用例 ∪ {`SMOKE-official104-01`, X}；pass：计入覆盖，`gate.result=PASS`；fail：进入 `failed_cases`，`FAIL`；不输出：进入 `uncovered_cases`；三次中这两条都不计入 `scope.out_of_scope_result_count`，未触达的其他不带前缀用例与 core 用例始终被忽略并计数 |
+| UT-S19-89 | 多个独立模块互相扣除 | §14.5 | 夹具 RL 另登记模块 `portal`，配置 `smoke.modules.portal.command` 与 `portal-smoke-test-cases.md` | 分别以 core、team、portal 为目标模块计算应覆盖集合 | team：只含 `team-` 前缀；portal：只含 `portal-` 前缀；core：全部规格扣除 `team-` 与 `portal-` 前缀规格（含不带前缀的发布用例）；最长匹配下 `team-x-` 之类前缀按已登记模块 id 归属 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S19-32 | runlogos 形态端到端：独立 team 与非独立 core 各自 smoke | Step 1～11 | 真实 CLI；夹具 RL；core 有活跃提案且尚未部署 | ① `deploy --env team-prod --ref <commit>`；② `smoke --env team-prod --format json`；③ 补齐 core 部署前置后 `deploy-done` 与 `smoke --format json`，项目级 runner 先输出全部结果、再改为把一条不带前缀的发布用例写为 `fail` 重跑 | ② 通过，只执行 team 命令、只覆盖 team 前缀用例，不带前缀的发布规格不计入；core 提案目录字节不变；③ 第一次通过且应覆盖集合含全部不带前缀的发布用例，第二次 `gate.result=FAIL`、该用例进入 `failed_cases`；team 前缀结果两次都计入 `scope.out_of_scope_result_count` |
+
+### 覆盖度校验
+
+- 独立模块判定（有效非空 `command`；空串、只写路径、空对象、未登记 id 均不是）：UT-S19-83、UT-S19-86。
+- 独立模块只覆盖自身前缀，不被不带前缀的规格拖住：UT-S19-84、ST-S19-32。
+- 非独立模块计入不带前缀的规格，缺结果 uncovered、fail 阻断：UT-S19-85、UT-S19-86、ST-S19-32。
+- 无独立模块时全量、范围不缩小：UT-S19-87。
+- 变更用例 C 跨独立模块计入：UT-S19-88。
+- 多个独立模块互相扣除、最长匹配：UT-S19-89。

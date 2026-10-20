@@ -580,7 +580,12 @@ openlogos approve --env <id|alias> --ref <revision> [--note <文字>] [--format 
 
 ### 14.5 smoke 用例范围与命令
 
-- **用例范围**（目标模块为 m，delta-r1 F2）：最终应覆盖集合 S = 目标模块 `m-` 前缀规格（已登记模块 id 最长匹配）中的 `SMOKE-*` ∪ 不带任何已登记模块前缀的全局规格中的 `SMOKE-*` ∪ C，其中 C 为**提案上下文**下本提案新增或修改的 smoke 用例（可能属于其他模块前缀规格）；**版本上下文**下 C 为空——不从无关的活跃提案读取变更用例，也不回退读取全局 guard。覆盖统计、uncovered、失败判定与结果过滤**只用这一个集合 S**。其他模块前缀规格中不属于 C 的用例不计入。不限定模块时用全部用例（现状）。
+- **独立 smoke 模块**（smoke-scope-isolated-modules，决策 C01；proposal-r1 F1）：已登记模块在 `smoke.modules.<m>` 中显式配置了有效的非空 `command`，即 smoke 时实际执行该模块自己的命令（与本节「命令」规则及 `scope.command_source="module"` 同一判据）。只写 `result_path` / `report_path`、空对象或缺省 `command` 的模块仍执行项目级命令，不是独立模块；未登记的 `<id>` 按本节「命令」规则警告并忽略，也不是独立模块。
+- **用例范围**（目标模块为 m，delta-r1 F2；smoke-scope-isolated-modules）：规格文件按文件名前缀归属模块（已登记模块 id 最长匹配），不带任何已登记模块前缀的规格不属于任何模块。最终应覆盖集合 S：
+  - m 是独立 smoke 模块：S = `m-` 前缀规格中的 `SMOKE-*` ∪ C；
+  - m 不是独立 smoke 模块：S = 全部 smoke 规格中的 `SMOKE-*` − 前缀属于**其他独立 smoke 模块**的规格中的 `SMOKE-*` ∪ C；
+  - 不带前缀的规格只计入非独立模块。独立模块自己的 smoke 规格必须带模块前缀，否则不会进入该模块的范围；没有任何独立模块时（含只配置了路径覆盖），每个模块的 S 都是全部规格加 C。
+  - C 为**提案上下文**下本提案新增或修改的 smoke 用例（可能属于其他模块前缀或不带前缀的规格）；**版本上下文**下 C 为空——不从无关的活跃提案读取变更用例，也不回退读取全局 guard。覆盖统计、uncovered、失败判定与结果过滤**只用这一个集合 S**。不限定模块时用全部用例（现状）。
 - **范围外结果**：结果行的 ID 在 smoke 规格中已定义、但不在 S 中时忽略不计，计数进 `scope.out_of_scope_result_count`；在 S 中的结果一律保留并参与覆盖与失败判定（因此 C 中属于其他模块前缀的变更用例：pass 满足覆盖、fail 阻断门禁、缺结果仍 uncovered）；未定义 ID 照旧判定。与 verify 的范围过滤同一口径（只忽略「已定义且不在最终范围内」的 ID，不按模块前缀无条件丢弃）。
 - **命令**：`logos.config.json` 新增可选 `smoke.modules.<id>`，字段 `command`、`result_path`、`report_path` 与项目级同语义。目标模块为 m 且配置了 `smoke.modules.<m>` 时用其字段，未写的字段回落项目级；否则用项目级 smoke 配置。`<id>` 未在 `logos-project.yaml` 登记时给出警告 `smoke_module_unknown` 并忽略该项，不影响门禁。沙箱规则（`smoke.sandbox_mode`）沿用项目级。
 - **注入**：目标模块确定时以 `OPENLOGOS_SMOKE_MODULE=<m>` 运行命令；不限定模块时不注入。`OPENLOGOS_SMOKE_ENV`（§6）不变。
