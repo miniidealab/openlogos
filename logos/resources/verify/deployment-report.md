@@ -1118,3 +1118,56 @@ public_release_commit: 3d851a71a17c86d081ce9d69adf2ea88331a94fe
 ## 五、后续
 
 - 安装态 smoke：`openlogos smoke --env test`，覆盖 SMOKE-core-289～293（runner `scripts/smoke-module-scoped-env-smoke-0-16-10.js`，SMOKE-core-293 用上述回滚制品安装基线）与通用的 SMOKE-core-268～271。本工作单元不执行。
+
+## 部署记录 2026-10-20T02:22:30.239Z → test
+
+- 目标环境: test
+- 通道 / 执行方式: proposal / script
+- deploy_id: 29aa0423-587d-40fd-a5ae-2a7aa5dd6813
+- ref_requested: 131bff56142155a3148be9aab9c1ba6667bb8ec6（HEAD）
+- ref: 131bff56142155a3148be9aab9c1ba6667bb8ec6
+- 执行脚本: scripts/deploy-local.mjs（workdir: worktree）
+- 耗时: 49958 ms
+- 结果: done
+- log_path: logos/.openlogos-runtime/deploy-logs/29aa0423-587d-40fd-a5ae-2a7aa5dd6813.log
+- previous_ref: dc25e54cf7067581634321d96ef5933b880becac
+
+# 部署报告：smoke-scope-isolated-modules / OpenLogos 0.16.11 本机全局发布（2026-10-20，**已部署：本机测试环境 test**）
+
+按部署方案「OpenLogos 0.16.11 本机测试环境发布（smoke-scope-isolated-modules）」经 `openlogos deploy --env test` 提案通道部署（登记表 `test.deploy` = script，`scripts/deploy-local.mjs`，workdir: worktree）。`next --auto` 以 deliver 门 `gate_auto_passed=true` 为执行依据。不 npm publish、不打 tag、不 push。
+
+## 一、部署前置
+
+- `openlogos verify` PASS（`VERIFY_PASS` 在场）。请求提交已提交：`290c0da` 规格合并、`13c33f1` 代码、`131bff5` 验收报告，工作区干净。
+- 说明：`VERIFY_PASS` 与验收报告生成于 code 评审 F1（安装态基线随重部署漂移）修复之前。修复只涉及安装态 runner `scripts/smoke-smoke-scope-isolated-modules-0-16-11.js`、新增的 `scripts/lib/local-install-baseline.mjs` 与回归测试 `cli/test/s19-ssim-baseline-select.test.ts`，不涉及 `cli/src`。修复后已在本地全量运行 `npm test`：210 个文件、2907 个用例通过、1 个跳过。修复已包含在 `13c33f1` 中。
+- 升版后复跑：`npm run lint` 0 error，`npx tsc --noEmit` 通过。
+- 版本事实：部署前 `cli/package.json` 为 0.16.11，回滚常量为 0.16.10；`npm view @miniidealab/openlogos@0.16.11 version` 返回 404，registry 最高为 0.16.7。
+- `openlogos env check`：ok，无 error。`openlogos deploy --env test --dry-run`：`channel=proposal`，请求版本 HEAD → `131bff56142155a3148be9aab9c1ba6667bb8ec6`。
+- 部署前全局：`openlogos --version` = 0.16.10（module-scoped-env-smoke 的本机全局版本）；账本 `test.current_ref` = `dc25e54cf706…`。
+
+## 二、部署结果与安装态读回
+
+- `deploy_id` = `29aa0423-587d-40fd-a5ae-2a7aa5dd6813`，`ref` = `131bff56142155a3148be9aab9c1ba6667bb8ec6`，`result=done`，耗时 50.0 秒。
+- `DEPLOY_DONE` 由提案通道写入（`environment=test`，`ref_source=explicit`）。`[deploy]` 三项由提案通道勾选，`next_step=ready-to-smoke`。按部署方案，提案通道已完成受控落标，未再运行 `openlogos deploy-done`，以免生成新的 deploy_id 和不带 ref 的账本记录、覆盖本次部署身份。
+- 回执 `logos/.openlogos-runtime/local-install/last-deploy.json`：`candidate_version=0.16.11`，`previous_version=0.16.10`。
+- 复核：`openlogos --version` = 0.16.11；入口 realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` 等于回执 `entry_realpath`；其 SHA-256 `5b25f357876ae60f5b742233bbc8b5a264622eb27ee802e7ce645a7d5c8f1fdb` 等于回执 `candidate_entry_sha256`。入口文件本身两版未变。
+- 候选 tarball：`logos/.openlogos-runtime/local-install/candidates/29aa0423-587d-40fd-a5ae-2a7aa5dd6813.tgz`，SHA-256 `def496f341eeaa9eec5f08fcccb0a30c46b1e4d0003533b556056a8d396f9139`。
+- 回滚制品：`logos/.openlogos-runtime/local-install/rollback/29aa0423-587d-40fd-a5ae-2a7aa5dd6813.tgz`，SHA-256 `a8d282a4852dd37552a582ab40dd9179097bf180d9daee9c15bcb2af9ddebdd5`。包内为部署前的本机全局 0.16.10，与 0.16.10 的候选 tarball 同哈希；它也是 SMOKE-core-297 按版本选取的行为比较基线。
+- 环境视图：`test.current_ref` = `131bff56142…`；`previous_ref` = `dc25e54cf706…`，即 0.16.10 的部署提交，与方案预期一致。
+
+## 三、本仓 sync 与同源核对
+
+- 本仓执行 `openlogos sync` 后读回：`logos/spec/environments.md`、`logos/spec/test-results.md` 与全局包内同名文件逐字节一致。
+- 本仓是单模块项目，AGENTS.md / CLAUDE.md 与 sync 前逐字节一致；sync 没有改动受跟踪的托管文件。
+- `sync` 再次向本仓 `.claude/settings.json` 追加了重复的 SessionStart 条目（已知缺陷），已按部署方案还原为 sync 前内容，不提交该重复项。
+- 不改写其他仓库（包括 runlogos），不在其项目根运行任何命令。
+
+## 四、回滚
+
+- 成功部署后要回到 0.16.10：执行 `openlogos deploy --env test --rollback`。账本 `previous_ref` 为 `dc25e54…`，该提交含 `scripts/deploy-local.mjs`。回到 0.16.10 后，用 0.16.10 在本仓执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件。
+- 脚本失败时 `deploy-local.mjs` 自动以回滚制品回装（本次未触发）。
+- 本次无数据迁移：配置字段与文件格式均不变。
+
+## 五、后续
+
+- 安装态 smoke：`openlogos smoke --env test`，覆盖 SMOKE-core-294～297（runner `scripts/smoke-smoke-scope-isolated-modules-0-16-11.js`，SMOKE-core-297 以按版本选取的 0.16.10 制品安装基线）与通用的 SMOKE-core-268～271。本工作单元不执行。
