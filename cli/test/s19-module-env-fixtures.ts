@@ -14,7 +14,17 @@ import { stringify as stringifyYaml } from 'yaml';
 export const CLI_DIST = resolve(dirname(fileURLToPath(import.meta.url)), '../dist/index.js');
 export const MES_BASELINE_FILE = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/s19-module-env-baseline.json');
 
-export type EnvKind = 'S1' | 'M0' | 'MM';
+/**
+ * S1 单模块；M0 多模块无声明；MM 多模块（team 声明 team-prod、配置 smoke.modules.team.command）；
+ * RL runlogos 形态（smoke-scope-isolated-modules）：同 MM，但 smoke 规格为 core、team 前缀与两份不带前缀、ID 段不统一的 core 发布规格（无 shared）。
+ */
+export type EnvKind = 'S1' | 'M0' | 'MM' | 'RL';
+
+/** 夹具 RL 中不带前缀的 core 发布规格（文件名 → 用例 ID）。 */
+export const RL_RELEASE_SPECS: Record<string, string> = {
+  'official-release-package-1-0-4.md': 'SMOKE-official104-01',
+  'release-1-0-3-rebuild-5.md': 'SMOKE-rebuild5-01',
+};
 export const SLUG = 'ship-it';
 
 function registry(opts: EnvFixtureOptions): string {
@@ -104,12 +114,13 @@ export function git(root: string, args: string[]): string {
 
 /** 构造夹具项目，活跃提案 ship-it（缺省归属 core）处于 ready-to-deploy。 */
 export function buildEnvProject(root: string, kind: EnvKind, opts: EnvFixtureOptions = {}): string {
-  const proposalModule = kind === 'MM' && opts.proposalModule !== undefined ? opts.proposalModule : 'core';
+  const mmLike = kind === 'MM' || kind === 'RL';
+  const proposalModule = mmLike && opts.proposalModule !== undefined ? opts.proposalModule : 'core';
   put(root, 'logos/logos.config.json', `${JSON.stringify({
     name: 'mes', locale: 'en', description: '', documents: {},
     smoke: {
       command: 'node scripts/smoke-project.js', result_path: 'logos/resources/verify/smoke-results.jsonl', sandbox_mode: 'off',
-      ...(kind === 'MM' ? { modules: { team: { command: 'node scripts/smoke-team.js' } } } : {}),
+      ...(mmLike ? { modules: { team: { command: 'node scripts/smoke-team.js' } } } : {}),
     },
   }, null, 2)}\n`);
   const modules = kind === 'S1'
@@ -117,19 +128,25 @@ export function buildEnvProject(root: string, kind: EnvKind, opts: EnvFixtureOpt
     : [{ id: 'core', name: 'Core', lifecycle: 'launched' }, { id: 'team', name: 'Team', lifecycle: 'initial' }];
   // 夹具口径：core 不声明 deployment_gates；仅 MM 的 team 声明 environments
   const project: Record<string, unknown> = { project: { name: 'mes' }, modules };
-  if (kind === 'MM') {
+  if (mmLike) {
     const gates: Record<string, { environments: string[] }> = { team: { environments: opts.teamEnvironments ?? ['team-prod'] } };
     if (opts.coreEnvironments) gates.core = { environments: opts.coreEnvironments };
     project.deployment_gates = gates;
   }
   put(root, 'logos/logos-project.yaml', stringifyYaml(project, { lineWidth: 0 }));
-  put(root, 'logos/environments.yaml', registry(kind === 'MM' ? opts : {}));
+  put(root, 'logos/environments.yaml', registry(mmLike ? opts : {}));
   put(root, 'logos/resources/test/smoke/core-smoke-test-cases.md', '# Smoke\n\n| ID | 描述 |\n|---|---|\n| SMOKE-core-01 | a |\n| SMOKE-core-02 | b |\n');
-  put(root, 'logos/resources/test/smoke/shared-smoke-test-cases.md', '# Smoke\n\n| ID | 描述 |\n|---|---|\n| SMOKE-shared-01 | g |\n');
+  if (kind === 'RL') {
+    for (const [file, id] of Object.entries(RL_RELEASE_SPECS)) put(root, `logos/resources/test/smoke/${file}`, `# Release smoke\n\n| ID | 描述 |\n|---|---|\n| ${id} | r |\n`);
+  } else {
+    put(root, 'logos/resources/test/smoke/shared-smoke-test-cases.md', '# Smoke\n\n| ID | 描述 |\n|---|---|\n| SMOKE-shared-01 | g |\n');
+  }
   if (kind !== 'S1') put(root, 'logos/resources/test/smoke/team-smoke-test-cases.md', '# Smoke\n\n| ID | 描述 |\n|---|---|\n| SMOKE-team-01 | t |\n');
-  const all = kind === 'S1' ? ['SMOKE-core-01', 'SMOKE-core-02', 'SMOKE-shared-01'] : ['SMOKE-core-01', 'SMOKE-core-02', 'SMOKE-shared-01', 'SMOKE-team-01'];
+  const global = kind === 'RL' ? Object.values(RL_RELEASE_SPECS) : ['SMOKE-shared-01'];
+  const all = kind === 'S1' ? ['SMOKE-core-01', 'SMOKE-core-02', ...global] : ['SMOKE-core-01', 'SMOKE-core-02', ...global, 'SMOKE-team-01'];
   put(root, 'scripts/smoke-project.js', RUNNER('project', all));
-  put(root, 'scripts/smoke-team.js', RUNNER('team', ['SMOKE-team-01', 'SMOKE-shared-01']));
+  // team 配置了独立命令（独立 smoke 模块），其 runner 只为 team 前缀用例写结果（smoke-scope-isolated-modules）
+  put(root, 'scripts/smoke-team.js', RUNNER('team', ['SMOKE-team-01']));
   // 部署脚本在部署工作树中运行：调用日志写到夹具构造时确定的项目外绝对路径
   put(root, 'tools/deploy-team.sh', `#!/bin/sh\necho "{\\"deploy\\":\\"$1\\",\\"ref\\":\\"$2\\"}" >> '${callsLogPath(root)}'\n`);
   chmodSync(join(root, 'tools/deploy-team.sh'), 0o755);

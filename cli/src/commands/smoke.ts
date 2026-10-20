@@ -25,7 +25,7 @@ import {
   modulesOwning, resolveModuleEnvironments, resolveTargetModule,
 } from '../lib/module-env-scope.js';
 import type { ModuleEnvDecl, TargetModule } from '../lib/module-env-scope.js';
-import { moduleSmokeConfig, resolveSmokeCaseSet, unknownSmokeModules } from '../lib/smoke-scope.js';
+import { isolatedSmokeModules, moduleSmokeConfig, resolveSmokeCaseSet, unknownSmokeModules } from '../lib/smoke-scope.js';
 import { appendLedgerLine, removeOwnLedgerLine } from '../lib/deployment-ledger.js';
 import type { Locale } from '../i18n.js';
 
@@ -79,7 +79,8 @@ export interface SmokeScope {
   mode: 'module' | 'project';
   module: string | null;
   context: 'proposal' | 'version';
-  reasons: Array<'env' | 'proposal'>;
+  /** isolated_module：目标模块为独立 smoke 模块（smoke-scope-isolated-modules，可选取值的增加）。 */
+  reasons: Array<'env' | 'proposal' | 'isolated_module'>;
   fallback_reason: { code: 'no_env_no_proposal' | 'env_unattributed' | 'env_shared'; detail: string } | null;
   out_of_scope_result_count: number;
   command_source: 'module' | 'project';
@@ -682,14 +683,18 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
     }));
   }
   if (plan) {
+    // 独立 smoke 模块（smoke-scope-isolated-modules）：决定集合 S 的口径与 scope.reasons 的 isolated_module
+    const isolatedModules = isolatedSmokeModules(root);
     if (targetModule !== null) {
-      collectOptions.caseScope = resolveSmokeCaseSet(root, plan.moduleIds, targetModule, coverageCheck.changed_case_ids);
+      collectOptions.caseScope = resolveSmokeCaseSet(root, plan.moduleIds, targetModule, coverageCheck.changed_case_ids, isolatedModules);
     }
     collectOptions.scope = {
       mode: plan.target.mode,
       module: targetModule,
       context: plan.target.mode === 'module' ? plan.target.context : (activeFacts ? 'proposal' : 'version'),
-      reasons: plan.target.mode === 'module' ? plan.target.reasons : [],
+      reasons: plan.target.mode === 'module'
+        ? [...plan.target.reasons, ...(targetModule !== null && isolatedModules.includes(targetModule) ? ['isolated_module' as const] : [])]
+        : [],
       fallback_reason: plan.target.mode === 'project' ? { code: plan.target.fallback, detail: plan.fallbackDetail } : null,
       out_of_scope_result_count: 0,
       command_source: commandSource,

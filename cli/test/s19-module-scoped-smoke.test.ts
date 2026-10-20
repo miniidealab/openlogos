@@ -105,9 +105,10 @@ describe('S19 smoke 按模块限定范围（module-scoped-env-smoke 切片3）',
     const p = variantP();
     const changedP = extractChangedSmokeIds(p, SLUG);
     expect(changedP).toEqual(['SMOKE-core-01']);
-    expect(resolveSmokeCaseSet(p, MODULES, 'team', changedP).caseIds).toEqual(['SMOKE-core-01', 'SMOKE-shared-01', 'SMOKE-team-01']);
+    // smoke-scope-isolated-modules：team 配置了独立命令（独立 smoke 模块），不带前缀的 shared 规格不计入
+    expect(resolveSmokeCaseSet(p, MODULES, 'team', changedP).caseIds).toEqual(['SMOKE-core-01', 'SMOKE-team-01']);
     const pRun = smokeRun(p, ['--env', 'team-prod']);
-    expect(pRun.data.summary.defined_count).toBe(3);
+    expect(pRun.data.summary.defined_count).toBe(2);
     expect(pRun.data.changed_cases).toEqual(['SMOKE-core-01']);
 
     // V：core 提案修改了 core 用例 Y，无 team 提案；smoke --env team-prod 为版本上下文
@@ -119,7 +120,7 @@ describe('S19 smoke 按模块限定范围（module-scoped-env-smoke 切片3）',
     const vRun = smokeRun(v, ['--env', 'team-prod']);
     expect(vRun.data.scope).toMatchObject({ module: 'team', context: 'version' });
     expect(vRun.data.changed_cases).toEqual([]);
-    expect(vRun.data.summary.defined_count).toBe(2);
+    expect(vRun.data.summary.defined_count).toBe(1);
     expect(vRun.data.uncovered_cases).not.toContain('SMOKE-core-02');
 
     // N：无活跃提案、不传 --env → 不限定模块，全部用例
@@ -142,8 +143,8 @@ describe('S19 smoke 按模块限定范围（module-scoped-env-smoke 切片3）',
     expect(data.scope?.out_of_scope_result_count).toBe(2);
     // 两条 core 结果不计入覆盖与门禁（SMOKE-core-03 的 fail 不阻断）；未定义 ID 保留计入 executed
     expect(data.failed_cases.map(f => f.id)).not.toContain('SMOKE-core-03');
-    expect(data.summary.executed_count).toBe(4); // team-01、shared-01、X、未定义 ID
-    expect(data.summary.defined_count).toBe(3);
+    expect(data.summary.executed_count).toBe(3); // team-01、X、未定义 ID（team runner 只写 team 前缀用例）
+    expect(data.summary.defined_count).toBe(2);
     expect(data.gate.result).toBe('PASS');
 
     // code-r1 F1：范围外已定义结果也不参与环境证据——错误环境与缺环境字段的 core 行均被忽略，
@@ -164,11 +165,11 @@ describe('S19 smoke 按模块限定范围（module-scoped-env-smoke 切片3）',
 
     const control = project('MM');
     versionDeployTeam(control);
-    writeFileSync(join(control, 'tools/team-ids.json'), JSON.stringify(['SMOKE-team-01']));
-    extra(control, [{ id: 'SMOKE-shared-01', status: 'pass', target_environment: 'local-macos' } as { id: string; status: string }]);
+    writeFileSync(join(control, 'tools/team-ids.json'), JSON.stringify([]));
+    extra(control, [{ id: 'SMOKE-team-01', status: 'pass', target_environment: 'local-macos' } as { id: string; status: string }]);
     const blocked = smokeRun(control, ['--env', 'team-prod']).data as Smoke & { environment_evidence: Record<string, unknown> };
     expect(blocked.gate).toEqual({ result: 'FAIL', reason: 'SMOKE_ENV_EVIDENCE_MISMATCH' });
-    expect(blocked.environment_evidence).toMatchObject({ env_evidence: 'mismatch', mismatched_case_ids: ['SMOKE-shared-01'], verified: false });
+    expect(blocked.environment_evidence).toMatchObject({ env_evidence: 'mismatch', mismatched_case_ids: ['SMOKE-team-01'], verified: false });
   }, 180_000);
 
   it('UT-S19-76: 命令选择与注入——module command / 另写 result_path / 未配置回落项目级；不限定模块不注入', () => {
@@ -200,8 +201,10 @@ describe('S19 smoke 按模块限定范围（module-scoped-env-smoke 切片3）',
     writeFileSync(join(c, 'logos/logos.config.json'), JSON.stringify(cfgC, null, 2));
     const rc = smokeRun(c, ['--env', 'team-prod']).data;
     expect(calls(c)).toEqual([expect.objectContaining({ runner: 'project', module: 'team' })]);
-    expect(rc.scope).toMatchObject({ module: 'team', command_source: 'project', out_of_scope_result_count: 1 }); // 未触达的 core-02
-    expect(rc.summary.defined_count).toBe(3);
+    // smoke-scope-isolated-modules：未配置 team 命令时 team 不是独立模块，应覆盖用例为全部规格（无其他独立模块可扣除）
+    expect(rc.scope).toMatchObject({ module: 'team', command_source: 'project', out_of_scope_result_count: 0 });
+    expect(rc.scope?.reasons).not.toContain('isolated_module');
+    expect(rc.summary.defined_count).toBe(4);
 
     // 不限定模块：不注入 OPENLOGOS_SMOKE_MODULE
     const n = project('MM', { proposalModule: null });
@@ -209,13 +212,13 @@ describe('S19 smoke 按模块限定范围（module-scoped-env-smoke 切片3）',
     smokeRun(n);
     expect(calls(n)).toEqual([expect.objectContaining({ runner: 'project', module: null })]);
 
-    // 根 spec/logos.config.schema.json（code-targets 直接写入，不经 delta）可按 JSON 解析且含 smoke.modules
+    // 根 spec/logos.config.schema.json（module-scoped-env-smoke 以 code-targets 直接写入，不经 delta）可按 JSON 解析且含 smoke.modules
     const schema = JSON.parse(readFileSync(join(REPO, 'spec/logos.config.schema.json'), 'utf-8'));
     const modules = schema.properties.smoke.properties.modules;
     expect(modules.type).toBe('object');
     expect(Object.keys(modules.additionalProperties.properties).sort()).toEqual(['command', 'report_path', 'result_path']);
-    expect(readFileSync(join(REPO, 'spec/logos.config.schema.json'))
-      .equals(readFileSync(join(REPO, 'logos/changes/module-scoped-env-smoke/code-targets/spec/logos.config.schema.json')))).toBe(true);
+    // 不再比对提案目录下的 code-targets：提案归档后该路径不存在，测试不得依赖提案目录
+    expect(modules.additionalProperties.additionalProperties).toBe(false);
   }, 180_000);
 
   it('UT-S19-77: smoke.modules 中未登记的模块 id 警告 smoke_module_unknown 并忽略，门禁不受影响', () => {
@@ -274,7 +277,7 @@ describe('S19 smoke 按模块限定范围（module-scoped-env-smoke 切片3）',
       ['command_source', 'context', 'fallback_reason', 'mode', 'module', 'out_of_scope_result_count', 'reasons'],
     );
     expect(data.scope).toEqual({
-      mode: 'module', module: 'team', context: 'version', reasons: ['env'], fallback_reason: null,
+      mode: 'module', module: 'team', context: 'version', reasons: ['env', 'isolated_module'], fallback_reason: null,
       out_of_scope_result_count: 0, command_source: 'module',
     });
     const report = readFileSync(join(root, data.report_path), 'utf-8');
@@ -326,7 +329,7 @@ describe('S19 smoke 按模块限定范围（module-scoped-env-smoke 切片3）',
     const { run, data } = smokeRun(root, ['--env', 'team-prod']);
     expect(run.status, run.stderr).toBe(0);
     expect(data.gate.result).toBe('PASS');
-    expect(data.summary.defined_count).toBe(2);
+    expect(data.summary.defined_count).toBe(1); // team 为独立 smoke 模块：只覆盖 team 前缀用例
     expect(data.scope).toMatchObject({ module: 'team', context: 'version' });
     expect(data.environment_evidence).toMatchObject({ deploy_id: depData.deploy_id, ref: head });
     expect(calls(root)).toEqual([expect.objectContaining({ runner: 'team', module: 'team' })]);

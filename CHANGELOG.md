@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.11] - 2026-10-20
+
+本机全局发布（未发布到 npm）。
+
+### Changed
+
+- **按模块 smoke 的应覆盖集合区分独立 smoke 模块**（smoke-scope-isolated-modules）：0.16.10 把不带模块前缀的规格当作全局规格计入所有模块，使配置了独立 smoke 命令的模块（如 runlogos 的 Team）被其他模块不带前缀的发布 smoke 拖成 uncovered。
+  - 独立 smoke 模块：在 `smoke.modules.<id>` 中显式配置了非空 `command` 的已登记模块。只写 `result_path` / `report_path`、空对象或缺省 `command` 的模块仍执行项目级 runner，不是独立模块。
+  - 目标模块是独立模块时，只覆盖自己前缀的规格，加上本提案改动的用例；其他模块覆盖全部规格，只扣除其他独立模块前缀的规格。不带前缀的规格只计入非独立模块，缺结果仍 uncovered、失败照常阻断。
+  - `smoke --format json` 的 `scope.reasons` 在目标模块为独立模块时新增取值 `isolated_module`。
+
+### 升级提示
+
+- 独立模块自己的 smoke 规格须带模块前缀。
+- 单模块项目行为不变。已启用按模块区分、但没有任何模块配置独立 `command` 的项目，每个模块的应覆盖范围扩大为全部规格，没有任何模块的范围缩小；原先被忽略的其他模块用例结果会参与覆盖与失败判定。
+
 ## [0.16.10] - 2026-10-19
 
 本机全局发布（未发布到 npm）。

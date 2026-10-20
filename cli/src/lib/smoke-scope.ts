@@ -2,8 +2,11 @@
  * smoke 按模块限定范围（module-scoped-env-smoke，spec/environments.md §14.5、§14.6；spec/test-results.md
  * 「按模块限定 smoke 范围的运行约定」）。
  *
- * - 应覆盖集合 S = 目标模块 `m-` 前缀规格（已登记模块 id 最长匹配）中的 SMOKE-* ∪ 不带任何已登记模块前缀的全局规格中的
- *   SMOKE-* ∪ C（提案上下文下本提案变更的 smoke 用例；版本上下文下为空）。覆盖与结果过滤只用这一个集合。
+ * - 应覆盖集合 S（smoke-scope-isolated-modules 修订）：目标模块 m 是独立 smoke 模块时 S = `m-` 前缀规格中的 SMOKE-* ∪ C；
+ *   否则 S = 全部规格中的 SMOKE-* − 其他独立 smoke 模块前缀规格中的 SMOKE-* ∪ C。规格归属按已登记模块 id 最长匹配的文件名前缀，
+ *   不带前缀的规格只计入非独立模块。C 为提案上下文下本提案变更的 smoke 用例，版本上下文下为空。覆盖与结果过滤只用这一个集合。
+ * - 独立 smoke 模块：已登记模块在 smoke.modules.<id> 中显式配置了有效非空 command（与 readSmokeConfig 的 commandSource=module
+ *   同一判据）；只写 result_path / report_path、空对象、空串 command 或未登记 id 都不是（proposal-r1 F1）。
  * - smoke.modules.<id> 的命令与路径：未写的字段回落项目级；<id> 未登记时警告 smoke_module_unknown 并忽略。
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -27,8 +30,16 @@ export interface SmokeCaseSet {
   allDefined: string[];
 }
 
-/** 计算目标模块 m 的应覆盖集合 S（§14.5）。changed 为 C：提案上下文的变更用例，版本上下文传空数组。 */
-export function resolveSmokeCaseSet(root: string, moduleIds: string[], target: string, changed: string[]): SmokeCaseSet {
+/**
+ * 计算目标模块 m 的应覆盖集合 S（§14.5）。changed 为 C：提案上下文的变更用例，版本上下文传空数组。
+ * isolated 为独立 smoke 模块 id 列表，缺省按 isolatedSmokeModules(root) 取。
+ */
+export function resolveSmokeCaseSet(
+  root: string, moduleIds: string[], target: string, changed: string[], isolated: string[] = isolatedSmokeModules(root),
+): SmokeCaseSet {
+  const targetIsolated = isolated.includes(target);
+  // 独立模块只认自己前缀；非独立模块认全部规格，只扣除前缀属于其他独立模块的规格（不带前缀的规格只计入非独立模块）
+  const counts = (owner: string | null) => (targetIsolated ? owner === target : owner === target || owner === null || !isolated.includes(owner));
   const dir = join(root, SMOKE_CASES_DIR);
   const inScope = new Set<string>(changed);
   const all = new Set<string>();
@@ -40,7 +51,7 @@ export function resolveSmokeCaseSet(root: string, moduleIds: string[], target: s
         const owner = smokeSpecModule(file, moduleIds);
         for (const id of ids) {
           all.add(id);
-          if (owner === null || owner === target) inScope.add(id);
+          if (counts(owner)) inScope.add(id);
         }
       }
     } catch { /* 目录读取失败：与 extractSmokeDefinedIds 同样容错 */ }
@@ -81,6 +92,15 @@ export function readSmokeModules(root: string): Record<string, ModuleSmokeConfig
 export function unknownSmokeModules(root: string): string[] {
   const registered = new Set((readProjectYaml(root).data?.modules ?? []).map(m => m.id));
   return Object.keys(readSmokeModules(root)).filter(id => !registered.has(id)).sort();
+}
+
+/**
+ * 独立 smoke 模块（smoke-scope-isolated-modules，决策 C01；proposal-r1 F1）：已登记、且 smoke.modules.<id>.command 为有效非空字符串
+ * 的模块，按 logos-project.yaml 模块顺序。readSmokeModules 只保留非空 command，故空串、只写路径与空对象自然不是独立模块。
+ */
+export function isolatedSmokeModules(root: string): string[] {
+  const configured = readSmokeModules(root);
+  return (readProjectYaml(root).data?.modules ?? []).map(m => m.id).filter(id => Boolean(configured[id]?.command));
 }
 
 /** 目标模块 m 的 smoke.modules.<m>（m 未登记或未配置时为 null）。 */
