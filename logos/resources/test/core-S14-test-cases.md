@@ -119,3 +119,34 @@
 
 - ST 使用隔离 workspace 从 pre-launch 状态驱动真实 `launch` 代码路径，保存 lifecycle 状态与资产前后哈希。
 - 每个用例必须通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S14"`；失败不得写 pass。
+
+## S14 多模块 initial 模块 launch 前置测试（module-scoped-phase-reports）
+
+> 覆盖场景 `core-S14-launch-lifecycle.md`「S14 多模块 initial 模块的 launch 前置」（EX-MR.1～EX-MR.3），功能规格 §2.99.3、§2.99.8，决策 C01。既有 S14 用例作为回归守护。测试实现必须写入 OpenLogos reporter（`logos/resources/verify/test-results.jsonl`），测试名包含对应 ID，`scenario_id="S14"`。
+>
+> **夹具 ML**：`mktemp -d` 一次性项目，`logos-project.yaml` 登记 `core`（launched）与 `team`（initial、`bootstrap: normal`，未声明 `deployment_required` / `smoke_required`，即需要部署与冒烟）；AI 资产写入使用测试替身，记录写入次数。报告样本按共用报告格式生成。**夹具 S1**：只登记 `core`（initial、normal）的单模块项目。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S14-22 | 验收按模块报告 Gate 行判定 | §2.99.8、EX-MR.1 | 夹具 ML；变体 ①：只有共用 `acceptance-report.md`（Gate PASS）；②：`team-acceptance-report.md` Gate FAIL；③：`team-acceptance-report.md` 无 Gate 行 | `openlogos launch team` | 三个变体都拒绝，退出码 1，错误信息点名 `logos/resources/verify/team-acceptance-report.md`；`logos-project.yaml` 中 team 仍为 initial，AI 资产写入次数为 0 |
+| UT-S14-23 | 部署只认本模块部署报告 | §2.99.8、EX-MR.2 | 夹具 ML；`team-acceptance-report.md` Gate PASS；共用 `deployment-report.md` 与 `core-deployment-report.md` 存在，`team-deployment-report.md` 不存在 | `openlogos launch team` | 拒绝，错误信息点名 `team-deployment-report.md`；零写入 |
+| UT-S14-24 | 错误信息中的 PASS 不算通过 | §2.99.3、EX-MR.3 | 夹具 ML；验收与部署模块报告满足判据；`team-smoke-report.md` 的 Gate 3.8 行为 FAIL，失败用例错误信息含 `expected PASS` | `openlogos launch team` | 以冒烟未通过拒绝，零写入 |
+| UT-S14-25 | 不需要部署 / 冒烟时不检查对应模块报告 | §2.99.8 | 夹具 ML，team 声明 `deployment_required: false`；只有 `team-acceptance-report.md`（Gate PASS） | `openlogos launch team` | launch 成功，team 切为 launched；不检查部署与冒烟报告 |
+| UT-S14-27 | 报告不属于本模块或不是合格文件时拒绝（delta-r1 F1、F2） | §2.99.3、EX-MR.4 | 夹具 ML；验收模块报告满足判据；变体 ①：`team-smoke-report.md` Gate PASS 但缺「模块」行；②：「模块」行为 `core`；③：`team-deployment-report.md` 位置是同名目录；④：`team-deployment-report.md` 为 0 字节文件 | `openlogos launch team` | 四个变体都拒绝，退出码 1，错误信息点名对应路径；零写入 |
+| UT-S14-26 | 单模块项目判定不变 | §2.99.8 | 夹具 S1：只有共用报告（Gate PASS），无任何模块报告；变体：共用验收报告缺失 | `openlogos launch core` | 前者成功、后者以既有 `launch.verifyRequired` 拒绝；错误信息与退出码与修改前逐字节相同 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S14-27 | 多模块 initial 模块凭模块报告 launch 成功 | Step 1～6 | 真实 CLI；夹具 ML；三份 team 模块报告齐全（验收、冒烟 Gate PASS，部署报告存在）；另有 Gate FAIL 的共用 `acceptance-report.md` | ① `openlogos launch team`；② `openlogos status --format json` | ① 成功，team 的 lifecycle 为 launched，AI 资产按既有规则刷新；共用报告的 FAIL 不影响结论；② team 按 launched 模块展示，core 不变 |
+| ST-S14-28 | 只有共用报告时拒绝 launch | Step 1～3 | 真实 CLI；夹具 ML；只有共用 `acceptance-report.md`、`deployment-report.md`、`smoke-report.md`（均 Gate PASS） | `openlogos launch team` | 退出码 1，错误信息点名 team 模块验收报告；`logos-project.yaml` 与 AI 资产字节不变 |
+
+### 覆盖度校验
+
+- 验收、部署、冒烟三类模块报告的取证：UT-S14-22、UT-S14-23、UT-S14-24、ST-S14-27、ST-S14-28。
+- 只读 Gate 行：UT-S14-22 ③、UT-S14-24。
+- 「模块」行与合格文件校验：UT-S14-27。
+- 按需检查与单模块零回归：UT-S14-25、UT-S14-26。

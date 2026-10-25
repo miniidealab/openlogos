@@ -456,3 +456,39 @@
 - 无登记表零回归：UT-S11-97。
 - 完整扫描、低频环境：UT-S11-98。
 - 非法登记表与损坏行：UT-S11-99；不联网：UT-S11-100。
+
+## S11 多模块 initial 模块报告阶段派生测试（module-scoped-phase-reports）
+
+> 覆盖场景 `core-S11-status-progress.md`「initial phase 派生（flow-derive）与两套 legacy done 语义」中的「多模块报告阶段」与 EX-11.21～EX-11.24，功能规格 §2.99.3、§2.99.4，`spec/flow-spec.md` §9，决策 C01。测试实现必须写入 OpenLogos reporter（`logos/resources/verify/test-results.jsonl`），测试名包含对应 ID，`scenario_id="S11"`。
+>
+> **夹具 MR**（runlogos 形态）：`mktemp -d` 一次性项目，`logos-project.yaml` 登记 `core`（launched）与 `team`（initial、`bootstrap: normal`，未声明 `skip_phases`）；team 的 phase.3-0～3-5 产物齐全（均带 `team-` 前缀，场景全覆盖）；`logos/resources/verify/` 初始为空。报告样本由测试按共用报告格式生成，Summary 表含 `**Gate 3.5**` / `**Gate 3.8**` 行。**夹具 S1**：同样的产物但只登记一个模块。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S11-101 | 报告判定共享函数（含 delta-r1 F1、F2） | §2.99.3 | 以目标模块 team 判定。验收 / 冒烟模块报告样本依次为：「模块」行为 team 且 Gate PASS；Gate FAIL；文件不存在；无 Summary 表；Gate 行为 FAIL 而失败用例错误信息含 `PASS`；Summary 表缺 Gate 行而正文含 `**PASS**`；Gate PASS 但缺「模块」行（共用报告格式）；Gate PASS 但「模块」行为 `core`；正式路径是同名目录。部署模块报告样本：含一段的普通文件；同名目录；0 字节文件；不存在 | 对验收（Gate 3.5）、冒烟（Gate 3.8）、部署三类分别调用判定函数 | 只有「「模块」行为 team 且 Gate PASS」与「含一段的普通文件」判为完成；其余均判未完成；不做全文匹配 |
+| UT-S11-102 | 共用验收报告不计入模块 | §2.99.3、EX-11.21 | 夹具 MR；只有共用 `acceptance-report.md`（Gate PASS） | `deriveModulePhaseProgressViaFlow(team)` | team 的 phase.3-6 `done=false`，current phase 为 phase.3-6 |
+| UT-S11-103 | 其他模块的部署 / 冒烟报告不计入 | §2.99.3、EX-11.22 | 夹具 MR；`team-acceptance-report.md` Gate PASS；另有共用 `deployment-report.md`、`smoke-report.md`（Gate PASS）与 `core-deployment-report.md`、`core-smoke-report.md` | 派生 team | phase.3-6 done；phase.3-7、phase.3-8 `done=false`；current phase 为 phase.3-7 |
+| UT-S11-104 | 模块报告 Gate FAIL 不算完成 | §2.99.3、EX-11.23 | 夹具 MR；`team-acceptance-report.md` Gate FAIL（错误信息含 `PASS`）；变体：team 已有模块部署报告且 `team-smoke-report.md` Gate FAIL | 派生 team | 第一种 current phase 为 phase.3-6；变体中 phase.3-8 `done=false`、current phase 为 phase.3-8 |
+| UT-S11-105 | 报告阶段不作 fallback-skip 锚点，前沿门生效 | §2.99.4、EX-11.24 | 夹具 MR 改为 team 只完成 phase.3-0（phase.3-1 起为空）；`team-acceptance-report.md`、`team-deployment-report.md`、`team-smoke-report.md` 均满足判据 | 派生 team | phase.3-1～3-5 `skipped=false`；phase.3-6、3-7、3-8 `done=false`；current phase 为 phase.3-1 |
+| UT-S11-106 | 按顺序推进 | §2.99.4 | 夹具 MR；依次加入 `team-acceptance-report.md`（PASS）、`team-deployment-report.md`、`team-smoke-report.md`（PASS） | 每加入一份后派生 team | current phase 依次为 phase.3-7、phase.3-8、null；任一步只差前序阶段时不判 done |
+| UT-S11-107 | `when` 跳过的阶段算作已跳过 | §2.99.4 | 夹具 MR，team 声明 `deployment_required: false`；`team-acceptance-report.md` Gate PASS | 派生 team | phase.3-7、phase.3-8 `skipped=true`；phase.3-6 done；current phase 为 null |
+| UT-S11-108 | overlay 派生同一判据 | §2.99.3、flow-spec §9 | 夹具 MR 加项目 overlay（任一节点 `op:modify`，使派生走 `flow-overlay-derive`）；变体 A：只有共用报告；变体 B：team 模块报告齐全且 Gate PASS；变体 C：overlay 另加节点 `done_when: file:logos/resources/verify/custom.md`，文件存在；变体 D：overlay 把 verify 节点 `done_when` 改为 `file:logos/resources/verify/team-custom.md` | `deriveOverlayView` 求 team 的节点状态 | A：verify / deploy / smoke 节点未完成；B：三个节点依次完成，与 `deriveModulePhaseProgressViaFlow` 结论一致；C：自定义 `file:` 谓词按「文件存在」判 done；D：按改写后的谓词求值，不套用模块报告判定 |
+| UT-S11-109 | 旧派生等价矩阵扩充 | §2.99.3 | 夹具 MR 的 UT-S11-102～107 全部变体 | 同时运行 `deriveModulePhaseProgressViaFlow` 与旧 `deriveModulePhaseProgress` | 每个变体两者的 `progress` 与 current phase 逐项相等 |
+| UT-S11-110 | 单模块、launched 模块与顶层 `phases[]` 零回归 | §2.99.1 | 夹具 S1：只有共用 `acceptance-report.md`，其 Gate 为 FAIL；夹具 MR：只有共用报告 | 派生 S1 的模块；`status --format json` 读夹具 MR 的顶层 `phases[]` 与 core 的 `proposal_step` | S1：phase.3-6 done（单模块「文件存在即完成」不变），与修改前结果逐字节相同；MR：顶层 `phases[]` 的 phase.3-6 为 done（扫共用报告不变），core 的进度来源仍为提案标记 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S11-53 | runlogos 形态：共用报告存在时停在 3-6，模块报告写入后依次推进 | Step 1～10 | 真实 CLI；夹具 MR，另有共用 `acceptance-report.md`、`deployment-report.md`、`smoke-report.md`（Gate PASS） | ① `status --format json`；② 写入 Gate PASS 的 `team-acceptance-report.md` 后 `status --format json`；③ 写入 `team-deployment-report.md` 后 `status`；④ 写入 Gate PASS 的 `team-smoke-report.md` 后 `status` | ① team 的 current phase 为 phase.3-6；② phase.3-7；③ phase.3-8；④ team 全部阶段 done 或 skipped；core 的输出四次都不变 |
+| ST-S11-54 | 前沿门端到端与 next 一致 | Step 1～10 | 真实 CLI；夹具 MR 改为 team 处于 phase.3-1；`team-acceptance-report.md` Gate PASS | ① `status --format json`；② `next --format json`；③ 补齐 team 的 3-1～3-5 产物后再执行 ①② | ① team current phase 为 phase.3-1，phase.3-6 未完成、前序阶段未被标 skipped；② 下一步建议指向 phase.3-1；③ current phase 为 phase.3-7，`next` 不再提示 team 运行 verify |
+
+### 覆盖度校验
+
+- 单一判定（「模块」行须为目标模块、只读 Gate 行、部署报告须为非空普通文件）：UT-S11-101、UT-S11-104。
+- 共用报告与其他模块报告不计入：UT-S11-102、UT-S11-103、ST-S11-53。
+- 前沿门与 fallback-skip 锚点：UT-S11-105、UT-S11-106、UT-S11-107、ST-S11-54。
+- overlay 派生与旧派生同一判据：UT-S11-108、UT-S11-109。
+- 零回归：UT-S11-110。

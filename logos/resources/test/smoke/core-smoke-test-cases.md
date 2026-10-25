@@ -2616,3 +2616,31 @@
 - 适用性判定不得依赖自动流程不会设置的环境变量。只有部署记录、回滚制品或本仓 sync 确实缺失时，才写显式 `skip` 并携带缺失项，不得标 `reason_code:"platform-unavailable"`；有 skip 时不得写 `SMOKE_PASS`。
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-294～SMOKE-core-297 均被 runner 覆盖。
+
+## OpenLogos 0.16.12 多模块按模块阶段报告安装态 smoke（SMOKE-core-298～302）
+
+> 这组用例验证多模块项目按模块的阶段报告（来源提案 module-scoped-phase-reports，决策 C01、proposal-r1 F1～F3，功能规格 §2.99）确实进入了本机全局安装态。这是 CLI 运行时行为，只有全局 `openlogos` 升级后才对用户的各项目（含 runlogos 的 team）生效。
+>
+> 用例在 `mktemp -d` 一次性隔离 git 项目内执行，经全局 `openlogos init` 建立后写入 runlogos 形态的配置：
+> - 多模块 `logos-project.yaml`：`core`（launched）不声明环境；`team`（initial、`bootstrap: normal`）声明 `deployment_gates.team.environments: [team-prod]`；team 的 phase.3-0～3-5 产物齐全（均带 `team-` 前缀）。
+> - 登记表：`test`、`team-prod`；`team-prod` 配置 script 方式 `deploy`，脚本为夹具内的记录型脚本，按设定退出码退出。
+> - 测试规格：`core-S01-test-cases.md`、`team-S60-test-cases.md`；记录型 verify runner 按设定写结果并退出。smoke 规格：`core-smoke-test-cases.md`、`team-smoke-test-cases.md`；`smoke.modules.team.command` 为 team 记录型 smoke runner。
+> - 另放入 core 历史留下的共用 `acceptance-report.md`、`deployment-report.md`、`smoke-report.md`（Gate PASS）与 `core-deployment-report.md`。
+>
+> runner 以子进程直接调用全局 CLI，对全局安装态**只读**，不做安装或卸载；不触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态账本与用户其他仓库（包括 runlogos）。唯一读取本仓的是 SMOKE-core-298 ④ 的只读比对。版本以部署记录与 `cli/src/lib/local-release-candidate.ts` 的候选版本为准，断言写成关系式，不硬编码 `0.16.12`。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-298 | 安装态版本、制品身份与本仓 sync 同源 | 本机全局已安装本次候选；部署记录中有候选版本与 tarball SHA-256；本仓已按部署方案执行 `openlogos sync` | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 检查全局包内 `spec/flow-spec.md` §9 含多模块 initial 模块报告阶段的解析规则、`spec/environments.md` 含 §14.9；④ 逐字节比对本仓 `logos/spec/flow-spec.md`、`logos/spec/test-results.md`、`logos/spec/environments.md`、`logos/spec/directory-convention.md`、`logos/skills/deployment-executor/SKILL.md` 与全局包内同名文件 | ① `--version` 等于部署记录候选版本，入口无 workspace link；② `payloadHash` 自洽；③ 成立；④ 字节一致 | 保留读取结果；①～③ 任一不符 → 停止后续流程，按部署方案以 `openlogos deploy --env test --rollback` 回到 0.16.11；④ 不一致 → 重新执行本仓 `openlogos sync` 后复核，仍不一致则回流本提案 |
+| SMOKE-core-299 | 安装态 initial 模块凭本模块验收报告离开 3-6 | 本机全局已安装本次候选；上述临时项目已初始提交；无活跃提案 | ① `status --format json`；② verify runner 为全部用例写 `pass`，执行 `verify --all --format json`；③ `status --format json`；④ verify runner 改为写全部 `pass` 后以退出码 1 退出，重跑 ②，再 `status` | ① team 的 current phase 为 phase.3-6（共用报告不计入）；② 写出 `team-acceptance-report.md`，Summary 含「模块」行 `team`、Gate PASS，不写 `core-acceptance-report.md`；③ team 进入 phase.3-7（共用与 core 的部署报告不让它越过 3-7）；④ `team-acceptance-report.md` Gate 变为 FAIL，team 回到 phase.3-6 | 同上；任一不成立表示模块验收报告未进入安装态，回装旧版并回流本提案 |
+| SMOKE-core-300 | 安装态部署：失败不写，版本通道成功写并推进 3-7 | 同 SMOKE-core-299 的临时项目，team 已有 Gate PASS 的模块验收报告；以全局 `openlogos change` 创建归属 core 的提案且尚未部署 | ① 部署脚本退出 1 时 `deploy --env team-prod --ref <HEAD> --format json`；② 改为退出 0 后重跑 ①；③ `status --format json`；④ 读取 core 提案目录与共用 `deployment-report.md` | ① `DEPLOY_FAILED`，无 `team-deployment-report.md`；② 版本通道成功，写出 `team-deployment-report.md`；③ team 进入 phase.3-8；④ core 提案目录与共用部署报告前后字节一致 | 同上 |
+| SMOKE-core-301 | 安装态冒烟报告与 launch 改认模块报告 | 同 SMOKE-core-300，team 已有模块验收报告（PASS）与模块部署报告 | ① 另建同形态临时项目但只保留共用报告，执行 `launch team`；② 回到本项目，team smoke runner 写全部 `pass`，执行 `smoke --env team-prod --format json`；③ `status --format json`；④ `launch team` | ① 拒绝，退出码 1，错误信息点名 `team-acceptance-report.md`，`logos-project.yaml` 字节不变；② 通过，写出 Gate PASS 的 `team-smoke-report.md`；③ team 全部阶段 done 或 skipped；④ 成功，team 的 lifecycle 为 launched | 同上 |
+| SMOKE-core-302 | 安装态单模块项目零回归 | 本机全局已安装本次候选；以 0.16.11 回滚制品在一次性隔离 prefix 中执行同样命令作为基线；夹具甲：单模块临时项目（只登记 `core`，initial），带登记表 `test` | ① `verify --format json`；② `deploy-done --env test`（需活跃提案时以全局 `openlogos change` 创建）与 `smoke --env test --format json`；③ `status --format json`；④ 列出 `logos/resources/verify/` | ①～③ 与基线一致（剔除时间戳、耗时、随机 id）；④ 只有共用报告，没有任何 `<module>-*-report.md` | 同上 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目、一次性调用日志目录与一次性基线 prefix 内进行，结束即删除。
+- **不得**触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态目录、用户其他仓库（包括 runlogos）或本机全局 prefix。
+- 结果写入本仓 `logos/resources/verify/smoke-results.jsonl`，结果行带 `target_environment="test"`。

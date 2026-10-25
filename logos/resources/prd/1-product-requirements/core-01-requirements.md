@@ -3707,3 +3707,94 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 - 功能规格：§2.98。
 - 场景：S41「按模块的环境归属」、S19「按模块限定 smoke」、S21「按模块的环境校验」、S42「按环境归属的部署通道」。
 - 测试：UT-S41-24 起、ST-S41-07 起、UT-S19-74 起、ST-S19-30 起、UT-S21-20 起、UT-S42-26 起；smoke：SMOKE-core-289 起。
+
+## S11/S13/S14/S19/S21/S42 多模块 initial 模块按模块阶段报告验收补充
+
+> 来源变更：module-scoped-phase-reports（决策 C01、C02；proposal-r1 F1、F2、F3 处置）。判据的权威定义见功能规格 §2.99、`spec/flow-spec.md` §9、`spec/test-results.md`「多模块项目的模块验收报告与模块冒烟报告」、`spec/environments.md` §14.9。
+
+### 场景定义
+
+- **触发条件**：多模块项目（`logos-project.yaml` 登记了两个及以上模块）中，有 `lifecycle: initial` 的模块走到验收（phase.3-6）、部署（phase.3-7）、冒烟（phase.3-8）三个阶段。runlogos 仓库实测（2026-10-24，openlogos 0.16.11）：`core` 已 launched，`team` 为 initial；team 补齐实现清单进入 3-6 后，`openlogos verify`（fallback-full，Gate 3.5 PASS）已覆盖并通过了 team 的全部用例，`openlogos status` 的 team 仍停在 3-6，`openlogos next` 一直提示运行 verify，再跑多少次都不推进。
+- **根因**：三个阶段的产物是全项目共用的 `logos/resources/verify/{acceptance,deployment,smoke}-report.md`，多模块派生按 `<module>-` 前缀过滤，永远判为未完成；而改成「共用文件存在即完成」又会让其他模块的报告（如 core 的发布部署报告与冒烟报告）把 team 误判为已部署、已冒烟。`openlogos launch` 也按共用报告放行，有同样的误判。
+- **用户价值**：initial 模块凭「属于自己」的报告推进三个阶段并能 launch；其他模块的报告既不会让它推进，也不会让它跳阶段；失败、结果未知或未落账的部署不会被当成完成。
+- **优先级**：P1
+- **主路径**：verify 覆盖到 initial 模块 m 时按 m 的用例子集额外写 `<m>-acceptance-report.md`；部署目标模块为 initial 模块 t 且部署成功并落账后写 `<t>-deployment-report.md`；smoke 目标模块为 initial 模块 t 时写 `<t>-smoke-report.md`。status / next / watch 与 launch 对多模块 initial 模块只认这三份模块报告；共用报告照旧写入、内容不变。
+
+### 验收条件
+
+#### 正常：模块验收报告 PASS 后离开 3-6
+- **GIVEN** runlogos 形态的夹具：`core` launched、`team` initial，team 前 3-5 阶段已完成；共用 `acceptance-report.md` 已存在且 Gate 为 PASS，但没有 `team-acceptance-report.md`
+- **WHEN** 先执行 `openlogos status --format json`，再执行一次覆盖 team 的 `openlogos verify`（范围未启用、`all` 或 `fallback-full`）且 team 的用例子集全部通过，随后再执行 `openlogos status`
+- **THEN** 第一次 status 中 team 停在 phase.3-6（共用报告不算 team 完成）；verify 写出 `logos/resources/verify/team-acceptance-report.md`，Summary 含「模块」行 `team`、Gate 行为 PASS；第二次 status 中 team 的 phase.3-6 为 done，`openlogos next` 不再提示 team 运行 verify
+
+#### 异常：其他模块的报告不让本模块推进或跳阶段
+- **GIVEN** 同上夹具，另有 core 发布留下的共用 `deployment-report.md`、`smoke-report.md`（Gate PASS），以及 `core-deployment-report.md`；team 仍处于 phase.3-1（场景未写完）
+- **WHEN** 执行 `openlogos status`；随后一次 fallback-full 的 verify 为 team 写下 Gate PASS 的 `team-acceptance-report.md`，再执行 `openlogos status`
+- **THEN** 两次 status 中 team 的 phase.3-7、phase.3-8 都不是 done；第二次 team 的 phase.3-6 也不是 done，phase.3-1～3-5 不因该报告被标为 skipped，current phase 仍为 phase.3-1（三个报告阶段只在前序阶段全部完成或跳过后才算完成，且不作 fallback-skip 的锚点）
+
+#### 异常：模块报告 Gate 为 FAIL 不算完成
+- **GIVEN** team 前序阶段已完成；`team-acceptance-report.md`（或 `team-smoke-report.md`）存在，Summary 的 Gate 行为 FAIL，失败用例的错误信息里出现了 `PASS` 字样
+- **WHEN** 执行 `openlogos status` 与 `openlogos launch team`
+- **THEN** team 停在对应阶段；launch 以验收（或冒烟）未通过拒绝，零写入。判定只读 Summary 表的 Gate 行，不做全文匹配
+
+#### 异常：模块验收的运行级失败不因子集全通过而消失（proposal-r1 F3）
+- **GIVEN** 多模块项目，verify 覆盖 core 与 team
+- **WHEN** 分别出现：① 项目级共享命令非零退出，结果文件里 team 的用例全部 pass；② team 有独立命令组（`verify.modules.team`）且只有 core 的命令组非零退出；③ verify 沙箱判定失败；④ 结果账本不自洽或含未定义 ID
+- **THEN** ① 中 core 与 team 的模块验收报告 Gate 都为 FAIL（无法归属的运行失败计入每个模块）；② 中 team 的报告 Gate 按 team 子集判为 PASS、core 的为 FAIL（有命令组归属的失败只计入该组服务的模块）；③、④ 中所有被覆盖模块的报告 Gate 均为 FAIL；模块报告在全部门禁（含沙箱）裁决之后才写入，不会先写 PASS 再被改判
+
+#### 正常：部署按模块报告推进，版本通道同样生效（proposal-r1 F2）
+- **GIVEN** team 声明 `deployment_gates.team.environments: [team-prod]`，`team-prod` 配置了 `deploy.mode: script`；team 已通过 3-6
+- **WHEN** 分别在「没有活跃提案」与「core 有活跃提案」两种情形下执行 `openlogos deploy --env team-prod --ref <commit>`（默认走版本通道）且部署成功、账本写入成功
+- **THEN** 两种情形都写出 `logos/resources/verify/team-deployment-report.md`（含部署 id、环境、版本、结果），team 的 phase.3-7 为 done；共用 `deployment-report.md` 按既有通道规则不写入；core 提案的任何文件（含 `DEPLOY_DONE`、`tasks.md`）与 `proposal_step` 保持不变
+
+#### 异常：失败、结果未知或未落账的部署不生成模块部署报告（proposal-r1 F1）
+- **GIVEN** 同上，team 尚无 `team-deployment-report.md`
+- **WHEN** 分别出现：① 部署脚本非零退出（`DEPLOY_FAILED`）；② CI 观察超时（`DEPLOY_RESULT_UNKNOWN`）；③ 部署执行成功但账本或 `DEPLOY_DONE` 写入失败（`DEPLOY_RECORD_FAILED`）
+- **THEN** 三种情形都不创建、也不追加 `team-deployment-report.md`，team 停在 phase.3-7；提案通道下共用 `deployment-report.md` 照旧按实际结果追加诊断段；之后一次成功并落账的部署（或 `--reconcile` 补记成功）才写出模块部署报告
+
+#### 异常：配置的报告路径不能越权发布其他模块的凭据（delta-r1 F1）
+- **GIVEN** core（launched）、team（initial）；team 已完成 3-6、3-7，自己的 smoke 尚未通过；`smoke.report_path` 配置为 `logos/resources/verify/team-smoke-report.md`，team 配置了独立的 `smoke.modules.team.command`
+- **WHEN** core 的活跃提案执行 `openlogos smoke`，Gate 3.8 为 PASS（team 用例不在 core 的应覆盖集合内、未被执行），随后执行 `openlogos status` 与 `openlogos launch team`
+- **THEN** 共用报告改写到默认路径 `logos/resources/verify/smoke-report.md`，smoke 输出警告 `smoke_report_path_reserved`；`team-smoke-report.md` 不被创建或改写；team 停在 phase.3-8，launch 被拒绝。即使该路径上已有旧版 CLI 写入的共用格式报告，它没有值为 `team` 的「模块」行，也不被接受
+
+#### 异常：同名目录或发布中断不算已部署（delta-r1 F2）
+- **GIVEN** team 尚无合格的 `team-deployment-report.md`；该路径被同名目录占用，或首次发布时临时文件写入中途失败
+- **WHEN** `openlogos deploy --env team-prod --ref <commit>` 部署成功、账本写入成功，模块报告发布失败（`DEPLOY_RECORD_FAILED`），随后执行 `openlogos status` 与 `openlogos launch team`
+- **THEN** 正式路径上没有可被接受的模块部署报告（同名目录、0 字节文件都不算），team 停在 phase.3-7，launch 拒绝；若此前已有成功的模块部署报告，追加失败时旧报告原样保留，阶段保持完成
+
+#### 正常：冒烟按模块报告推进并可 launch
+- **GIVEN** team 已有 Gate PASS 的模块验收报告与模块部署报告；`smoke.modules.team.command` 已配置
+- **WHEN** 执行 `openlogos smoke --env team-prod` 且 Gate 3.8 PASS，随后执行 `openlogos launch team`
+- **THEN** 写出 `logos/resources/verify/team-smoke-report.md`（「模块」行 `team`、Gate PASS），team 的 phase.3-8 为 done；launch 成功把 team 切为 launched。只有共用报告、没有 team 模块报告时，launch 拒绝并点名缺失的模块报告路径
+
+#### 正常：单模块项目与 launched 模块零回归
+- **GIVEN** 单模块 initial 项目；以及多模块项目中的 launched 模块（如 core）
+- **WHEN** 执行 verify、smoke、deploy、deploy-done、status、next、launch
+- **THEN** 单模块项目只写、只认共用报告，判定与输出与修改前一致（含 launch 对共用报告的既有判定）；launched 模块继续看提案标记（`VERIFY_PASS` / `DEPLOY_DONE` / `SMOKE_PASS`），不写任何模块报告
+
+### 验收编号
+
+| 编号 | 验收内容 |
+|---|---|
+| AC-MOD-REPORT-01 | 多模块 initial 模块的 phase.3-6 / 3-7 / 3-8 只按 `<m>-acceptance-report.md`（「模块」行为 m 且 Gate PASS）/ `<m>-deployment-report.md`（普通文件且非空）/ `<m>-smoke-report.md`（「模块」行为 m 且 Gate PASS）判定，共用报告与其他模块的报告不计入；模块报告路径为保留路径，配置的 smoke 报告路径落在其上时改写到默认路径并警告 `smoke_report_path_reserved` |
+| AC-MOD-REPORT-02 | 三个报告阶段不作 fallback-skip 锚点，只在前序阶段全部 done 或 skipped 后才判 done；phase 派生、overlay 派生与旧派生同一判据 |
+| AC-MOD-REPORT-03 | verify 为本次覆盖的每个 initial 模块按其用例子集写模块验收报告；子集为空不写；未覆盖模块的已有报告不动；运行级失败按命令组归属投影，无法归属者计入每个模块；写入在全部门禁裁决之后 |
+| AC-MOD-REPORT-04 | 部署目标模块为 initial 模块时，只在部署成功且必要记录提交成功后以原子发布写模块部署报告，提案通道与版本通道一致；失败、结果未知、记录失败均不写；首次发布失败不留可被接受的残留，已有成功报告时追加失败保留旧报告 |
+| AC-MOD-REPORT-05 | smoke 目标模块为 initial 模块时写模块冒烟报告；未启用按模块区分时为每个 initial 模块写；已启用但回落项目级时不写 |
+| AC-MOD-REPORT-06 | launch 对多模块 initial 模块改认模块报告，Gate 只读 Summary 表 Gate 行，错误信息中的 `PASS` 字样不算通过；单模块项目的 launch 仍按既有判定读共用报告 |
+| AC-MOD-REPORT-07 | 单模块项目与 launched 模块零回归；共用报告的写入时机与内容不变 |
+| AC-MOD-REPORT-08 | 分发：0.16.12 经 `openlogos deploy --env test` 装入本机全局，本仓 sync 后托管资产与全局包一致，安装态 smoke 通过 |
+
+### 非目标
+
+- 不改单模块项目「报告存在即完成」的派生语义，也不改共用报告的写入时机与内容（含提案通道失败部署照旧追加共用报告）。
+- 不给 verify / smoke / deploy 的 JSON 增加模块报告字段；不新增命令参数。
+- 不为 launched 模块写模块报告；不迁移、不回填已有报告。
+- 不 npm publish；不改 RunLogos driver。
+
+### 追溯
+
+- 规范：`spec/flow-spec.md` §9；`spec/test-results.md`「多模块项目的模块验收报告与模块冒烟报告（module-scoped-phase-reports）」；`spec/environments.md` §14.9；`spec/directory-convention.md`（verify 目录）。
+- 功能规格：§2.99。
+- 场景：S11「initial phase 派生（flow-derive）与两套 legacy done 语义」、S13「多模块项目写模块验收报告」、S14「多模块 initial 模块的 launch 前置」、S19「多模块项目写模块冒烟报告」、S21「initial 模块的模块部署报告」、S42「initial 模块的模块部署报告」。
+- 测试：UT-S11-101 起、ST-S11-53 起、UT-S13-122 起、ST-S13-33 起、UT-S14-22 起、ST-S14-27 起、UT-S19-90 起、ST-S19-33 起、UT-S21-23 起、UT-S42-29 起、ST-S42-09 起；smoke：SMOKE-core-298 起。

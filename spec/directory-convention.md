@@ -165,6 +165,12 @@ OpenLogos 方法论的统一入口。包含配置文件、研发资源文档和�
 - 部署报告：`deployment-report.md`（部署执行完成后生成）
 - 冒烟结果：`smoke-results.jsonl`（JSONL 格式，每行一个冒烟用例结果）
 - 冒烟报告：`smoke-report.md`（由 `openlogos smoke` 自动生成）
+- **模块报告**（module-scoped-phase-reports，仅多模块项目中 `lifecycle: initial` 的模块）：
+  - 模块验收报告：`<module>-acceptance-report.md`（由 `openlogos verify` 在覆盖该模块时按其用例子集生成，整份覆盖）
+  - 模块部署报告：`<module>-deployment-report.md`（只在该模块部署成功并落账后由 `openlogos deploy` / `deploy-done` 追加；CLI 不参与记录时由 deployment-executor 在部署成功后写入）
+  - 模块冒烟报告：`<module>-smoke-report.md`（由 `openlogos smoke` 在目标模块确定时生成，整份覆盖）
+  - 这三类路径是保留路径，只由模块报告 writer 以原子发布写入；配置的 `smoke.report_path` / `smoke.modules.<id>.report_path` 落在其上时，共用冒烟报告改写到默认路径 `smoke-report.md`
+  - 它们是该模块 phase.3-6 / 3-7 / 3-8 的完成依据；共用报告照旧生成，但不计入多模块 initial 模块的阶段完成（判据见 [flow-spec.md](./flow-spec.md) §9、[test-results.md](./test-results.md)「多模块项目的模块验收报告与模块冒烟报告」、[environments.md](./environments.md) §14.9）
 - 详细格式定义见 [test-results.md](./test-results.md)
 
 ### .claude/openlogos/bin/guard-check

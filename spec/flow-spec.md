@@ -238,7 +238,7 @@ loop:
 | 谓词 | 含义 | 阶段 |
 |---|---|---|
 | `dir_nonempty` | 目标目录非空（多模块时按 `{module}-` 前缀过滤） | M1 |
-| `file:<path>` | 指定文件存在 | M1 |
+| `file:<path>` | 指定文件存在。例外：多模块项目中 `lifecycle: initial` 的模块，内置三条阶段报告路径按模块报告解析（见下文「多模块 initial 模块的阶段报告」） | M1 |
 | `marker:<NAME>` | 提案目录下存在 marker 文件（如 `VERIFY_PASS`） | M1 |
 | `any_present:[A,B,...]` | 列出的任一 marker/文件存在即满足（保留旧 marker 兼容） | M1 |
 | `all_present` | fan-out：每个实例的 `produces` 都就绪；可配 `coverage_threshold`（§7）放宽为「覆盖率 ≥ 阈值」 | M1（阈值 M2/S29） |
@@ -246,6 +246,19 @@ loop:
 | `section_complete:<tag>` | tasks.md 指定 section（如 `delta`/`code`）全部勾选或不存在 | M1 |
 | `archived` | 提案已归档 | M1 |
 | `cmd:<command>` | 命令退出码为 0（**仅 overlay-add 节点**，及 §10.3 白名单的 overlay-modify launched gate；执行语义见 §9.2） | M2 切片 1b |
+
+**多模块 initial 模块的阶段报告**（module-scoped-phase-reports，规范性）：`logos-project.yaml` 登记了两个及以上模块时，对 `lifecycle: initial` 的模块 m，`done_when` 恰为以下三条内置谓词原文之一时，不按「文件存在」求值，改按模块报告求值：
+
+| 内置谓词（`spec/flow/initial.yaml`） | 模块 m 的求值 |
+|---|---|
+| `file:logos/resources/verify/acceptance-report.md` | `logos/resources/verify/<m>-acceptance-report.md` 是普通文件，Summary 表「模块 / Module」行的值为 m，且 `**Gate 3.5**` 行的值为 `**PASS**` |
+| `file:logos/resources/verify/deployment-report.md` | `logos/resources/verify/<m>-deployment-report.md` 是普通文件且非空（它只在部署成功并落账后以原子发布写出，见 `spec/environments.md` §14.9；同名目录、0 字节文件不满足） |
+| `file:logos/resources/verify/smoke-report.md` | `logos/resources/verify/<m>-smoke-report.md` 是普通文件，Summary 表「模块 / Module」行的值为 m，且 `**Gate 3.8**` 行的值为 `**PASS**` |
+
+- **只读「模块」行与 Gate 行**：文件缺失或不是普通文件、读不了、没有 Summary 表、缺「模块」行或其值不是 m、没有 Gate 行、Gate 为 FAIL 均判未满足；不做全文匹配。多模块项目中这三类路径是保留路径，只由模块报告 writer 写入（`spec/test-results.md`「多模块项目的模块验收报告与模块冒烟报告」）。
+- **前沿门**：这三个节点只有在其前面的每个节点都已 done 或 skipped 时才判 done；计算 fallback-skip（已完成节点之前的空节点标 skipped）时不以这三个节点为锚点。
+- **单一判定**：phase 派生、overlay 派生（含 `op:modify` 未改写这三个节点 `done_when` 的情形）与 `openlogos launch` 使用同一判定实现；overlay 把这三个节点的 `done_when` 改写为其他谓词时，按改写后的谓词求值。
+- 其他 `file:` 谓词、单模块项目、launched 模块、顶层 `phases[]` 视图均不变。
 
 **失败/阻塞谓词（`fail_when`）**：与 `done_when` 同词表，但命中表示节点处于 **failed** 状态（非完成）。
 用于忠实表达现有失败态——例如 launched 的 verify 节点 `fail_when: marker:VERIFY_FAIL`

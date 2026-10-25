@@ -519,3 +519,39 @@
 - 断言基于 `--format json` 的结构化字段、退出码、调用日志与报告 Summary 表行，不解析其余人类可读文案。
 - 新旧实现逐字比对（UT-S13-104、ST-S13-30）的旧实现取本提案实现前的构建产物，剔除字段仅限 `timestamp`、`duration_ms`。
 - 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），每个 ID 一条，测试名包含用例 ID。
+
+## S13 多模块项目模块验收报告测试（module-scoped-phase-reports）
+
+> 覆盖场景 `core-S13-verify.md`「S13 多模块项目写模块验收报告」（EX-MR.1～EX-MR.6），功能规格 §2.99.2、§2.99.3、§2.99.5，`spec/test-results.md`「多模块项目的模块验收报告与模块冒烟报告（module-scoped-phase-reports）」，决策 C01，proposal-r1 F3。既有 UT-S13-104～UT-S13-121、ST-S13-27～ST-S13-32 作为回归守护。测试实现必须写入 OpenLogos reporter（`logos/resources/verify/test-results.jsonl`），测试名包含对应 ID，`scenario_id="S13"`。
+>
+> **夹具 MV**：`mktemp -d` 一次性 git 项目。`logos-project.yaml` 登记 `core`（launched，`paths: ["src/**"]`）、`team`（initial，`paths: ["team/**"]`）、`portal`（initial，`paths: ["portal/**"]`）；测试规格 `core-S01-test-cases.md`（UT-S01-01、UT-S01-02）、`team-S60-test-cases.md`（UT-S60-01、UT-S60-02）、`portal-S70-test-cases.md`（UT-S70-01）与不带前缀的全局 `shared-test-cases.md`（UT-SH-01）。记录型运行器按测试设定写结果、按设定退出码退出，并记录调用。**夹具 S1**：只登记 `core` 的单模块项目。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S13-122 | 模块用例子集 U(m) 与 M={m} 同判据 | §2.99.5 | 夹具 MV；活跃提案（归属 core）修改了 `core-S01-test-cases.md` 的 UT-S01-02 与 `team-S60-test-cases.md` 的 UT-S60-02 | 计算 U(team)、U(portal)，并与范围 M={team}、M={portal} 时 `testFileInScope` 的文件判定对照 | U(team) = {UT-S60-01, UT-S60-02, UT-SH-01}；U(portal) = {UT-S70-01, UT-SH-01}；core 前缀规格中的变更用例 UT-S01-02 不进入任何 initial 模块子集；文件判定与 `testFileInScope` 一致 |
+| UT-S13-123 | 子集为空不写 | §2.99.5、EX-MR.1 | 夹具 MV 去掉 `portal-S70-test-cases.md` 与 `shared-test-cases.md`；已有一份旧 `portal-acceptance-report.md` | `verify --all` | 不写 `portal-acceptance-report.md`，旧文件内容与修改时间不变；`team-acceptance-report.md` 照常写入 |
+| UT-S13-124 | 覆盖的模块：未启用 / all / fallback-full 写全部 initial 模块，module 模式只写 M | §2.99.5、EX-MR.2 | 夹具 MV；变体 ①：去掉所有 `paths`（范围未启用）；②：`--all`；③：提案改动 `logos/logos.config.json`（`fallback-full`）；④：提案只改 `team/**`（`module`，M={core, team}）；④ 中已有旧 `portal-acceptance-report.md` | 执行 verify | ①②③：写 `team-`、`portal-acceptance-report.md`；④：只写 `team-acceptance-report.md`，`portal-` 旧报告不变；四种变体都不写 `core-acceptance-report.md` |
+| UT-S13-125 | 只写 initial 模块，单模块项目不写 | §2.99.1、EX-MR.6 | 夹具 MV 把 team、portal 都改为 launched；夹具 S1 | 分别 `verify --all` / `verify` | 不写任何 `<m>-acceptance-report.md`；共用报告、verify JSON 与修改前逐字节相同（S1 与零回归基准一致） |
+| UT-S13-126 | 报告格式：「模块」行与按子集统计 | §2.99.2 | 夹具 MV；运行器为全部用例写 pass，UT-S60-02 写 fail | `verify --all` | `team-acceptance-report.md`：标题与共用报告相同，Summary 含「模块 / Module」行 `team`，Defined 为 3、Failed 为 1、失败清单只含 UT-S60-02，`**Gate 3.5**` 为 `**FAIL**`；`portal-acceptance-report.md` Defined 为 2、Gate PASS；共用报告 Gate FAIL |
+| UT-S13-127 | 共享预跑非零退出计入每个模块 | §2.99.5、EX-MR.3 | 夹具 MV 去掉 `paths`（范围未启用）；项目级 `pre_run_command` 写全部 pass 后退出码 1 | `verify` | 共用报告 Gate FAIL（既有 `pre_run_failed`）；`team-`、`portal-acceptance-report.md` Gate 均为 FAIL，报告写明预跑命令非零退出、无法归属到模块 |
+| UT-S13-128 | 命令组归属：只计入其服务的模块 | §2.99.5、EX-MR.4 | 夹具 MV，`--all`；配置 `verify.modules.team` 的独立命令（退出 0、team 用例全 pass）；项目级命令组服务 core 与 portal，退出码 1 | `verify --all --format json` | `pre_run.commands[]` 中项目级组 `modules=["core","portal"]` 为 fail；`portal-acceptance-report.md` Gate FAIL；`team-acceptance-report.md` Gate PASS；共用报告 Gate FAIL |
+| UT-S13-129 | 沙箱失败、账本不自洽、未定义 ID 计入每个模块；写入在改判之后 | §2.99.5、EX-MR.5 | 夹具 MV，`--all`，结果全部 pass；变体 ①：verify 沙箱判定失败（`sandbox.status=fail`）；②：结果文件含重复冲突行致账本不自洽；③：结果含未定义 ID `UT-S99-01` | 执行 verify | 三个变体中 `team-`、`portal-acceptance-report.md` Gate 均为 FAIL；变体 ① 的模块报告不存在「先写 PASS 后改判」的中间态（以写入次数断言：每份模块报告恰写一次且内容为 FAIL） |
+| UT-S13-130 | Gate 判定前中止不写 | §2.99.5 | 夹具 MV；变体 ①：删除全部测试规格（`NO_TEST_CASES`）；②：结果文件不存在 | 执行 verify | 两个变体都以既有错误退出，不创建、不修改任何 `<m>-acceptance-report.md` |
+| UT-S13-131 | 写入白名单含模块验收报告 | §2.99.9 | 夹具 MV 启用 verify 沙箱，allow 列表为默认 | `verify --all` | 沙箱允许写入 `logos/resources/verify/team-acceptance-report.md` 与 `portal-acceptance-report.md`，不产生越界诊断；其他未列入路径仍被拒绝 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S13-33 | fallback-full 为每个 initial 模块写报告，可归属的失败互不影响 | Step 1～10 | 真实 CLI；夹具 MV；`verify.modules.team` 为独立命令，portal 用项目级命令；提案改动 `logos/logos.config.json`（`fallback-full`） | ① 两组命令都退出 0，team 全 pass、portal 的 UT-S70-01 fail，执行 `verify --format json`；② 改为 portal 全 pass 后重跑；③ `status --format json` | ① `team-acceptance-report.md` Gate PASS、`portal-acceptance-report.md` Gate FAIL、共用 Gate FAIL；② 两份模块报告均 PASS；③ team、portal 的 phase.3-6 均为 done（前序阶段齐全时） |
+| ST-S13-34 | 共享 runner 非零退出时所有模块 FAIL | Step 1～10 | 真实 CLI；夹具 MV 去掉 `paths`（范围未启用）；项目级 runner 写全部 pass 后退出码 1 | ① `verify --format json`；② `status --format json` | ① verify 退出非零，`gate.reason=pre_run_failed`；两份模块报告 Gate FAIL；② team、portal 都停在 phase.3-6 |
+
+### 覆盖度校验
+
+- U(m) 判据与空子集：UT-S13-122、UT-S13-123。
+- 覆盖的模块与只写 initial 模块、单模块不写：UT-S13-124、UT-S13-125。
+- 报告格式与统计：UT-S13-126。
+- 运行级失败归属（共享预跑、命令组、沙箱、账本、未定义 ID）与写入时机：UT-S13-127～UT-S13-130、ST-S13-33、ST-S13-34。
+- 写入白名单：UT-S13-131。

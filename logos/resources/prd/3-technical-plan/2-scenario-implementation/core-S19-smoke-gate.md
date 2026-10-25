@@ -1260,3 +1260,105 @@ sequenceDiagram
 
 - 规范：`spec/environments.md` §14.3、§14.5～§14.7；`spec/cli-json-output.md`「smoke / env / next 按模块区分增量」；`spec/test-results.md`「按模块限定 smoke 范围的运行约定」。
 - 测试：`core-S19-test-cases.md`「按模块限定 smoke 与 next 带 --env 测试」（UT-S19-74 起、ST-S19-30 起）；smoke：SMOKE-core-289 起。
+
+## 多模块项目写模块冒烟报告（module-scoped-phase-reports）
+
+> 来源变更：module-scoped-phase-reports（决策 C01）。判据见功能规格 §2.99.3、§2.99.6，`spec/test-results.md`「多模块项目的模块验收报告与模块冒烟报告（module-scoped-phase-reports）」，`spec/environments.md` §14.9。本节在「按模块限定 smoke（module-scoped-env-smoke）」时序的门禁判定之后、输出之前插入模块冒烟报告的写入；目标模块与上下文、应覆盖集合 S 的计算不变。
+
+### 场景目标
+
+多模块项目中，smoke 在写共用 `smoke-report.md` 之外，为能确定归属的 initial 模块写 `<m>-smoke-report.md`，让 initial 模块凭本模块的冒烟结论离开 phase.3-8；不能确定归属时不写，避免用项目级命令的结果覆盖模块命令的结果。
+
+### 参与者
+
+| 别名 | 组件 | 说明 |
+|---|---|---|
+| D | 用户 / AI driver | 执行 `openlogos smoke [--env <id>]` |
+| CLI | `openlogos smoke` | 定目标模块 → 执行 → 判定 → 写共用报告与模块报告 |
+| FS | `logos/resources/verify/` | `smoke-report.md` 与 `<m>-smoke-report.md` |
+
+### 前置条件
+
+- `logos-project.yaml` 登记了两个及以上模块，其中至少一个为 `lifecycle: initial`。
+- smoke 能执行到 Gate 3.8 判定。
+
+### 成功后置条件
+
+- 下述三种情形之一成立时写出（整份覆盖）对应的模块冒烟报告，Summary 含「模块」行，Gate 与本次 Gate 3.8 相同；共用报告、`SMOKE_PASS` / `SMOKE_FAIL`、账本行与修改前一致。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant D as 用户或 AI driver
+    participant CLI as openlogos smoke
+    participant FS as logos/resources/verify/
+
+    D->>CLI: Step 1: smoke --env team-prod
+    CLI->>CLI: Step 2: 按既有流程定目标模块与上下文、计算 S、执行命令、判定 Gate 3.8
+    CLI->>FS: Step 3: 写共用 smoke-report.md（不变）
+    alt 按模块区分未启用
+        CLI->>FS: Step 4a: 为每个 initial 模块写 m-smoke-report.md（内容即项目级结果）
+    else 已启用且目标模块确定为 initial 模块 t
+        CLI->>FS: Step 4b: 写 t-smoke-report.md（用例子集为本次 S(t)）
+    else 已启用但不限定模块，或目标模块为 launched
+        CLI->>CLI: Step 4c: 不写任何模块冒烟报告
+    end
+    CLI-->>D: Step 5: 输出结果（JSON 字段集合不变）
+```
+
+### 步骤说明
+
+1. **用户或 AI driver** 执行 `openlogos smoke --env team-prod`。
+2. **CLI** 按既有流程确定目标模块与上下文（`resolveTargetModule`）、计算应覆盖集合 S、执行命令并判定 Gate 3.8。判定之前就以错误退出时，后续步骤都不发生。
+3. **CLI** 按既有规则写共用 `smoke-report.md`。
+4. **CLI** 写模块冒烟报告：
+   - 按模块区分未启用（`spec/environments.md` §14.1）：项目级 smoke 的应覆盖用例就是全部规格，为每个 initial 模块各写一份，内容即项目级结果，「模块」行写各自的 id；
+   - 已启用且目标模块确定（`scope.mode=module`，提案上下文或版本上下文）为 initial 模块 t：写 `<t>-smoke-report.md`，统计按本次 S(t)；
+   - 已启用但本次不限定模块（`scope.mode=project`），或目标模块为 launched 模块：不写。
+5. **CLI** 输出结果；PASS 与 FAIL 都写模块报告，与共用报告一致。
+6. **保留路径与写入次序**（delta-r1 F1）：Step 3 写共用报告前，若配置的 `smoke.report_path` 或目标模块的 `smoke.modules.<id>.report_path`（覆盖或回落后的取值）解析为任一已登记模块的模块报告路径，共用报告改写到默认路径 `logos/resources/verify/smoke-report.md` 并给出警告 `smoke_report_path_reserved`；环境证据收尾对共用报告的重写同样落在该实际路径。Step 4 的模块报告在共用报告最后一次写入之后、以原子发布写入，Gate 取最终结论。
+
+### 异常与边界
+
+#### EX-MR.1：已启用但回落项目级
+
+- **触发条件**：team 配置了 `smoke.modules.team.command`（已启用）；执行 `openlogos smoke`，未传 `--env` 且无活跃提案（`fallback_reason=no_env_no_proposal`）。
+- **期望响应**：只写共用报告；`team-smoke-report.md` 若已存在，内容与修改时间不变。
+- **副作用**：无。
+
+#### EX-MR.2：目标模块为 launched 模块
+
+- **触发条件**：core（launched）提案执行 `smoke`，目标模块为 core。
+- **期望响应**：不写 `core-smoke-report.md`；core 继续看 `SMOKE_PASS` / `SMOKE_FAIL`。
+- **副作用**：无。
+
+#### EX-MR.3：Gate 3.8 FAIL
+
+- **触发条件**：team 版本上下文 smoke，S(team) 中有用例 fail。
+- **期望响应**：写出 `team-smoke-report.md`，Gate 行为 FAIL；team 停在 phase.3-8。
+- **副作用**：无。
+
+#### EX-MR.5：配置的报告路径指向其他模块的模块报告
+
+- **触发条件**：core（launched）提案执行 `smoke`，`smoke.report_path` 配置为 `logos/resources/verify/team-smoke-report.md`；team 已完成 3-6、3-7，自己的 smoke 尚未通过；core 的 Gate 3.8 为 PASS。
+- **期望响应**：共用报告写到 `logos/resources/verify/smoke-report.md`，`diagnostics` 含 `smoke_report_path_reserved`；`team-smoke-report.md` 不被创建或改写；team 停在 phase.3-8，`launch team` 被拒绝。
+- **副作用**：无。
+
+#### EX-MR.6：模块级 report_path 与本模块的模块报告同名
+
+- **触发条件**：`smoke.modules.team.report_path` 为 `logos/resources/verify/team-smoke-report.md`，执行 `smoke --env team-prod`。
+- **期望响应**：共用报告改写到默认路径并给出 `smoke_report_path_reserved`；`team-smoke-report.md` 只含模块报告 writer 写入的内容（「模块」行为 team）。
+- **副作用**：无。
+
+#### EX-MR.4：判定前就被拒绝
+
+- **触发条件**：`ENV_MODULE_MISMATCH`、`ENV_GATE_REFERENCE_UNKNOWN`、部署身份核对失败等在 Gate 判定前退出的错误。
+- **期望响应**：不写共用报告之外的任何模块报告（共用报告按既有规则处理）。
+- **副作用**：无。
+
+### 追溯
+
+- 需求：「S11/S13/S14/S19/S21/S42 多模块 initial 模块按模块阶段报告验收补充」AC-MOD-REPORT-05。
+- 功能规格：§2.99.2、§2.99.3、§2.99.6。
+- 测试：UT-S19-90 起、ST-S19-33 起；smoke：SMOKE-core-298 起。

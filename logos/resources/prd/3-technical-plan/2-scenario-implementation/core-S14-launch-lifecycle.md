@@ -349,3 +349,90 @@ sequenceDiagram
 - 需求：S14 Cursor launched 刷新验收。
 - 架构：46.5 生命周期与事务顺序。
 - 测试：UT-S14-18～UT-S14-21、ST-S14-25～ST-S14-26。
+
+## S14 多模块 initial 模块的 launch 前置（module-scoped-phase-reports）
+
+> 来源变更：module-scoped-phase-reports（决策 C01）。判据见功能规格 §2.99.3、§2.99.8。本节只改 normal bootstrap 模块在主时序 Step 3、Step 4 的取证来源；bootstrap=adopted / 历史 skipped 的豁免（EX-2.2）不变。
+
+### 场景目标
+
+多模块项目中，`openlogos launch <m>` 对 initial 模块 m 只认 m 自己的模块报告，避免其他模块的共用报告让 m 在未验收、未部署、未冒烟时被放行；Gate 只读 Summary 表的 Gate 行，失败信息中的 `PASS` 字样不会被误判为通过。
+
+### 参与者
+
+- **用户**：执行 `openlogos launch <m>`。
+- **openlogos CLI**（`cli/src/commands/launch.ts`）：校验前置、切换 lifecycle、刷新 AI 资产。
+- **本地文件系统**：`logos-project.yaml`、`logos/resources/verify/` 下的模块报告与共用报告。
+
+### 前置条件
+
+- `logos-project.yaml` 登记了两个及以上模块；目标模块 m 为 `lifecycle: initial`、`bootstrap: normal`。
+
+### 成功后置条件
+
+- 模块报告满足判据时 m 切为 `launched`，AI 资产按既有规则刷新；不满足时拒绝且零写入。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant C as openlogos CLI
+    participant FS as 本地文件系统
+
+    U->>C: Step 1: openlogos launch team
+    C->>FS: Step 2: 读取 logos-project.yaml（多模块、team 为 initial / normal）
+    C->>FS: Step 3: 读 team-acceptance-report.md 的 Gate 3.5 行
+    alt 缺失或 Gate 不为 PASS
+        C-->>U: EX-MR.1：拒绝，点名缺失或未通过的模块报告
+    else Gate 3.5 PASS
+        C->>FS: Step 4: 需要部署时检查 team-deployment-report.md 存在；需要冒烟时读 team-smoke-report.md 的 Gate 3.8 行
+        alt 部署报告缺失或冒烟未通过
+            C-->>U: EX-MR.2 / EX-MR.3：拒绝，零写入
+        else 全部满足
+            C->>C: Step 5: 刷新 AI 资产后标记 team lifecycle=launched
+            C-->>U: Step 6: 输出 launch 结果
+        end
+    end
+```
+
+### 步骤说明
+
+1. **用户**执行 `openlogos launch team`。
+2. **CLI** 读取 `logos-project.yaml`，确认是多模块项目且 team 为 initial、normal bootstrap。单模块项目按主时序原逻辑读共用报告，本节不适用。
+3. **CLI** 用共享判定（功能规格 §2.99.3）读 `logos/resources/verify/team-acceptance-report.md`：只看 Summary 表「模块 / Module」行是否为 `team`、`**Gate 3.5**` 行是否为 `**PASS**`。共用 `acceptance-report.md` 不参与判定。
+4. **CLI** 按 `moduleDeploymentRequired` / `moduleSmokeRequired`：需要部署时检查 `team-deployment-report.md` 是普通文件且非空；需要冒烟时读 `team-smoke-report.md` 的「模块」行与 `**Gate 3.8**` 行。
+5. **CLI** 按既有顺序刷新 AI 资产，全部成功后提交 `lifecycle: launched`。
+6. **CLI** 输出 launch 结果。
+
+### 异常与边界
+
+#### EX-MR.1：只有共用验收报告
+
+- **触发条件**：共用 `acceptance-report.md` Gate PASS，`team-acceptance-report.md` 不存在（或 Gate 行为 FAIL、缺 Gate 行）。
+- **期望响应**：拒绝 launch，退出码 1，错误信息点名 `logos/resources/verify/team-acceptance-report.md`。
+- **副作用**：无（lifecycle、AI 资产均不写）。
+
+#### EX-MR.2：只有其他模块的部署报告
+
+- **触发条件**：team 需要部署；共用 `deployment-report.md` 与 `core-deployment-report.md` 存在，`team-deployment-report.md` 不存在。
+- **期望响应**：拒绝 launch，错误信息点名 `team-deployment-report.md`。
+- **副作用**：无。
+
+#### EX-MR.3：错误信息中出现 PASS
+
+- **触发条件**：`team-smoke-report.md` 的 Gate 3.8 行为 FAIL，失败用例的错误信息里含 `PASS` 字样。
+- **期望响应**：判为冒烟未通过并拒绝 launch。
+- **副作用**：无。
+
+#### EX-MR.4：报告不属于本模块或不是合格文件
+
+- **触发条件**：`team-smoke-report.md` Gate PASS 但「模块」行缺失或为 `core`（如旧版 CLI 按配置的 `report_path` 写入的共用报告）；或 `team-deployment-report.md` 是同名目录。
+- **期望响应**：拒绝 launch，错误信息点名该路径。
+- **副作用**：无。
+
+### 追溯
+
+- 需求：「S11/S13/S14/S19/S21/S42 多模块 initial 模块按模块阶段报告验收补充」AC-MOD-REPORT-06。
+- 功能规格：§2.99.3、§2.99.8。
+- 测试：UT-S14-22 起、ST-S14-27 起。

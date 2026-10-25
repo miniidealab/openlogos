@@ -129,6 +129,13 @@ openlogos deploy --env <id> --format json
   - 回滚点
   - 未解决风险
 
+**多模块项目的 initial 模块**（module-scoped-phase-reports，见 `spec/environments.md` §14.9）：除共用报告外，模块 m 的 phase.3-7 只认 `logos/resources/verify/<m>-deployment-report.md`，它是 m 成功部署的凭据：
+
+- 经 `openlogos deploy`（script / ci / agent `--complete`）或 `openlogos deploy-done` 完成记录的部署，模块部署报告由 CLI 在部署成功并落账后自动追加，本 Skill **不得**手写或修改它。
+- 只有 CLI 不参与记录时——项目没有登记表或目标环境未配置 `deploy`，且该 initial 模块没有活跃提案、无法执行 `deploy-done`——才由本 Skill 在**部署成功后**向 `<m>-deployment-report.md` 追加一段（字段同上：部署时间、目标环境、执行命令摘要、迁移结果、服务启动结果、回滚点、未解决风险），文件不存在时先写与共用部署报告相同的标题；共用 `deployment-report.md` 照旧写。
+- 部署失败、结果未知或未完成时，只在共用报告或部署记录中写失败摘要，**不得**写模块部署报告——它一旦存在，status 与 launch 就会把该模块视为已部署。
+- launched 模块与单模块项目不写模块部署报告。
+
 ### Step 6: 写入部署完成标记
 
 **script / ci 方式**：`openlogos deploy` 的提案通道成功时已完成落标（勾选 `[deploy]`、写 `DEPLOY_DONE`、追加账本），本步骤只核对输出中的 `proposal.marker_path` 与 `ledger_written`，不再执行 `openlogos deploy-done`。
@@ -206,6 +213,8 @@ openlogos smoke --env staging
 - 部署失败后执行 `openlogos deploy-done`
 - 手写 `logos/changes/<slug>/DEPLOY_DONE` 作为推荐路径
 - 部署后直接 archive，跳过需要的 `openlogos smoke`
+- 部署失败、结果未知或未完成时写 `<module>-deployment-report.md`
+- 手写或改写由 CLI 追加的 `<module>-deployment-report.md` 段落
 
 ## 推荐提示词
 

@@ -663,3 +663,44 @@ reporter 不需要感知模块范围：照常写全部执行过的用例结果�
 - 运行命令前清空本次所用的结果文件（既有行为），因此计入门禁的行都来自本次运行。
 - 结果行的 ID 在 smoke 规格中已定义、但不在 S 中时忽略不计，计数进 `scope.out_of_scope_result_count`；在 S 中的结果（含属于其他模块前缀的变更用例）一律保留，参与覆盖与失败判定；未定义 ID 照旧按既有规则判定。
 - 结果行格式、`target_environment` 与环境证据判定（`spec/environments.md` §6）不变。
+
+## 多模块项目的模块验收报告与模块冒烟报告（module-scoped-phase-reports）
+
+> 来源变更：module-scoped-phase-reports（决策 C01；proposal-r1 F3 处置）。功能规格 §2.99；完成判据的消费方见 `spec/flow-spec.md` §9；模块部署报告见 `spec/environments.md` §14.9。
+
+### 适用范围
+
+只在 `logos-project.yaml` 登记了两个及以上模块的项目中、只为 `lifecycle: initial` 的模块写入。单模块项目与 launched 模块不写；共用的 `acceptance-report.md`、`smoke-report.md` 照旧写入，写入时机、内容与 Gate 判定不变。
+
+### 文件与格式
+
+- 模块验收报告：`logos/resources/verify/<m>-acceptance-report.md`；模块冒烟报告：`logos/resources/verify/<m>-smoke-report.md`。每次写入整份覆盖。
+- 格式与对应共用报告相同（标题、Summary 表、失败 / 跳过 / 未覆盖清单），统计只按该模块的用例子集。Summary 表新增一行「模块 / Module」（紧接表头分隔行，作为第一行数据），值为模块 id。
+- Gate 行固定为 `| **Gate 3.5** | **PASS** |` / `| **Gate 3.8** | **FAIL** |` 形式，与语言无关。消费方只读「模块」行与 Gate 行判定完成：模块报告须是普通文件、「模块」行的值等于目标模块、Gate 行为 PASS；文件缺失或不是普通文件、无 Summary 表、缺「模块」行或值不匹配、缺 Gate 行、Gate 为 FAIL 均为未完成，不做全文匹配（delta-r1 F1）。
+- **保留路径**（delta-r1 F1）：多模块项目中，`logos/resources/verify/<id>-acceptance-report.md`、`<id>-deployment-report.md`、`<id>-smoke-report.md`（`<id>` 为任一已登记模块）只由模块报告 writer 写入。共用冒烟报告的配置路径（`smoke.report_path`，或目标模块的 `smoke.modules.<id>.report_path` 覆盖 / 回落后的取值）解析为任一保留路径时，共用报告改写到默认路径 `logos/resources/verify/smoke-report.md`，`diagnostics` 给出警告 `smoke_report_path_reserved`，JSON `report_path` 为实际写入路径，门禁不受影响。单模块项目不设保留路径。
+- **原子发布**（delta-r1 F2）：模块报告先在同目录写完整临时文件，再重命名替换正式路径；写入失败时正式路径保持写入前的状态。
+
+### 模块验收报告
+
+- **写入对象**：本次 verify 覆盖的 initial 模块——范围未启用、`--all`、`fallback-full` 时为全部已登记模块中的 initial 模块；`module` 模式时为范围 M 中的 initial 模块。未覆盖模块的已有报告保持不动。
+- **用例子集 U(m)**：m 前缀测试规格中的用例 ∪ 不带已登记模块前缀的测试规格中的用例，文件判据与「按模块限定 verify 范围的运行约定」中范围 M={m} 时相同。本提案的变更用例只在属于这些规格时计入。U(m) 为空时不写。手工用例的排除规则与共用报告相同。
+- **模块 Gate**：以下全部成立才为 PASS：
+  1. U(m) 内零失败、零未覆盖；
+  2. 带 `modules` 的预跑命令组非零退出时，只计入该组 `modules` 中的模块；不带 `modules` 的预跑命令（范围未启用时的项目级命令）非零退出，计入每个被覆盖模块；
+  3. 无法按用例或命令组归属的拒绝——结果账本不自洽、未定义结果 ID、沙箱判定失败、切片核验失败——计入每个被覆盖模块。
+- **写入时机**：全部门禁（含沙箱改判）裁决之后、verify 输出最终结果之前；在算出 Gate 之前就中止时不写。
+- runner 无需为模块报告做任何改动：子集统计与归属只使用既有结果行与 `pre_run.commands[].modules`。
+
+### 模块冒烟报告
+
+- **写入对象**：
+  - 按模块区分未启用（`spec/environments.md` §14.1）：每个 initial 模块各写一份，用例子集即全部 smoke 规格（内容即项目级结果）；
+  - 已启用且目标模块确定（`scope.mode=module`）为 initial 模块 t：写 t 的报告，用例子集为本次应覆盖集合 S(t)（「按模块限定 smoke 范围的运行约定」）；
+  - 已启用但不限定模块（`scope.mode=project`），或目标模块为 launched 模块：不写。
+- **Gate**：与本次 Gate 3.8 相同；PASS 与 FAIL 都写。smoke 在算出 Gate 之前就以错误退出时不写。
+- **写入次序**：在共用报告的最后一次写入（含环境证据收尾按最终结论重写）之后写入，Gate 取最终结论。
+- `SMOKE_PASS` / `SMOKE_FAIL`、账本 smoke 行与 smoke JSON 不变。
+
+### 写入白名单
+
+verify 与 smoke 的沙箱允许写入路径分别扩展到本次要写的 `<m>-acceptance-report.md`、`<m>-smoke-report.md`，其余规则不变。

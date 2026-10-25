@@ -5281,3 +5281,76 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 - 测试：UT-S19-83 起、ST-S19-32 起，修订的 UT-S19-74、UT-S19-76、ST-S19-30；安装态 smoke：SMOKE-core-294 起，以及通用的 SMOKE-core-268～SMOKE-core-271。
 - 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
 - 来源提案：smoke-scope-isolated-modules（决策 C01、C02）。
+
+## OpenLogos 0.16.12 本机测试环境发布（module-scoped-phase-reports）
+
+> 本节引用「本机测试环境脚本部署（scripts/deploy-local.mjs）」通用方案，只写本次的差异：版本号、CHANGELOG、源码回归范围、本仓 `openlogos sync` 与安装态 smoke。冻结、回滚制品、构建候选、试装、全局安装、复核与回执一律按通用方案第三～七节执行，不在本节复写。
+
+### 部署目标与授权边界
+
+把多模块项目按模块的阶段报告（来源提案 `module-scoped-phase-reports`，决策 C01、proposal-r1 F1～F3，功能规格 §2.99）装进本机全局安装态。runlogos 的 team（initial 模块）需要它才能凭 `team-acceptance-report.md` 离开 phase.3-6，并继续走部署、冒烟与 launch。新行为只在全局 `openlogos` 升级后才对各项目生效。
+
+- **目标环境**：`test`（登记表 `proposal_default_env: test`，来源提案决策 C02，`source: policy`）。登记表中 `test.deploy` 为 `mode: script`、`script: scripts/deploy-local.mjs`。
+- **入口**：提案通道 `openlogos deploy --env test`，部署请求 HEAD；由 CLI 追加部署报告、写 `DEPLOY_DONE` 并勾选 `[deploy]`。提案通道已完成受控落标，部署成功后**不再**另行执行 `openlogos deploy-done`，否则会生成新的 deploy_id 和不带 ref 的账本记录，覆盖本次部署身份。
+- **授权**：半自动模式逐次由用户明确授权；`next --auto` 模式以本次 deliver-entry 门的 `gate_auto_passed=true` 为执行依据。`test` 未配置 `promote_from` / `require_approval`。
+- **版本号边界**：0.16.12 只作本机全局版本，不进入 npm registry。本方案**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`；公开发布另立 release 提案。不改写其他仓库（包括 runlogos），不在其项目根运行任何命令。
+- **本仓不受新行为影响**：openlogos 本仓是单模块项目，模块报告不适用（功能规格 §2.99.1），verify / 部署 / smoke 与 launch 行为与 0.16.11 一致；本次部署仍写共用报告。
+
+### 部署前置与版本
+
+1. 本提案 delta 已 merge，`[code]` 切片实现并提交，`openlogos verify` PASS；`openlogos env check` 无 error，`openlogos deploy --env test --dry-run` 通过（通用方案第三节）。
+2. **请求提交已提交**：`openlogos deploy` 部署的是 HEAD。部署前确认 merge 后的规格、切片代码与验收报告都已提交、工作区干净；未提交时按「规格合并 → 代码 → 验收报告」的顺序补提交后再部署。若 `VERIFY_PASS` 早于代码评审的修复，须在部署记录写明修复后全量 `npm test` 的结果。
+3. **版本事实复核**：读取 `cli/package.json` 当前版本，计划时为 `0.16.11`（smoke-scope-isolated-modules 的本机全局版本，未发布到 npm）。候选为下一 patch `0.16.12`，执行 `npm view @miniidealab/openlogos@0.16.12 version` 应返回 E404。若实施前已有其他提案升版，或 registry 已存在候选版本号，候选改为「当时版本与 registry 最高版本中较大者的下一 patch」，并在部署记录写明实际值。
+4. **升版**：在实现中执行 `node cli/scripts/bump-version.mjs 0.16.12`，由脚本一次更新全部版本载体，并调用既有生成器重算 `cli/asset-manifest.json`，**禁止手改** manifest。脚本会把 `cli/src/lib/local-release-candidate.ts` 的回滚版本设为升版前版本，应为 `0.16.11`；不符时改为 `0.16.11`，并在部署记录说明。
+5. **CHANGELOG**：在 `## [Unreleased]` 之后新增 `## [0.16.12]` 条目，注明「本机全局发布（未发布到 npm）」，不改既有条目：
+   - **Fixed**：多模块项目中 initial 模块的验收、部署、冒烟三个阶段改认按模块的报告 `<module>-acceptance-report.md` / `<module>-deployment-report.md` / `<module>-smoke-report.md`，不再在 phase.3-6 卡死，也不再被其他模块的共用报告误判完成；三个阶段只在前序阶段完成或跳过后才算完成。`openlogos launch` 对多模块 initial 模块改认同一套报告，Gate 只读 Summary 表的 Gate 行。
+   - **Changed**：verify 为本次覆盖的每个 initial 模块按其用例子集写模块验收报告，无法归属到模块的运行级失败计入每个模块；smoke 在目标模块确定时写模块冒烟报告；`deploy` / `deploy-done` 只在部署成功并落账后写模块部署报告，版本通道同样写。
+   - **升级提示**：多模块项目的 initial 模块需重跑一次 verify（以及部署、smoke）生成模块报告；已有共用报告不迁移。单模块项目与 launched 模块行为不变。
+
+### 源码回归范围
+
+部署前的 verify 负责源码回归，脚本不跑测试（通用方案第八节）。升版后复跑以下检查，必须全绿：
+
+- `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`、`npm run build`。
+- 范围包括本提案新增的 UT-S11-101 起、ST-S11-53 起、UT-S13-122 起、ST-S13-33 起、UT-S14-22 起、ST-S14-27 起、UT-S19-90 起、ST-S19-33 起、UT-S21-23 起、UT-S42-29 起、ST-S42-09 起，以及既有 S11（含 flow-derive 等价矩阵）、S13、S14、S19、S21、S42 全部用例。它们证明单模块项目与 launched 模块零回归。
+
+### 部署、sync 与部署后检查
+
+1. 执行 `openlogos deploy --env test`（提案通道）。按通用方案第七节第 1、2 条读回回执与账本：
+   - 全局 `--version` 为 `0.16.12`；
+   - 入口 realpath 等于回执 `entry_realpath`，全局 `dist/index.js` 的 SHA-256 等于 `candidate_entry_sha256`；
+   - 记录候选 tarball 与回滚制品的路径与 SHA-256；回滚制品由脚本第 ③ 步从当前全局安装打包，计划时应为本机全局的 `0.16.11`；
+   - 部署前账本 `test.current_ref` 为 `131bff56142155a3148be9aab9c1ba6667bb8ec6`（0.16.11，deploy `29aa0423`），部署成功后它成为 `previous_ref`。
+2. **本仓 sync**：本次改动随包规范与 Skill（`spec/flow-spec.md`、`spec/test-results.md`、`spec/environments.md`、`spec/directory-convention.md`、`skills/deployment-executor/SKILL.md`）。在主工作树执行一次 `openlogos sync` 并读回：
+   - `logos/spec/` 下这四份规范、`logos/skills/deployment-executor/SKILL.md` 的托管副本与全局包内同名文件逐字节一致；
+   - 本仓 AGENTS.md / CLAUDE.md 与 sync 前逐字节一致；
+   - sync 产生的托管文件变化随部署记录一起由流程提交，不 push；
+   - 若 sync 再次向 `.claude/settings.json` 追加重复的 SessionStart 条目（已知缺陷），按前几版部署记录同样还原并记录。
+3. 经授权执行 `openlogos smoke --env test`：
+   - 本次行为用例：「OpenLogos 0.16.12 多模块按模块阶段报告安装态 smoke（SMOKE-core-298～302）」；
+   - 通用安装态用例：「本机测试环境脚本部署安装态 smoke（SMOKE-core-268～SMOKE-core-271）」。
+
+### 失败处置与回滚
+
+回滚目标是 **0.16.11**，处置按通用方案第五节，本次差异如下：
+
+- **部署前置或 dry-run 失败**：不执行部署，修正后重试，或回流实现。
+- **脚本失败（部署未成功）**：脚本自动回装第 ③ 步的回滚制品（计划时为本机全局 0.16.11），复核 `--version` 为 `0.16.11`；账本记 `result=failed`，不推进。
+- **成功部署后要回到 0.16.11**：执行 `openlogos deploy --env test --rollback`。账本 `previous_ref` 为 `131bff5…`（0.16.11 的部署提交），该提交含 `scripts/deploy-local.mjs`。回到 0.16.11 后，用 0.16.11 在本仓执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件。
+- **成功落账后 smoke 失败**：按通用方案第五节「(c)」处置：停止后续完成流程，保留失败证据，回流修复后以 `openlogos deploy --env test` 部署修复提交并重跑 smoke。不得手工回装旧包。
+- 本次无数据迁移：只新增模块报告文件，配置与既有报告格式不变；回到 0.16.11 后多余的模块报告文件被忽略，不影响 0.16.11 的判定。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`，不部署官网。
+- 不改写其他仓库（包括 runlogos），不在其项目根运行任何命令；runlogos 由用户在升级全局 CLI 后自行重跑 team 的 verify、部署与 smoke。
+- 不为本仓生成模块报告：本仓是单模块项目。
+
+### 追溯
+
+- 功能规格：§2.99。
+- 根规范：`spec/flow-spec.md` §9；`spec/test-results.md`「多模块项目的模块验收报告与模块冒烟报告（module-scoped-phase-reports）」；`spec/environments.md` §14.9；`spec/directory-convention.md`。
+- 场景：S11「initial phase 派生」、S13「多模块项目写模块验收报告」、S14「多模块 initial 模块的 launch 前置」、S19「多模块项目写模块冒烟报告」、S21 与 S42「initial 模块的模块部署报告」。
+- 测试：UT-S11-101 起、ST-S11-53 起、UT-S13-122 起、ST-S13-33 起、UT-S14-22 起、ST-S14-27 起、UT-S19-90 起、ST-S19-33 起、UT-S21-23 起、UT-S42-29 起、ST-S42-09 起；安装态 smoke：SMOKE-core-298 起，以及通用的 SMOKE-core-268～SMOKE-core-271。
+- 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
+- 来源提案：module-scoped-phase-reports（决策 C01、C02）。

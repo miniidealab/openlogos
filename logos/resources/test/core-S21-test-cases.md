@@ -112,3 +112,27 @@
 | UT-S21-20 | 未声明环境的模块按无登记表落标 | §14.4 | MM，core 活跃提案既有前置全满足 | ① `deploy-done`（不传 `--env`）；② `deploy-done --env local-macos`（未登记）；③ `deploy-done --env team-prod` | ① ② 成功，`DEPLOY_DONE.environment` 分别为 null 与 `"local-macos"`，`[deploy]` 勾选，部署账本不存在或字节不变；③ `ENV_MODULE_MISMATCH`（`details.module=core`、`module_environments=[]`），零写入 |
 | UT-S21-21 | 声明了环境的模块只能用自己的环境 | §14.4 | MM，team 活跃提案既有前置全满足 | ① `deploy-done --env prod`；② `deploy-done`（不传）；③ `deploy-done --env Team-Production` | ① `ENV_MODULE_MISMATCH`，列出 `["team-prod"]`；② `ENV_REQUIRED`；均零写入；③ 进入既有流程，`DEPLOY_DONE.environment="team-prod"` 并追加账本 |
 | UT-S21-22 | 引用失效先于受门环境与写入拒绝 | §14.2、proposal-r1 F1 | MM 变体：team 声明的别名已从登记表删除；`team-prod` 配置 `require_approval: true`；team 活跃提案既有前置全满足 | `deploy-done --env team-prod`；另在 core 活跃提案下执行 `deploy-done` | team：`ENV_GATE_REFERENCE_UNKNOWN`，不出现 `DEPLOY_DONE_GATED_ENV` 以外的成功路径，零写入；core 照常落标，不受 team 失效引用影响 |
+
+## S21 initial 模块的模块部署报告测试（module-scoped-phase-reports）
+
+> 覆盖场景 `core-S21-deploy-done-marker.md`「initial 模块的模块部署报告（module-scoped-phase-reports）」（EX-MR.1～EX-MR.4），功能规格 §2.99.7，`spec/environments.md` §14.9，决策 C01，proposal-r1 F1。既有 S21 用例作为回归守护。测试实现必须写入 OpenLogos reporter（`logos/resources/verify/test-results.jsonl`），测试名包含对应 ID，`scenario_id="S21"`。
+>
+> **夹具 MD**：`mktemp -d` 一次性 git 项目，`logos-project.yaml` 登记 `core`（launched）与 `team`（initial，`deployment_gates.team.environments: [team-prod]`）；登记表含 `team-prod`（未配置 `deploy`，无门禁）；以 `openlogos change` 创建归属 team 的活跃提案，`VERIFY_PASS`、部署决策与共用 `deployment-report.md` 均已就绪。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S21-23 | 落标成功后追加模块部署报告 | §2.99.7 | 夹具 MD；`team-deployment-report.md` 不存在 | `deploy-done --env team-prod --ref <commit> --format json` | 既有落标结果不变（`[deploy]` 勾选、`DEPLOY_DONE`、账本 deploy 记录）；`team-deployment-report.md` 被创建，含标题与一段：部署 id 等于 `DEPLOY_DONE.deploy_id`、环境 `team-prod`、通道 `proposal`、方式 `deploy-done`、版本与来源、结果 `done`、记录时间；再次部署并落标时追加第二段，不覆盖第一段 |
+| UT-S21-24 | 拒绝路径不写 | §2.99.7、EX-MR.1 | 夹具 MD；变体 ①：删除 `VERIFY_PASS`；②：删除共用 `deployment-report.md`；③：`--env prod`（不属于 team 的已登记环境） | `deploy-done` | 分别以既有错误码（含 `DEPLOYMENT_REPORT_MISSING`、`ENV_MODULE_MISMATCH`）零写入退出；不创建 `team-deployment-report.md` |
+| UT-S21-25 | 落标或账本写入失败不写 | §2.99.7、EX-MR.2 | 夹具 MD；以测试钩子让 `DEPLOY_DONE` 写入失败；变体：让账本追加失败 | `deploy-done --env team-prod --ref <commit>` | 既有失败输出、快照回滚；不创建 `team-deployment-report.md`；team 的 phase.3-7 未完成 |
+| UT-S21-26 | 模块报告写入失败以 DEPLOY_RECORD_FAILED 退出，且不被判为已部署（delta-r1 F2） | §2.99.7、EX-MR.3 | 夹具 MD；team 前序阶段齐全，已有 Gate PASS 的模块验收报告；`logos/resources/verify/team-deployment-report.md` 位置被同名目录占用（不可写） | ① `deploy-done --env team-prod --ref <commit> --format json`；② 对 team 派生 `phase_progress`；③ `launch team` | ① 退出码非零，错误码 `DEPLOY_RECORD_FAILED`，`details.module_report_path="logos/resources/verify/team-deployment-report.md"`；`DEPLOY_DONE` 与账本记录保留；② team 的 phase.3-7 未完成；③ 拒绝并点名该路径 |
+| UT-S21-28 | 发布中断不留残留；已有成功报告时追加失败保留旧凭据（delta-r1 F2） | §2.99.2、§2.99.7 | 夹具 MD；以测试钩子让模块报告临时文件写入中途失败；变体 ①：此前没有 `team-deployment-report.md`；②：此前已有一段成功记录的 `team-deployment-report.md` | `deploy-done --env team-prod --ref <commit>` 后派生 team 的 `phase_progress` | 两个变体都以 `DEPLOY_RECORD_FAILED` 退出；① 正式路径不存在（无空文件或部分内容），phase.3-7 未完成；② 正式路径内容与执行前逐字节相同，phase.3-7 仍为完成 |
+| UT-S21-27 | launched 提案模块与单模块项目不写 | §2.99.7、EX-MR.4 | 夹具 MD 改为 core 的活跃提案（core 未声明环境）；另有单模块项目夹具 | 各自执行 `deploy-done` | 不写任何 `<m>-deployment-report.md`；输出、标记与账本与修改前逐字节相同 |
+
+### 覆盖度校验
+
+- 成功边界写入与追加：UT-S21-23。
+- 拒绝、落标失败、写入失败：UT-S21-24、UT-S21-25、UT-S21-26。
+- 原子发布与失败后的判定（delta-r1 F2）：UT-S21-26、UT-S21-28。
+- launched 与单模块零回归：UT-S21-27。

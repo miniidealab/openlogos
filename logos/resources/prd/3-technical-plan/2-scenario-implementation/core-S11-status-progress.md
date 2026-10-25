@@ -49,17 +49,18 @@ initial 模块的 phase 进度由 `cli/src/lib/flow-derive.ts` 从 **builtin** i
   `smoke_required = deployment_required && module.smoke_required !== false`（**未声明 smoke_required 视为 true**）。
 - **fallback-skip 兼容**：对未声明 `skip_phases` 的老项目，派生结果与旧「已完成 phase 之前的空
   phase 自动标 skipped」兜底逻辑一致（`phase.3-3-deployment` / `phase.3-7-deploy` /
-  `phase.3-8-smoke` 仍免于兜底跳过），current phase 不漂移。
+  `phase.3-8-smoke` 仍免于兜底跳过），current phase 不漂移。多模块项目的 initial 模块另有报告阶段的锚点限制，见下文「多模块报告阶段」。
 
 引擎只产数据（node done/skipped 状态 + fan-out 覆盖数据 `{ total, covered, missing }`），
-**done 判定规则由 status 消费端分别套用，二者均与现状 1:1，不可混淆**：
+**done 判定规则由 status 消费端分别套用，二者不可混淆**：
 
 | 阶段类别 | 顶层 `phases[]` 的 done | per-module `phase_progress` 的 done |
 |---|---|---|
 | **场景阶段**（`phase.3-1` 场景时序 / `phase.3-4a` 测试用例） | 目录有任意文件即 done（**any-present**） | 当前模块场景**全覆盖**才 done（**all-present**），并产 `scenario_coverage: { total, covered, missing }` |
-| **非场景阶段**（其余 11 个 phase） | 扫**整个目录**有任意文件即 done | 多模块时仅按 `{module}-` 前缀过滤后有任意文件即 done；单模块时目录任意文件即 done |
+| **报告阶段**（`phase.3-6` 验收 / `phase.3-7` 部署 / `phase.3-8` 冒烟） | 共用报告文件存在即 done（不变） | 单模块：共用报告文件存在即 done（不变）。多模块项目的 initial 模块：按模块报告判定（module-scoped-phase-reports，功能规格 §2.99.3）——`<m>-acceptance-report.md` / `<m>-smoke-report.md` 的 Summary 表「模块」行为 m 且 Gate 行为 PASS，`<m>-deployment-report.md` 是普通文件且非空；共用报告与其他模块的报告不计入；并受下文前沿门约束 |
+| **其余非场景阶段**（其余 8 个 phase） | 扫**整个目录**有任意文件即 done | 多模块时仅按 `{module}-` 前缀过滤后有任意文件即 done；单模块时目录任意文件即 done |
 
-补充约束（均为 legacy 1:1 保留）：
+补充约束（场景匹配、全局 skip 交集与并跑断言为 legacy 1:1 保留）：
 
 - **场景文件匹配保留 legacy `includes()` 子串匹配**：对每个场景 `${module}-${scenario}` 作子串
   包含判定（`phase.3-4a` 还需含 `-test-cases` 子串），**不改用 flow-spec §141 的 glob 精确匹配**。
@@ -69,7 +70,79 @@ initial 模块的 phase 进度由 `cli/src/lib/flow-derive.ts` 从 **builtin** i
 - **多模块全局 skip 交集**：顶层 `phases[]` 仅当所有 initial 模块都显式 skip 某 phase 时才将其标
   skipped（交集语义），与现状一致。
 - **并跑断言仅测试期**：在测试套件对同一 fixture 同时跑新引擎与旧 `deriveModulePhaseProgress` /
-  顶层 `phases[]` 并断言相等，**不进入生产 CLI 路径**，绝不让运行时断言导致 status 崩溃。
+  顶层 `phases[]` 并断言相等，**不进入生产 CLI 路径**，绝不让运行时断言导致 status 崩溃。旧派生
+  `deriveModulePhaseProgress`（`cli/src/commands/status.ts`）对报告阶段同步改为同一判据，等价矩阵新增带
+  共用报告、模块报告与 Gate FAIL 报告的多模块用例。
+
+### 多模块报告阶段（module-scoped-phase-reports）
+
+适用于 `logos-project.yaml` 登记了两个及以上模块时的 initial 模块（单模块项目、launched 模块不适用）：
+
+- **单一判定**：报告阶段的完成判据由一个共享函数给出（功能规格 §2.99.3）。验收、冒烟只读模块报告
+  Summary 表中「模块 / Module」行（须等于 m）与 `**Gate 3.5**` / `**Gate 3.8**` 行（须为 `**PASS**`）；
+  文件缺失或不是普通文件、缺「模块」行或值不是 m、无 Gate 行或为 FAIL 均不算完成，不做全文匹配
+  （delta-r1 F1：被共用报告 writer 写到该路径的内容没有本模块的「模块」行，不会被接受）。部署看
+  `<m>-deployment-report.md` 是否为普通文件且非空，同名目录与 0 字节文件不算（delta-r1 F2）。
+- **报告阶段不作 fallback-skip 锚点**：计算「已完成 phase 之前的空 phase 标 skipped」时，只以非报告阶段
+  中最后一个 done 的 phase 为锚点；报告阶段满足判据也不会让前面的空阶段被标 skipped。
+- **前沿门**：三个报告阶段按顺序求值，满足判据**且**其前面每个阶段都已 done 或 skipped 才判 done。模块
+  还在前期时，别的模块的 verify 为它写下的 Gate PASS 验收报告不会让它跳阶段，current phase 不漂移。
+- **overlay 派生同一判据**：`cli/src/lib/flow-overlay-derive.ts` 的 `evalPredicate` 对 `file:` 谓词，在多模块
+  项目的 initial 模块上、谓词路径恰为内置三条报告路径（`logos/resources/verify/acceptance-report.md`、
+  `deployment-report.md`、`smoke-report.md`）时，改用同一共享判定（含前沿门）；其他 `file:` 谓词仍是
+  「指定文件存在」（`spec/flow-spec.md` §9）。overlay 改写了这三个节点的 `done_when` 时按改写后的谓词求值。
+- **顶层 `phases[]` 不变**：仍扫共用报告文件，作为项目级视图；模块是否完成只看 per-module `phase_progress`。
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant CLI as openlogos status
+    participant FD as flow-derive
+    participant RJ as 报告判定（共享）
+    participant FS as logos/resources/verify/
+    U->>CLI: Step 1: openlogos status --format json
+    CLI->>FD: Step 2: 派生 initial 模块 m 的 phase_progress（多模块项目）
+    FD->>FD: Step 3: 求非报告阶段 done / skipped，按非报告阶段锚点计算 fallback-skip
+    FD->>RJ: Step 4: 依次判定 phase.3-6 / 3-7 / 3-8
+    RJ->>FS: Step 5: 读 m-acceptance-report.md / m-deployment-report.md / m-smoke-report.md
+    FS-->>RJ: Step 6: Gate 行 PASS / FAIL / 缺失；部署报告存在与否
+    RJ-->>FD: Step 7: 判据结果
+    FD->>FD: Step 8: 前沿门——前序阶段全部 done 或 skipped 才判 done
+    FD-->>CLI: Step 9: phase_progress 与 current phase
+    CLI-->>U: Step 10: 输出模块进度（共用报告不让 m 推进）
+```
+
+#### EX-11.21：共用报告存在、模块报告缺失
+
+- **触发条件**：多模块项目，initial 模块 team 前序阶段已完成，只有共用 `acceptance-report.md`（Gate PASS）。
+- **期望响应**：team 的 phase.3-6 不是 done，current phase 为 phase.3-6；`next` 提示运行 verify。
+- **副作用**：无。
+
+#### EX-11.22：其他模块的部署 / 冒烟报告
+
+- **触发条件**：共用 `deployment-report.md`、`smoke-report.md` 与 `core-deployment-report.md` 存在；team 尚无模块部署报告。
+- **期望响应**：team 的 phase.3-7、phase.3-8 不是 done。
+- **副作用**：无。
+
+#### EX-11.25：模块报告不属于本模块或不是合格文件
+
+- **触发条件**：`team-smoke-report.md` 的 Gate 3.8 为 PASS，但缺「模块」行或「模块」行为 `core`；或 `team-deployment-report.md` 是同名目录 / 0 字节文件。
+- **期望响应**：team 的对应阶段不是 done。
+- **副作用**：无。
+
+#### EX-11.23：模块报告 Gate 为 FAIL
+
+- **触发条件**：`team-acceptance-report.md` 存在，Gate 行为 FAIL，失败信息中含 `PASS` 字样。
+- **期望响应**：team 停在 phase.3-6。
+- **副作用**：无。
+
+#### EX-11.24：模块尚在前期却已有本模块 PASS 报告
+
+- **触发条件**：team 处于 phase.3-1；别的模块触发的 fallback-full verify 写下了 Gate PASS 的 `team-acceptance-report.md`。
+- **期望响应**：team 的 phase.3-6 不是 done，phase.3-1～3-5 不被标 skipped，current phase 仍为 phase.3-1。
+- **副作用**：无。
+
+追溯：功能规格 §2.99.3、§2.99.4；需求「S11/S13/S14/S19/S21/S42 多模块 initial 模块按模块阶段报告验收补充」；测试 UT-S11-101 起、ST-S11-53 起。
 
 ## launched proposal_step 派生来源（flow-derive）
 

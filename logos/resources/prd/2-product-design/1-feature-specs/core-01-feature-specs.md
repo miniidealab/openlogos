@@ -5487,3 +5487,105 @@ Claude Code（`plugin/bin/guard-check`）、Cursor（`plugin-cursor/hooks/runtim
 - 场景：`core-S41-environment-registry.md`「按模块的环境归属」、`core-S19-smoke-gate.md`「按模块限定 smoke」、`core-S21-deploy-done-marker.md`「按模块的环境校验」、`core-S42-environment-deploy.md`「按环境归属的部署通道」。
 - 测试：UT-S41-24 起、ST-S41-07 起、UT-S19-74 起、ST-S19-30 起、UT-S21-20 起、UT-S42-26 起；smoke：SMOKE-core-289 起。
 - 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.10 本机测试环境发布（module-scoped-env-smoke）」。
+
+## 2.99 多模块项目按模块的阶段报告
+
+> 来源变更：module-scoped-phase-reports（决策 C01、C02；proposal-r1 F1、F2、F3 处置）。权威规范见 `spec/flow-spec.md` §9、`spec/test-results.md`「多模块项目的模块验收报告与模块冒烟报告（module-scoped-phase-reports）」、`spec/environments.md` §14.9、`spec/directory-convention.md`；本节描述用户可见行为。场景：S11、S13、S14、S19、S21、S42 各自的「模块报告」子场景。
+
+### 2.99.1 适用范围
+
+- 只在**多模块项目**（`logos-project.yaml` 登记了两个及以上模块）中、且只对 `lifecycle: initial` 的模块写入与读取模块报告。
+- 单模块项目继续只写、只认共用的 `acceptance-report.md` / `deployment-report.md` / `smoke-report.md`，派生与 launch 判定不变。
+- launched 模块继续看提案标记（`VERIFY_PASS` / `DEPLOY_DONE` / `SMOKE_PASS`），不写模块报告。
+- 共用报告在任何项目中都照旧写入，写入时机与内容不变。
+
+### 2.99.2 报告路径与格式
+
+| 阶段 | 模块报告路径 | 格式 |
+|---|---|---|
+| phase.3-6 验收 | `logos/resources/verify/<m>-acceptance-report.md` | 与共用验收报告相同（标题、Summary 表、失败 / 跳过 / 未覆盖清单），只按 m 的用例子集统计；Summary 表新增「模块 / Module」行写 m |
+| phase.3-7 部署 | `logos/resources/verify/<m>-deployment-report.md` | 与共用部署报告相同的标题与段落；每次成功部署追加一段，不覆盖既有内容 |
+| phase.3-8 冒烟 | `logos/resources/verify/<m>-smoke-report.md` | 与共用冒烟报告相同，只按本次 m 的应覆盖用例统计；Summary 表新增「模块 / Module」行写 m |
+
+验收与冒烟模块报告每次写入整份覆盖；部署模块报告只追加。文件名前缀与其他阶段的 `<module>-` 前缀约定一致（`spec/module-naming-convention.md`）。
+
+- **保留路径**（delta-r1 F1）：多模块项目中，`logos/resources/verify/<id>-acceptance-report.md`、`<id>-deployment-report.md`、`<id>-smoke-report.md`（`<id>` 为任一已登记模块）是模块报告的保留路径，**只由本节的模块报告 writer 写入**。共用报告 writer 不得写入保留路径：配置的 `smoke.report_path` 或 `smoke.modules.<id>.report_path`（含模块级覆盖与回落到项目级后的取值）解析为任一保留路径时，smoke 把共用报告改写到默认路径 `logos/resources/verify/smoke-report.md`，并在 `diagnostics` 中给出警告 `smoke_report_path_reserved`（点名配置项与原路径），不影响门禁；smoke JSON 的 `report_path` 为实际写入的默认路径。验收与部署的共用报告路径固定，不会碰撞。单模块项目不设保留路径，配置路径照旧生效。
+- **原子发布**（delta-r1 F2）：CLI 写入或追加任何模块报告时，先在同目录写完整的临时文件，再以重命名替换正式路径；追加时临时文件内容为「旧内容 + 新段落」。写入过程中失败只留下临时文件（文件名不匹配保留路径），正式路径保持写入前的状态。
+
+### 2.99.3 完成判据（单一判定）
+
+- **验收、冒烟**：模块报告是普通文件，Summary 表中「模块 / Module」行的值等于目标模块 m，且首列为 `**Gate 3.5**`（验收）或 `**Gate 3.8**`（冒烟）的行，值恰为 `**PASS**`。文件缺失、不是普通文件、读不了、没有 Summary 表、缺「模块」行或其值不是 m（如被共用报告 writer 写入、内容属于另一模块）、没有 Gate 行、Gate 为 FAIL，都不算完成。只读这两行，不做全文匹配——失败用例的错误信息里出现 `PASS` 字样不影响结论。
+- **部署**：模块部署报告是**普通文件且非空**即完成。同名目录、指向目录的链接、0 字节文件都不算。CLI 只在部署成功并落账后、以原子发布写出它（§2.99.2、§2.99.7），首次发布失败不会在正式路径留下残留，所以存在本身就是成功凭据。
+- 这三条判定由同一个函数实现，供 status / next / watch 的 phase 派生（`deriveModulePhaseProgressViaFlow`）、overlay 派生（`flow-overlay-derive` 的 `file:` 谓词）、旧派生 `deriveModulePhaseProgress`（仅测试期等价断言）与 launch 共用。
+
+### 2.99.4 前沿门与 fallback-skip
+
+对多模块项目中的 initial 模块：
+
+1. 先求非报告阶段（phase.3-6 / 3-7 / 3-8 以外）的 done / skipped；
+2. 计算 fallback-skip（「已完成 phase 之前的空 phase 标 skipped」）时，**只用非报告阶段作锚点**：三个报告阶段即使已满足判据，也不会让前面的空阶段被标 skipped；
+3. 再按顺序求三个报告阶段：满足 §2.99.3 判据，**且**其前面的每个阶段都已 done 或 skipped，才判 done。
+
+效果：模块还在前期阶段时，别的模块触发的 verify 为它写下的 Gate PASS 验收报告不会让它跳阶段，current phase 不漂移。`when` 为假（如 `deployment_required: false`）的阶段照旧标 skipped，算作「已跳过」。顶层 `phases[]` 的派生不变（扫整个目录）。单模块项目的派生与 fallback-skip 不变。
+
+### 2.99.5 verify 写模块验收报告（proposal-r1 F3）
+
+- **覆盖的模块**：范围未启用、`--all`、`fallback-full` 时为全部已登记模块；`module` 模式时为范围 M。其中每个 initial 模块 m 写一份模块验收报告。未被覆盖的模块，已有模块报告保持不动。
+- **m 的用例子集 U(m)**：文件判据与范围 M={m} 时的 `testFileInScope` 相同——m 前缀测试规格中的用例，加上不带已登记模块前缀的测试规格中的用例（功能规格 §2.96.4「用例归属」）。本提案的变更用例只在属于这些规格时计入，属于其他模块前缀规格的变更用例归那个模块。U(m) 为空时不写 m 的报告。
+- **统计**：Defined / Executed / Passed / Failed / Skipped / Uncovered 只按 U(m) 计；手工用例排除规则与共用报告相同。
+- **模块 Gate**：同时满足以下条件才为 PASS：
+  1. U(m) 内零失败、零未覆盖；
+  2. **预跑命令**：`pre_run.commands[]` 中带 `modules` 的命令组非零退出，只计入它服务的模块；不带 `modules` 的命令（范围未启用时的项目级命令）非零退出，计入每个被覆盖模块；
+  3. **无法按用例或命令组归属的运行级拒绝**——结果账本不自洽、未定义结果 ID、沙箱判定失败（`sandbox.status=fail`）、切片核验失败——计入每个被覆盖模块。
+- 因此「一个模块的失败不影响另一模块报告的 Gate」只对能可靠归属的失败成立：模块各有独立命令组时，A 组非零退出不影响 B；共享 runner 非零退出时所有模块都 FAIL。
+- **写入时机**：在全部门禁（含沙箱改判）裁决之后、verify 输出最终结果之前写入；verify 在算出 Gate 之前就中止（如 `NO_TEST_CASES`）时不写任何模块报告。
+- verify JSON、`VERIFY_PASS` / `VERIFY_FAIL` 与共用报告不变。
+
+### 2.99.6 smoke 写模块冒烟报告
+
+- **目标模块确定**（`resolveTargetModule` 为 `mode: module`，含提案上下文与版本上下文）且目标模块 t 为 initial 模块：写 `<t>-smoke-report.md`，用例子集为本次 S(t)（§2.98.6），Gate 与本次 smoke 的 Gate 3.8 相同。
+- **未启用按模块区分**（§2.98.2）：项目级 smoke 的应覆盖用例就是全部规格，为每个 initial 模块各写一份，内容即项目级结果，「模块」行写各自的 id。
+- **已启用、但本次不限定模块**（`scope.mode=project`）：不写任何模块冒烟报告，避免用项目级命令的结果覆盖模块命令的结果。
+- 目标模块为 launched 模块时不写。smoke 在算出 Gate 之前就以错误退出时不写。PASS 与 FAIL 都写，与共用冒烟报告一致；`SMOKE_PASS` / `SMOKE_FAIL` 与账本行不变。
+- **写入次序**（delta-r1 F1）：模块冒烟报告在共用报告的最后一次写入（含环境证据收尾按最终结论重写共用报告）之后写入，Gate 取最终结论。共用报告不会写入保留路径（§2.99.2），因此即使配置的 `report_path` 与本模块的模块报告同名，最终落在该路径上的也只有模块报告 writer 的内容。
+- **路径碰撞不越权**：core（launched）提案的 smoke 即使配置了 `smoke.report_path: logos/resources/verify/team-smoke-report.md`，也只会把共用报告写到默认路径并给出 `smoke_report_path_reserved` 警告；`team-smoke-report.md` 保持不动，team 不因 core 的 PASS 完成 phase.3-8。
+
+### 2.99.7 部署写模块部署报告（proposal-r1 F1、F2）
+
+模块部署报告是**本模块一次成功部署的完成凭据**，只在成功边界发布：
+
+- **何时写**：部署的目标模块 t（`resolveTargetModule`；`deploy-done` 为提案模块）为 initial 模块，且同时满足：
+  1. 部署结果为成功（`result=done`）；
+  2. 本次必要记录全部提交成功——提案通道为共用报告追加成功且 `DEPLOY_DONE` / `[deploy]` 勾选 / 账本写入成功；版本通道为账本写入成功。
+- **哪些命令写**（CLI 统一处理，与通道无关）：`openlogos deploy`（script / ci，含 `--reconcile` 补记、`--rollback`）、`openlogos deploy --complete <id> --result done`（agent）、`openlogos deploy-done`。版本通道成功同样写——这是 initial 模块最常见的部署方式（没有本模块提案，或另一模块有活跃提案），不依赖共用报告的追加分支。
+- **段落内容**：script / ci 与共用报告同一段落格式（本次结果、版本、日志位置、输出尾部）；agent 完成与 `deploy-done` 没有 CLI 执行输出，段落写部署 id、环境、通道、方式、版本及来源、结果、记录时间。
+- **何时不写**：`DEPLOY_FAILED`、`DEPLOY_RESULT_UNKNOWN`、still-running、`--abandon`、dry-run，以及部署执行成功但记录提交失败（`DEPLOY_RECORD_FAILED`）。提案通道下共用报告照旧按实际结果追加诊断段，不受影响。
+- **原子发布**：按 §2.99.2 先写临时文件再替换；首次创建与后续追加都如此。
+- **写入失败**：记录已提交、模块报告发布失败（含正式路径被同名目录占用）时，命令以 `DEPLOY_RECORD_FAILED` 退出，`details.module_report_path` 指明路径；已提交的账本与标记不回滚。
+  - **首次发布失败**（此前没有合格的模块部署报告）：正式路径上没有可被判据接受的文件（同名目录不满足「普通文件」），阶段保持未完成；修复写入问题后重新执行同一部署命令。
+  - **已有成功报告时追加失败**：旧报告原样保留，仍是此前那次成功部署的完成凭据，阶段保持完成；本次部署只缺模块报告中的一段记录，以账本为准，需要补记时修复后重新执行同一部署命令。
+- **deployment-executor**：经上述 CLI 命令完成的部署不手写模块部署报告。只有 CLI 不参与记录时（没有登记表或目标环境未配置 `deploy`，且该 initial 模块没有活跃提案、无法执行 `deploy-done`），才由 Skill 在部署**成功后**写 `<m>-deployment-report.md`；失败只写共用报告或部署记录中的失败摘要，不写模块报告。
+- 目标模块为 launched 模块，或不限定模块时，不写模块部署报告。
+
+### 2.99.8 launch 前置
+
+- 多模块项目的 initial 模块：验收读 `<m>-acceptance-report.md`、冒烟读 `<m>-smoke-report.md`（均按 §2.99.3 只读 Gate 行），部署看 `<m>-deployment-report.md` 是否存在；是否要求部署与冒烟仍按 `moduleDeploymentRequired` / `moduleSmokeRequired`。只有共用报告、没有模块报告时拒绝，错误信息点名缺失的模块报告路径。
+- 单模块项目的 launch 判定不变（读共用报告）。
+
+### 2.99.9 写入白名单与沙箱
+
+verify 与 smoke 的报告写入允许路径扩展到对应模块报告（`logos/resources/verify/<m>-acceptance-report.md`、`<m>-smoke-report.md`），沙箱规则其余部分不变。
+
+### 2.99.10 兼容与非目标
+
+- 多模块项目中 initial 模块此前在 phase.3-6 必然卡死；本变更后要靠模块报告推进。已有的共用报告不迁移、不回填，需要的模块重跑一次 verify / 部署 / smoke 即可（C01）。
+- launch 对多模块 initial 模块改认模块报告；runlogos 的 team 需重跑一次 verify 与 smoke（C01 已写明）。
+- CLI JSON 字段集合不变（status `phase_progress` 的取值随判据变化，结构不变）；不新增命令参数；不新增错误码（模块报告写入失败复用 `DEPLOY_RECORD_FAILED`）；smoke `diagnostics` 新增警告取值 `smoke_report_path_reserved`，只在多模块项目的配置报告路径落在保留路径时出现。
+- 非目标：不改单模块项目「报告存在即完成」的语义；不给 JSON 增加模块报告字段；不为 launched 模块写模块报告；不 npm publish。
+
+### 2.99.11 追溯
+
+- 需求：`core-01-requirements.md`「S11/S13/S14/S19/S21/S42 多模块 initial 模块按模块阶段报告验收补充」。
+- 场景：`core-S11-status-progress.md`「initial phase 派生（flow-derive）与两套 legacy done 语义」、`core-S13-verify.md`「多模块项目写模块验收报告」、`core-S14-launch-lifecycle.md`「多模块 initial 模块的 launch 前置」、`core-S19-smoke-gate.md`「多模块项目写模块冒烟报告」、`core-S21-deploy-done-marker.md` 与 `core-S42-environment-deploy.md`「initial 模块的模块部署报告」。
+- 测试：UT-S11-101 起、ST-S11-53 起、UT-S13-122 起、ST-S13-33 起、UT-S14-22 起、ST-S14-27 起、UT-S19-90 起、ST-S19-33 起、UT-S21-23 起、UT-S42-29 起、ST-S42-09 起；smoke：SMOKE-core-298 起。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.12 本机测试环境发布（module-scoped-phase-reports）」。

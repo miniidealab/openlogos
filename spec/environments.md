@@ -607,3 +607,23 @@ openlogos approve --env <id|alias> --ref <revision> [--note <文字>] [--format 
 - 登记表、`DEPLOY_DONE`、账本与 smoke 结果文件格式不变；新增配置字段全部可选。
 - 引用失效永不降级为未声明；版本上下文永不读写提案标记、也不读取无关提案的变更用例；一个模块的提案永不被标记为部署到另一模块已声明的环境；smoke 的应覆盖集合与结果过滤永远是同一个集合 S。
 - 不新增 `--module` 参数；不给登记表环境条目加 `module` 字段（C01 否决项）。
+
+### 14.9 多模块 initial 模块的阶段报告（module-scoped-phase-reports）
+
+> 来源变更：module-scoped-phase-reports（决策 C01；proposal-r1 F1、F2 处置）。功能规格 §2.99.6、§2.99.7；完成判据见 `spec/flow-spec.md` §9；模块验收与冒烟报告格式见 `spec/test-results.md`「多模块项目的模块验收报告与模块冒烟报告」。本节与 §14.1 的启用条件无关：只要 `logos-project.yaml` 登记了两个及以上模块就适用，但只针对 `lifecycle: initial` 的模块。
+
+- **模块部署报告**：`logos/resources/verify/<m>-deployment-report.md`，是模块 m 一次成功部署的完成凭据：该路径是**普通文件且非空**即表示 phase.3-7 已完成，同名目录、指向目录的链接、0 字节文件都不算（delta-r1 F2）。与共用 `deployment-report.md` 同标题、同段落格式，只追加、不覆盖。
+- **原子发布**：CLI 首次创建与后续追加都先在同目录写完整临时文件（追加时为「旧内容 + 新段落」），再重命名替换正式路径；失败时正式路径保持写入前的状态，不留下可被完成判据接受的残留。
+- **写入条件**：部署的目标模块 t（§14.3 `resolveTargetModule`；`deploy-done` 为提案模块）为 initial 模块，且同时满足：
+  1. 部署结果为成功（`result=done`）；
+  2. 本次必要记录全部提交成功——提案通道：共用报告追加（§11.5）、`DEPLOY_DONE`、`[deploy]` 勾选、账本写入均成功；版本通道：账本写入成功。
+- **写入者**：`openlogos deploy`（script / ci，含 `--reconcile`、`--rollback`）、`openlogos deploy --complete <id> --result done`（agent）、`openlogos deploy-done`。提案通道与版本通道同一规则；版本通道成功同样写入，不依赖共用报告的追加分支（版本通道照旧不写共用报告）。
+- **段落内容**：script / ci 与共用报告同一段落（结果、版本、日志位置、输出尾部）；agent 完成与 `deploy-done` 写部署 id、环境、通道、方式、版本及来源、结果、记录时间。
+- **不写**：`DEPLOY_FAILED`、`DEPLOY_RESULT_UNKNOWN`、still-running、`--abandon`、`--dry-run`、agent `--result failed`，以及部署成功但记录提交失败（`DEPLOY_RECORD_FAILED`）。提案通道下共用报告照旧按实际结果追加。目标模块为 launched 模块或不限定模块时不写。
+- **写入失败**：记录已全部提交、模块报告发布失败（含正式路径被同名目录占用）时以 `DEPLOY_RECORD_FAILED` 退出，`details.module_report_path` 指明路径；已提交的账本与标记不回滚。
+  - 首次发布失败：正式路径上没有合格的模块部署报告，阶段保持未完成，修复后重新执行同一部署命令；
+  - 已有成功报告时追加失败：旧报告原样保留，仍是此前成功部署的完成凭据，阶段保持完成；本次部署以账本为准，需要补记时修复后重新执行同一部署命令。
+- **CLI 不参与记录的部署**（没有登记表或目标环境未配置 `deploy`，且该 initial 模块没有活跃提案、无法执行 `deploy-done`）：由 deployment-executor 在部署成功后写模块部署报告；失败不写。
+- **smoke 报告路径与保留路径**（delta-r1 F1）：§14.5 的 `smoke.report_path` 与 `smoke.modules.<id>.report_path` 在多模块项目中不得落在任一已登记模块的模块报告路径（`logos/resources/verify/<id>-{acceptance,deployment,smoke}-report.md`）上；落在其上时共用报告改写到默认路径并给出警告 `smoke_report_path_reserved`，模块报告只由模块报告 writer 写入。
+- **模块冒烟报告**：`openlogos smoke` 按 `spec/test-results.md`「多模块项目的模块验收报告与模块冒烟报告」写 `<m>-smoke-report.md`：目标模块确定为 initial 模块时写该模块；§14.1 未启用时为每个 initial 模块写；已启用但不限定模块时不写。
+- 登记表、账本、`DEPLOY_DONE` 与共用报告的格式均不变；不新增命令参数与错误码。

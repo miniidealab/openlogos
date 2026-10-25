@@ -302,3 +302,96 @@ sequenceDiagram
 ### 追溯
 
 - 测试：`core-S21-test-cases.md`「按模块的环境校验测试」（UT-S21-20 起）。
+
+## initial 模块的模块部署报告（module-scoped-phase-reports）
+
+> 来源变更：module-scoped-phase-reports（决策 C01；proposal-r1 F1 处置）。判据见功能规格 §2.99.3、§2.99.7，`spec/environments.md` §14.9。本节在既有落标流程全部写入成功之后追加一步；拒绝路径、写入顺序与原子性不变。
+
+### 场景目标
+
+多模块项目中，活跃提案属于 initial 模块 m 时，`openlogos deploy-done` 在落标成功之后向 `<m>-deployment-report.md` 追加一段完成登记，作为 m 离开 phase.3-7 的凭据；任何拒绝或写入失败都不留下这份凭据。
+
+### 参与者
+
+- **用户或 AI**：部署成功后执行 `openlogos deploy-done [--env <id> --ref <rev>]`。
+- **OpenLogos CLI（`deploy-done` 命令）**：`DEPLOY_DONE` 的唯一 writer，同时是本场景模块部署报告段落的 writer。
+- **提案工作区**：`DEPLOY_DONE`、`tasks.md` 的 `[deploy]` 勾选。
+- **部署账本**：传入登记环境时的 deploy 记录。
+- **模块部署报告**（`logos/resources/verify/<m>-deployment-report.md`）：m 已成功部署的凭据。
+
+### 前置条件
+
+- `logos-project.yaml` 登记了两个及以上模块；活跃提案的模块 m（`resolveProposalModuleContext`）为 `lifecycle: initial`。
+- 既有前置全部满足（`VERIFY_PASS`、部署决策、共用 `deployment-report.md` 已存在、环境与 `--ref` 校验通过）。
+
+### 成功后置条件
+
+- 既有落标结果不变（`[deploy]` 勾选、`DEPLOY_DONE`、账本、旧 smoke 标记清理）。
+- `<m>-deployment-report.md` 新增一段：部署 id、环境（或原始标签 / 未指定）、通道 `proposal`、方式 `deploy-done`、版本及来源、结果 `done`、记录时间；文件不存在时先写标题。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant U as 用户或 AI
+    participant CLI as openlogos deploy-done
+    participant P as 活跃提案目录
+    participant L as 部署账本
+    participant R as m-deployment-report.md
+
+    U->>CLI: Step 1: deploy-done --env team-prod --ref C
+    CLI->>CLI: Step 2: 既有前置、环境与按模块校验
+    alt 任一前置或校验失败
+        CLI-->>U: EX-MR.1：既有错误码，零写入，不写模块报告
+    else 校验通过
+        CLI->>P: Step 3: 快照后勾选 [deploy]、写 DEPLOY_DONE
+        CLI->>L: Step 4: 传入登记环境时追加 deploy 记录
+        alt 落标或账本写入失败（已回滚）
+            CLI-->>U: EX-MR.2：既有失败处理，不写模块报告
+        else 全部成功
+            CLI->>R: Step 5: 提案模块为多模块项目中的 initial 模块时追加一段完成登记
+            CLI-->>U: Step 6: 输出落标结果与下一步
+        end
+    end
+```
+
+### 步骤说明
+
+1. **用户或 AI** 在部署成功后执行 `openlogos deploy-done`。
+2. **CLI** 按既有顺序完成前置、环境与按模块校验；任一失败按既有错误码零写入退出。
+3. **CLI** 按既有原子流程快照、勾选 `[deploy]`、写 `DEPLOY_DONE`。
+4. **CLI** 传入登记环境时追加账本 deploy 记录（未声明环境的模块不写账本，既有规则）。
+5. **CLI** 以上全部成功后，若是多模块项目且提案模块 m 为 initial 模块，向 `logos/resources/verify/<m>-deployment-report.md` 追加一段完成登记。launched 模块与单模块项目不写。
+6. **CLI** 输出落标结果与下一步建议。
+
+### 异常与边界
+
+#### EX-MR.1：前置或校验拒绝
+
+- **触发条件**：`VERIFY_PASS` 缺失、`DEPLOYMENT_REPORT_MISSING`、`ENV_MODULE_MISMATCH`、`ENV_GATE_REFERENCE_UNKNOWN`、`DEPLOY_DONE_GATED_ENV` 等任一既有拒绝。
+- **期望响应**：既有错误码与退出码；不创建、也不追加 `<m>-deployment-report.md`。
+- **副作用**：无。
+
+#### EX-MR.2：落标或账本写入失败
+
+- **触发条件**：`DEPLOY_DONE` 写入失败或账本追加失败，既有流程已回滚快照。
+- **期望响应**：既有失败输出；不写模块报告，m 停在 phase.3-7。
+- **副作用**：无（快照已回滚）。
+
+#### EX-MR.3：模块报告写入失败
+
+- **触发条件**：落标与账本（或本通道必要记录）均已成功，`<m>-deployment-report.md` 无法发布（如正式路径被同名目录占用、临时文件写入中途失败）。
+- **期望响应**：以 `DEPLOY_RECORD_FAILED` 退出，`details.module_report_path` 指明路径；已写入的标记与账本不回滚。模块报告以原子发布写入（delta-r1 F2），正式路径保持写入前的状态：首次发布失败时没有合格的模块部署报告，m 停在 phase.3-7，`status` 不判完成、`launch` 被拒绝，修复后重新执行`deploy-done`；已有成功报告时追加失败，旧报告原样保留，阶段保持完成。
+- **副作用**：标记与账本保留；正式路径上不留部分内容。
+
+#### EX-MR.4：提案模块为 launched 模块
+
+- **触发条件**：core（launched）提案执行 `deploy-done`。
+- **期望响应**：行为与修改前一致，不写任何模块部署报告。
+- **副作用**：无。
+
+### 追溯
+
+- 需求：「S11/S13/S14/S19/S21/S42 多模块 initial 模块按模块阶段报告验收补充」AC-MOD-REPORT-04。
+- 功能规格：§2.99.7。
+- 测试：UT-S21-23 起。

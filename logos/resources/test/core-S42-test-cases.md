@@ -119,3 +119,37 @@
 | UT-S42-26 | 默认通道按环境归属 | MM：① core 活跃提案处于 ready-to-deploy；② team 活跃提案处于 ready-to-deploy | ① `deploy --env team-prod --ref <commit>`（不写 `--channel`）；② `deploy --env team-prod` | ① 版本通道成功，账本记录 `slug=null`、`channel=version`，core 提案目录字节不变、`proposal_step` 仍为 ready-to-deploy；② 提案通道，与既有提案通道行为一致（写报告、`DEPLOY_DONE`、勾选） |
 | UT-S42-27 | 显式提案通道的归属校验 | MM：core 活跃提案处于 ready-to-deploy | `deploy --env team-prod --channel proposal`；`deploy --env test --channel proposal` | 两者均 `ENV_MODULE_MISMATCH`（core 未声明环境，任何登记环境都不属于 E(core)），零执行、零写入、未取环境锁 |
 | UT-S42-28 | 引用失效在部署前拒绝 | MM 变体：team 声明 `[team-prod, team-old]`，`team-old` 未登记（引用失效），`team-prod` 仍有效归属 team；分别在无活跃提案与 core 活跃提案（ready-to-deploy）下执行 | `deploy --env team-prod --ref <commit>` | 目标模块为 team 且其声明含失效引用：报 `ENV_GATE_REFERENCE_UNKNOWN`（`invalid_references=["team-old"]`），在取环境锁与执行前拒绝，部署脚本未运行、账本字节不变、core 提案目录字节不变 |
+
+## 七、initial 模块的模块部署报告测试（module-scoped-phase-reports）
+
+> 覆盖场景 `core-S42-environment-deploy.md`「initial 模块的模块部署报告（module-scoped-phase-reports）」（EX-MR.1～EX-MR.5），功能规格 §2.99.7，`spec/environments.md` §14.9，决策 C01，proposal-r1 F1、F2。既有 S42 用例（含「按环境归属的部署通道测试」UT-S42-26 起）作为回归守护。测试实现必须写入 OpenLogos reporter（`logos/resources/verify/test-results.jsonl`），测试名包含对应 ID，`scenario_id="S42"`。
+>
+> **夹具 MP**（runlogos 形态）：`mktemp -d` 一次性 git 项目，`logos-project.yaml` 登记 `core`（launched，`deployment_gates.core.environments: [prod]`）与 `team`（initial，`deployment_gates.team.environments: [team-prod]`）；登记表含 `prod`、`team-prod`，均为 script 方式 `deploy`（测试脚本按设定退出码退出），另有 `team-ci`（ci 方式，观察结果由测试替身给出）与 `team-agent`（agent 方式）归属 team。变体 N：没有活跃提案；变体 C：core 有处于 ready-to-deploy 的活跃提案。
+
+### 单元测试（UT）
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S42-29 | 版本通道成功写模块部署报告（proposal-r1 F2） | §2.99.7 | 夹具 MP 变体 N 与变体 C；脚本退出 0；账本可写 | `deploy --env team-prod --ref <commit> --format json` | 两个变体都走版本通道；写出 `team-deployment-report.md`（标题 + 一段，段落格式与共用报告段落相同：结果、版本、日志位置、输出尾部）；共用 `deployment-report.md` 不写；变体 C 中 core 提案目录字节不变 |
+| UT-S42-30 | 失败、结果未知、进行中不写（proposal-r1 F1） | §2.99.7、EX-MR.1 | 夹具 MP 变体 N；① 脚本退出 1；② `team-ci` 观察超时；③ `team-ci` 远程仍在运行；④ `--dry-run`；⑤ `team-agent` 两段式第二段 `--complete <id> --result failed` | 执行对应 deploy 命令 | ① `DEPLOY_FAILED`；② `DEPLOY_RESULT_UNKNOWN`；③ still-running；④⑤ 既有输出；五种情形都不创建 `team-deployment-report.md` |
+| UT-S42-31 | 部署成功但记录提交失败不写（proposal-r1 F1） | §2.99.7、EX-MR.2 | 夹具 MP 变体 N，脚本退出 0，以测试钩子让账本追加失败；变体：team 有 ready-to-deploy 的活跃提案（提案通道），让 `DEPLOY_DONE` 写入失败 | `deploy --env team-prod` | 既有 `DEPLOY_RECORD_FAILED`；不创建 `team-deployment-report.md`；提案通道变体中共用报告照旧按实际结果追加（既有行为） |
+| UT-S42-32 | 补记、回滚、agent 完成在成功边界写 | §2.99.7 | 夹具 MP 变体 N；① `team-ci` 先结果未知，再 `--reconcile` 得 done；② team-prod 已有两次成功部署后 `--rollback` 成功；③ `team-agent` 第二段 `--complete <id> --result done` | 执行对应命令 | 三种情形各在成功后向 `team-deployment-report.md` 追加一段；①～② 段落格式与共用报告段落相同；③ 段落写部署 id、环境、通道、方式 `agent`、版本及来源、结果 `done`、记录时间 |
+| UT-S42-33 | 提案通道成功同时写共用报告与模块报告 | §2.99.7 | 夹具 MP，team 有 ready-to-deploy 的活跃提案；脚本退出 0 | `deploy --env team-prod --format json` | 提案通道；共用报告追加一段、`DEPLOY_DONE` 写入、`[deploy]` 勾选、账本写入；之后 `team-deployment-report.md` 追加同一段落 |
+| UT-S42-34 | 模块报告写入失败以 DEPLOY_RECORD_FAILED 退出，且不被判为已部署（delta-r1 F2） | §2.99.7、EX-MR.3 | 夹具 MP 变体 N；team 前序阶段齐全，已有 Gate PASS 的模块验收报告；脚本退出 0；`team-deployment-report.md` 位置被同名目录占用 | ① `deploy --env team-prod --ref <commit> --format json`；② 对 team 派生 `phase_progress`；③ `launch team` | ① 错误码 `DEPLOY_RECORD_FAILED`，`details.module_report_path` 为该路径；账本 deploy 记录保留（`result=done`）；② phase.3-7 未完成；③ 拒绝 |
+| UT-S42-36 | 发布中断不留残留；已有成功报告时追加失败保留旧凭据（delta-r1 F2） | §2.99.2、§2.99.7 | 夹具 MP 变体 N；脚本退出 0；以测试钩子让模块报告临时文件写入中途失败；变体 ①：此前没有 `team-deployment-report.md`；②：此前已有一段成功记录 | `deploy --env team-prod --ref <commit>` 后派生 team 的 `phase_progress` | 两个变体都以 `DEPLOY_RECORD_FAILED` 退出；① 正式路径不存在，phase.3-7 未完成；② 正式路径内容与执行前逐字节相同，phase.3-7 仍为完成 |
+| UT-S42-35 | launched 目标模块与不限定模块不写 | §2.99.7、EX-MR.4 | 夹具 MP；① `deploy --env prod --ref <commit>`（core，launched）；② 登记表另有不属于任何模块的 `shared-env`，无活跃提案，`deploy --env shared-env --ref <commit>` | 执行 deploy | 两种情形都不写任何 `<m>-deployment-report.md`；输出与账本与修改前相同 |
+
+### 场景测试（ST）
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S42-09 | 首次失败不推进，成功后推进 3-7，且不改动其他模块提案 | Step 1～7 | 真实 CLI；夹具 MP 变体 C；team 前序阶段齐全，已有 Gate PASS 的 `team-acceptance-report.md` | ① 脚本退出 1 时 `deploy --env team-prod --ref <commit>`；② `status --format json`；③ 脚本改为退出 0 后重跑 ①；④ `status --format json` | ① `DEPLOY_FAILED`，无 `team-deployment-report.md`；② team 停在 phase.3-7；③ 成功，写出 `team-deployment-report.md`；④ team 进入 phase.3-8；四步中 core 提案的 `DEPLOY_DONE`、`tasks.md` 与 `proposal_step` 均不变，共用 `deployment-report.md` 未被写入 |
+
+### 覆盖度校验（module-scoped-phase-reports 增量）
+
+- 版本通道写入（无活跃提案、另一模块有活跃提案）：UT-S42-29、ST-S42-09。
+- 失败、结果未知、进行中、dry-run、agent failed 不写：UT-S42-30、ST-S42-09。
+- 记录提交失败不写、模块报告写入失败：UT-S42-31、UT-S42-34。
+- 原子发布与失败后的判定（delta-r1 F2）：UT-S42-34、UT-S42-36。
+- 补记、回滚、agent 完成与提案通道成功：UT-S42-32、UT-S42-33。
+- launched 与不限定模块不写：UT-S42-35。

@@ -660,3 +660,39 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 - 无独立模块时全量、范围不缩小：UT-S19-87。
 - 变更用例 C 跨独立模块计入：UT-S19-88。
 - 多个独立模块互相扣除、最长匹配：UT-S19-89。
+
+## S19 多模块项目模块冒烟报告测试（module-scoped-phase-reports）
+
+> 覆盖场景 `core-S19-smoke-gate.md`「多模块项目写模块冒烟报告（module-scoped-phase-reports）」（EX-MR.1～EX-MR.4），功能规格 §2.99.2、§2.99.3、§2.99.6，`spec/environments.md` §14.9，`spec/test-results.md`「多模块项目的模块验收报告与模块冒烟报告（module-scoped-phase-reports）」，决策 C01。既有 UT-S19-74～UT-S19-89、ST-S19-30～ST-S19-32 作为回归守护。测试实现必须写入 OpenLogos reporter（`logos/resources/verify/test-results.jsonl`），测试名包含对应 ID，`scenario_id="S19"`。
+>
+> **夹具 MS**（runlogos 形态）：`mktemp -d` 一次性 git 项目，`logos-project.yaml` 登记 `core`（launched）与 `team`（initial，`deployment_gates.team.environments: [team-prod]`）；登记表含 `test`、`team-prod`（script 方式 `deploy`）；`logos.config.json` 的 `smoke.command` 为项目级记录型 runner，`smoke.modules.team.command` 为 team 记录型 runner；smoke 规格为 `core-smoke-test-cases.md`、`team-smoke-test-cases.md`。**夹具 M0**：同样两个模块，但不声明 `deployment_gates` 与 `smoke.modules`（按模块区分未启用），另登记第三个 initial 模块 `portal`。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S19-90 | 目标模块确定为 initial 模块时写模块冒烟报告 | §2.99.6 | 夹具 MS；无活跃提案；账本中 team-prod 最近一条为版本通道 `result=done` 的 deploy 记录；team runner 写 team 用例全 pass | `smoke --env team-prod --format json` | 写出 `logos/resources/verify/team-smoke-report.md`：Summary 含「模块 / Module」行 `team`，Defined 等于 S(team) 的用例数，`**Gate 3.8**` 为 `**PASS**`；共用 `smoke-report.md` 按既有规则写入；JSON 字段集合与修改前相同 |
+| UT-S19-91 | 未启用按模块区分时为每个 initial 模块写 | §2.99.6 | 夹具 M0；core 活跃提案已落标；项目级 runner 写全部结果 | `smoke --format json` | 写出 `team-smoke-report.md` 与 `portal-smoke-report.md`，统计与 Gate 均等于项目级结果，「模块」行分别为 `team`、`portal`；不写 `core-smoke-report.md` |
+| UT-S19-92 | 已启用但回落项目级时不写 | §2.99.6、EX-MR.1 | 夹具 MS；无活跃提案，不传 `--env`（`fallback_reason=no_env_no_proposal`）；已有一份旧 `team-smoke-report.md` | `smoke --format json` | `scope.mode=project`；只写共用报告；旧 `team-smoke-report.md` 内容与修改时间不变 |
+| UT-S19-93 | launched 目标模块不写 | §2.99.6、EX-MR.2 | 夹具 MS；core 活跃提案已落标 | `smoke --format json`（目标模块 core） | 不写任何 `<m>-smoke-report.md`；`SMOKE_PASS` / `SMOKE_FAIL` 按既有规则写入 |
+| UT-S19-94 | Gate FAIL 同样写，且只读 Gate 行判定 | §2.99.3、EX-MR.3 | 夹具 MS 版本上下文；team runner 把一条 team 用例写为 `fail`，错误信息含 `PASS` | `smoke --env team-prod` 后对 team 派生 `phase_progress` | `team-smoke-report.md` 的 Gate 行为 FAIL；team 的 phase.3-8 未完成 |
+| UT-S19-95 | Gate 判定前被拒绝不写 | §2.99.6、EX-MR.4 | 夹具 MS；变体 ①：`--env prod`（不属于 team 的已登记环境，team 有活跃提案）→ `ENV_MODULE_MISMATCH`；②：team 声明含失效引用 → `ENV_GATE_REFERENCE_UNKNOWN`；③：账本无 team-prod 的 deploy 记录导致部署身份核对失败 | 执行 smoke | 三个变体都以既有错误码退出，不创建、不修改 `team-smoke-report.md` |
+| UT-S19-97 | 共用报告路径指向其他模块凭据时不越权（delta-r1 F1） | §2.99.2、§2.99.6、EX-MR.5 | 夹具 MS；`smoke.report_path` 配置为 `logos/resources/verify/team-smoke-report.md`；team 已有 Gate PASS 的模块验收报告与模块部署报告、尚无模块冒烟报告；core 活跃提案已落标；项目级 runner 写 core 用例全 pass（team 用例未执行） | ① `smoke --format json`（目标模块 core）；② 对 team 派生 `phase_progress`；③ `launch team`；④ 变体：该路径上预先放一份旧版 CLI 写入的共用格式 PASS 报告（无「模块」行）后重复 ②③ | ① `gate.result=PASS`，`report_path="logos/resources/verify/smoke-report.md"`，`diagnostics` 含 `smoke_report_path_reserved`（点名 `smoke.report_path`）；`team-smoke-report.md` 不存在；② team 的 phase.3-8 未完成；③ 拒绝；④ 预置文件内容不变，② 仍未完成、③ 仍拒绝 |
+| UT-S19-98 | 模块级 report_path 与本模块凭据同名时的写入次序 | §2.99.6、EX-MR.6 | 夹具 MS；`smoke.modules.team.report_path` 为 `logos/resources/verify/team-smoke-report.md`；登记表存在，环境证据收尾会重写共用报告；版本上下文 | `smoke --env team-prod --format json` | 共用报告写到默认路径（含环境证据收尾的重写），`diagnostics` 含 `smoke_report_path_reserved`；`team-smoke-report.md` 恰被模块报告 writer 写入一次，「模块」行为 team、Gate 等于最终 Gate 3.8 |
+| UT-S19-99 | 单模块项目不设保留路径 | §2.99.2 | 只登记 `core` 的单模块项目；`smoke.report_path` 为 `logos/resources/verify/core-smoke-report.md` | `smoke --format json` | 共用报告照旧写到 `core-smoke-report.md`，无 `smoke_report_path_reserved`；输出与修改前逐字节相同 |
+| UT-S19-96 | 写入白名单含模块冒烟报告 | §2.99.9 | 夹具 MS 启用 smoke 沙箱，allow 列表为默认 | `smoke --env team-prod` | 沙箱允许写入 `logos/resources/verify/team-smoke-report.md`，无越界诊断 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S19-33 | 端到端：team 模块冒烟报告 PASS 后离开 3-8 | Step 1～5 | 真实 CLI；夹具 MS；core 有尚未部署的活跃提案；team 前序阶段齐全，已有 Gate PASS 的 `team-acceptance-report.md` | ① `deploy --env team-prod --ref <commit>`；② `smoke --env team-prod --format json`；③ `status --format json` | ① 版本通道成功并写出 `team-deployment-report.md`；② 通过，写出 Gate PASS 的 `team-smoke-report.md`；③ team 的 phase.3-7、3-8 均为 done；core 提案目录字节不变、`proposal_step` 不变 |
+
+### 覆盖度校验
+
+- 目标模块确定 / 未启用 / 回落项目级三种情形：UT-S19-90、UT-S19-91、UT-S19-92。
+- launched 目标模块与判定前拒绝不写：UT-S19-93、UT-S19-95。
+- FAIL 照写与 Gate 行判定：UT-S19-94。
+- 写入白名单：UT-S19-96。
+- 保留路径与写入次序（delta-r1 F1）：UT-S19-97、UT-S19-98、UT-S19-99。
+- 端到端推进：ST-S19-33。
