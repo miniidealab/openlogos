@@ -1171,3 +1171,69 @@ public_release_commit: 3d851a71a17c86d081ce9d69adf2ea88331a94fe
 ## 五、后续
 
 - 安装态 smoke：`openlogos smoke --env test`，覆盖 SMOKE-core-294～297（runner `scripts/smoke-smoke-scope-isolated-modules-0-16-11.js`，SMOKE-core-297 以按版本选取的 0.16.10 制品安装基线）与通用的 SMOKE-core-268～271。本工作单元不执行。
+
+## 部署记录 2026-10-25T05:54:49.118Z → test
+
+- 目标环境: test
+- 通道 / 执行方式: proposal / script
+- deploy_id: 489a82fc-8869-4069-8338-d8232b561cd9
+- ref_requested: 06485bef9633ab4df1932aa6ec6af94b2ffca30a（HEAD）
+- ref: 06485bef9633ab4df1932aa6ec6af94b2ffca30a
+- 执行脚本: scripts/deploy-local.mjs（workdir: worktree）
+- 耗时: 19460 ms
+- 结果: done
+- log_path: logos/.openlogos-runtime/deploy-logs/489a82fc-8869-4069-8338-d8232b561cd9.log
+- previous_ref: 131bff56142155a3148be9aab9c1ba6667bb8ec6
+
+# 部署报告：module-scoped-phase-reports / OpenLogos 0.16.12 本机全局发布（2026-10-25，**已部署：本机测试环境 test**）
+
+按部署方案「OpenLogos 0.16.12 本机测试环境发布（module-scoped-phase-reports）」经 `openlogos deploy --env test` 提案通道部署（登记表 `test.deploy` = script，`scripts/deploy-local.mjs`，workdir: worktree）。`next --auto` 以 deliver 门 `gate_auto_passed=true` 为执行依据。不 npm publish、不打 tag、不 push。
+
+## 一、部署前置
+
+- `openlogos verify` PASS（`VERIFY_PASS` 在场）。请求提交已提交：`3e6ed6f` 规格合并、`70d8e5a` 代码、`06485be` 验收报告，工作区干净。
+- 说明：`VERIFY_PASS` 与验收报告生成于 code 评审三轮修复之前（`VERIFY_PASS` 2026-10-24 22:19，修复至 22:46）。修复涉及 `cli/src`：
+  - code-r1：F1 未启用模块环境范围时的目标解析、F2 模块验收报告按完整 U(m)、F3 结果路径保留、F4 phase 派生保留 resolved `done_when`；
+  - code-r2：撤销新增错误码，改为改写到默认路径；
+  - code-r3：结果路径命中保留路径时 verify 不调用 runner，按 `pre_run_failed` 收尾。
+
+  最后一轮修复后已在本地全量运行 `npm test`：215 个测试文件，2971 个通过、1 个跳过、0 失败。`npm run lint` 0 error，`npx tsc --noEmit` 通过。
+- 版本事实：`cli/package.json` 为 0.16.12，回滚常量为 0.16.11（由 `node cli/scripts/bump-version.mjs 0.16.12` 写入）。`npm view @miniidealab/openlogos@0.16.12 version` 返回 404，registry 最高为 0.16.7。
+- `openlogos env check`：未发现问题。`openlogos deploy --env test --dry-run`：`channel=proposal`，请求版本 HEAD → `06485bef9633ab4df1932aa6ec6af94b2ffca30a`。
+- 部署前全局：`openlogos --version` = 0.16.11（smoke-scope-isolated-modules 的本机全局版本）；账本 `test.current_ref` = `131bff56142…`。
+
+## 二、部署结果与安装态读回
+
+- `deploy_id` = `489a82fc-8869-4069-8338-d8232b561cd9`，`ref` = `06485bef9633ab4df1932aa6ec6af94b2ffca30a`（`ref_source=explicit`），`result=done`，耗时 19.5 秒。
+- 落标：
+  - `DEPLOY_DONE` 由提案通道写入（`environment=test`）；`[deploy]` 三项由提案通道勾选；`next_step=ready-to-smoke`。
+  - 按部署方案，提案通道已完成受控落标，未再运行 `openlogos deploy-done`，以免生成新的 deploy_id 和不带 ref 的账本记录，覆盖本次部署身份。
+  - 本仓是单模块项目，不写模块部署报告。
+- 回执 `logos/.openlogos-runtime/local-install/last-deploy.json`：`candidate_version=0.16.12`，`previous_version=0.16.11`，`result=done`，`restored=false`。
+- 复核：
+  - `openlogos --version` = 0.16.12；
+  - 入口 realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` 等于回执 `entry_realpath`；
+  - 入口 SHA-256 `5b25f357876ae60f5b742233bbc8b5a264622eb27ee802e7ce645a7d5c8f1fdb` 等于回执 `candidate_entry_sha256`。入口薄文件两版未变，代码变化在 `dist/lib`。
+- 候选 tarball：`logos/.openlogos-runtime/local-install/candidates/489a82fc-8869-4069-8338-d8232b561cd9.tgz`，SHA-256 `08349b31746a0d2b49f0420dd63a5294b55b242b04f94ae11f9544fb875a7456`。
+- 回滚制品：`logos/.openlogos-runtime/local-install/rollback/489a82fc-8869-4069-8338-d8232b561cd9.tgz`，SHA-256 `def496f341eeaa9eec5f08fcccb0a30c46b1e4d0003533b556056a8d396f9139`。包内为部署前的本机全局 0.16.11，与 0.16.11 的候选 tarball 同哈希；它也是 SMOKE-core-302 按版本选取的行为比较基线。
+- 环境视图：`test.current_ref` = `06485bef9633…`；`previous_ref` = `131bff56142…`，即 0.16.11 的部署提交，与方案预期一致。
+
+## 三、本仓 sync 与同源核对
+
+- 本仓执行 `openlogos sync` 后读回：`logos/spec/flow-spec.md`、`logos/spec/test-results.md`、`logos/spec/environments.md`、`logos/spec/directory-convention.md`、`logos/skills/deployment-executor/SKILL.md` 与全局包内同名文件逐字节一致。
+- AGENTS.md / CLAUDE.md 与 sync 前逐字节一致；sync 没有改动受跟踪的托管文件。
+- sync 再次向本仓 `.claude/settings.json` 追加了重复的 SessionStart 条目（已知缺陷），已还原为 sync 前内容，不提交该重复项。
+- 不改写其他仓库（包括 runlogos），不在其项目根运行任何命令。
+
+## 四、回滚
+
+- 成功部署后要回到 0.16.11：执行 `openlogos deploy --env test --rollback`。账本 `previous_ref` 为 `131bff5…`，该提交含 `scripts/deploy-local.mjs`。回到 0.16.11 后，用 0.16.11 在本仓执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件。
+- 脚本失败时 `deploy-local.mjs` 自动以回滚制品回装（本次未触发）。
+- 本次无数据迁移：只新增模块报告文件，配置与既有报告格式不变；回到 0.16.11 后多余的模块报告文件被忽略。
+
+## 五、后续
+
+- 安装态 smoke：执行 `openlogos smoke --env test`，覆盖两组用例（本工作单元不执行）：
+  - SMOKE-core-298～302：runner `scripts/smoke-module-scoped-phase-reports-0-16-12.js`，SMOKE-core-302 以按版本选取的 0.16.11 制品为基线；
+  - 通用用例 SMOKE-core-268～271。
+- 该 runner 的自测（自测模式，候选为当时打包的 0.16.12，基线为 0.16.11）与反向检查（以 0.16.11 为候选时 298～301 失败），均在 code 评审修复之前完成。正式 smoke 将以本次部署的安装态重新取证。
