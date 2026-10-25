@@ -31,7 +31,9 @@ import {
   activeProposalModule, gateReferenceDetails, gateReferenceMessage, isModuleScopeEnabled, moduleMismatchDetails, moduleMismatchMessage,
   resolveModuleEnvironments, resolveTargetModule,
 } from '../lib/module-env-scope.js';
-import type { ModuleEnvDecl } from '../lib/module-env-scope.js';
+import type { ModuleEnvDecl, ModuleEnvMap } from '../lib/module-env-scope.js';
+import { appendModuleDeploymentReport, isMultiModuleInitial, moduleReportPath, registeredModules } from '../lib/module-phase-report.js';
+import { readProjectYaml } from '../lib/project-yaml.js';
 import {
   DEPLOYMENT_REPORT_PATH, observeWorkspace, preflightProposalDeploy, readActiveProposalGuard, resolveModuleDefaults,
   writeDeployCompletion, type ActiveProposalGuard, type DeployCompletionInput, type DeployCompletionResult,
@@ -66,6 +68,8 @@ export interface DeployHooks {
   afterRemoteQuery?: () => void;
   /** 获取环境锁时观察到遗留锁之后、回收之前（用于构造两个回收者的确定交错，UT-S42-12）。 */
   afterStaleLockObserved?: () => void;
+  /** 模块部署报告临时文件的写入（用于构造发布中断，UT-S42-36）；缺省为 writeFileSync。 */
+  moduleReportWrite?: (tmpPath: string, content: string) => void;
 }
 
 type Channel = 'proposal' | 'version';
@@ -991,6 +995,7 @@ function finish(ctx: FinishContext, id: DeployIdentity, o: Outcome): void {
   }
   if (o.result === 'done' && active) {
     if (reportError !== null) recordFailed(locale, record, o, line, reportError);
+    const reportTarget = moduleReportTarget(root, id.envId);
     const completion = (ctx.hooks.completion ?? writeDeployCompletion)({
       root, active, ledgerLine: line,
       // DEPLOY_DONE.ref_source 只有 explicit / unknown（§4.1）：有已确认版本即 explicit，账本记录保留 ci-reported
@@ -1003,6 +1008,7 @@ function finish(ctx: FinishContext, id: DeployIdentity, o: Outcome): void {
       recordFailed(locale, record, o, line, reason);
     }
     removePending(ctx.pendingPath, id.deployId);
+    publishModuleDeployment(ctx, reportTarget, record, id, o); // 成功边界之后（§2.99.7）
     const nextStep = detectProposalStepViaFlow(active.proposalDir, ctx.moduleDefaults, ctx.cmdEval);
     Object.assign(data, {
       ledger_written: completion.ledgerWritten,
@@ -1034,8 +1040,59 @@ function finish(ctx: FinishContext, id: DeployIdentity, o: Outcome): void {
   }
   if (ledgerError !== null) recordFailed(locale, record, o, line, ledgerError);
   removePending(ctx.pendingPath, id.deployId);
+  publishModuleDeployment(ctx, moduleReportTarget(root, id.envId), record, id, o); // 成功边界之后（§2.99.7）
   data.ledger_written = true;
   output(ctx.format, locale, data);
+}
+
+/**
+ * 模块部署报告的目标模块（§2.99.7、spec/environments.md §14.9）：多模块项目中按 §14.3 定目标模块
+ * （未启用按模块区分时环境不归属任何模块，有活跃提案取提案模块），只为 initial 模块返回 id。
+ */
+function moduleReportTarget(root: string, envId: string): string | null {
+  const modules = registeredModules(readProjectYaml(root).data?.modules);
+  if (modules.length < 2 || !modules.some(m => m.lifecycle === 'initial')) return null;
+  // 未启用按模块区分（或登记表不可用）时每个模块都是 undeclared：环境不归属任何模块，只按提案模块回落（code-r1 F1）
+  let map: ModuleEnvMap = resolveModuleEnvironments(root, null);
+  if (isModuleScopeEnabled(root)) {
+    const reg = loadEnvironmentRegistry(root);
+    if (reg.state === 'loaded') map = resolveModuleEnvironments(root, reg.environments);
+  }
+  const active = readActiveProposalGuard(root);
+  const proposalModule = active && existsSync(active.proposalDir)
+    ? activeProposalModule(root, active.slug, active.proposalDir, active.moduleId)
+    : null;
+  const target = resolveTargetModule(map, envId, proposalModule);
+  return target.mode === 'module' && isMultiModuleInitial(root, target.module) ? target.module : null;
+}
+
+/** 成功并落账后向模块部署报告追加一段；发布失败以 DEPLOY_RECORD_FAILED 退出（记录已提交、不回滚）。 */
+function publishModuleDeployment(ctx: FinishContext, moduleId: string | null, record: DeployLedgerRecord, id: DeployIdentity, o: Outcome): void {
+  if (moduleId === null) return;
+  const { root, locale } = ctx;
+  const lines = id.mode === 'agent'
+    ? [
+      t(locale, 'deploy.report.section', { time: record.recorded_at, environment: record.environment }),
+      '',
+      `- ${t(locale, 'deploy.report.environment')}: ${record.environment}`,
+      `- ${t(locale, 'deploy.report.channel')}: ${record.channel} / ${record.mode}`,
+      `- deploy_id: ${record.deploy_id}`,
+      `- ref: ${record.ref ?? t(locale, 'deploy.report.unconfirmed')}（${record.ref_source ?? 'unknown'}）`,
+      `- ${t(locale, 'deploy.report.result')}: done`,
+      `- recorded_at: ${record.recorded_at}`,
+    ]
+    : reportLines(locale, record, id, o);
+  const rel = moduleReportPath(moduleId, 'deployment');
+  try {
+    appendModuleDeploymentReport(root, moduleId, t(locale, 'deploy.report.title'), lines, ctx.hooks.moduleReportWrite);
+  } catch (error) {
+    throw new DeployExit('DEPLOY_RECORD_FAILED', t(locale, 'deploy.error.moduleReportFailed', {
+      deployId: record.deploy_id, environment: record.environment, path: rel, reason: (error as Error).message,
+    }), {
+      deploy_id: record.deploy_id, environment: record.environment, channel: record.channel, mode: record.mode,
+      ref: record.ref, deployed: true, ledger_written: true, module_report_path: rel,
+    });
+  }
 }
 
 function failureDetails(record: DeployLedgerRecord, o: Outcome, ledgerWritten: boolean): Omit<FailureDetails, 'deployed' | 'unwritten_record'> {

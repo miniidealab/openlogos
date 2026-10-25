@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { normalizeSandboxConfig, type NormalizedSandboxConfig } from './sandbox.js';
+import { reservedPathCollisions } from './module-phase-report.js';
 
 export const DEFAULT_VERIFY_RESULT_PATH = 'logos/resources/verify/test-results.jsonl';
 export const DEFAULT_VERIFY_MERGE_STRATEGY = 'last-write-wins';
@@ -46,6 +47,11 @@ export interface NormalizedVerifyConfig {
   moduleCommands: Record<string, ModuleCommandConfig>;
   /** `verify.modules` 的全部键（含未配置任何命令字段的项），用于未登记模块 id 的警告。 */
   moduleCommandIds: string[];
+  /**
+   * module-scoped-phase-reports（code-r1 F3 / code-r2 F3）：落在模块报告保留路径上、已改写的结果路径。
+   * 结果路径改写到默认路径（回归 / 增量路径回落到结果路径），verify 在 pre_run.diagnostics 给出说明；不新增错误码。
+   */
+  reservedRedirects?: Array<{ config_key: string; path: string; fallback: string }>;
 }
 
 export interface VerifyPreRunBackfillResult {
@@ -155,7 +161,25 @@ function normalizeModuleCommands(raw: unknown): Record<string, ModuleCommandConf
 
 export function readVerifyConfig(root: string): NormalizedVerifyConfig {
   const config = asRecord(readJsonFile(join(root, 'logos', 'logos.config.json')));
-  return normalizeVerifyConfig(config?.verify);
+  const normalized = normalizeVerifyConfig(config?.verify);
+  // 多模块项目中结果路径不得落在模块报告保留路径上（§2.99.2）：与 smoke 的报告路径同一处理——改写到默认路径
+  const redirects: Array<{ config_key: string; path: string; fallback: string }> = [];
+  for (const [key, path] of reservedPathCollisions(root, [
+    ['verify.result_path', normalized.resultPath],
+    ['verify.regression_result_path', normalized.regressionResultPath],
+    ['verify.incremental_result_path', normalized.incrementalResultPath],
+  ])) {
+    if (key === 'verify.result_path') {
+      normalized.resultPath = DEFAULT_VERIFY_RESULT_PATH;
+      redirects.push({ config_key: key, path, fallback: DEFAULT_VERIFY_RESULT_PATH });
+    } else {
+      if (key === 'verify.regression_result_path') normalized.regressionResultPath = undefined;
+      else normalized.incrementalResultPath = undefined;
+      redirects.push({ config_key: key, path, fallback: 'verify.result_path' });
+    }
+  }
+  if (redirects.length > 0) normalized.reservedRedirects = redirects;
+  return normalized;
 }
 
 export function hasVerifyPreRunConfig(rawVerify: unknown): boolean {

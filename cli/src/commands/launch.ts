@@ -7,6 +7,7 @@ import { readLifecycleView } from '../lib/lifecycle-view.js';
 import { syncLogosProjectName } from './sync.js';
 import { migrateProjectLifecycle } from '../lib/migrate-lifecycle.js';
 import { isAdoptedBootstrap } from '../lib/project-yaml.js';
+import { isModuleReportComplete, moduleReportPath, usesModuleReports, type ReportPhase } from '../lib/module-phase-report.js';
 
 function hasFile(path: string): boolean {
   return existsSync(path);
@@ -122,25 +123,47 @@ export function launch(moduleArg?: string) {
     return;
   }
 
-  const verifyReportPath = join(root, 'logos', 'resources', 'verify', 'acceptance-report.md');
-  if (!reportHasPass(verifyReportPath)) {
-    console.error(t(locale, 'launch.verifyRequired', { module: targetId }));
+  // module-scoped-phase-reports：多模块项目的 initial 模块改认本模块报告（功能规格 §2.99.8），
+  // 判据与 status 派生同一实现；单模块项目保留既有判定。
+  // 走到这里目标模块尚未 launched（lifecycle 缺省即 initial）
+  const moduleReports = usesModuleReports({ lifecycle: 'initial' }, modules.length >= 2);
+  const requireModuleReport = (phase: ReportPhase, key: string) => {
+    if (isModuleReportComplete(root, targetId, phase)) return;
+    console.error(t(locale, key, { module: targetId, path: moduleReportPath(targetId, phase) }));
     process.exit(1);
-  }
+  };
 
-  if (moduleDeploymentRequired(yaml as Record<string, unknown>, mod)) {
-    const deploymentReportPath = join(root, 'logos', 'resources', 'verify', 'deployment-report.md');
-    if (!hasFile(deploymentReportPath)) {
-      console.error(t(locale, 'launch.deployRequired', { module: targetId }));
+  if (moduleReports) {
+    requireModuleReport('acceptance', 'launch.moduleVerifyRequired');
+  } else {
+    const verifyReportPath = join(root, 'logos', 'resources', 'verify', 'acceptance-report.md');
+    if (!reportHasPass(verifyReportPath)) {
+      console.error(t(locale, 'launch.verifyRequired', { module: targetId }));
       process.exit(1);
     }
   }
 
+  if (moduleDeploymentRequired(yaml as Record<string, unknown>, mod)) {
+    if (moduleReports) {
+      requireModuleReport('deployment', 'launch.moduleDeployRequired');
+    } else {
+      const deploymentReportPath = join(root, 'logos', 'resources', 'verify', 'deployment-report.md');
+      if (!hasFile(deploymentReportPath)) {
+        console.error(t(locale, 'launch.deployRequired', { module: targetId }));
+        process.exit(1);
+      }
+    }
+  }
+
   if (moduleSmokeRequired(yaml as Record<string, unknown>, mod)) {
-    const smokeReportPath = join(root, 'logos', 'resources', 'verify', 'smoke-report.md');
-    if (!reportHasPass(smokeReportPath)) {
-      console.error(t(locale, 'launch.smokeRequired', { module: targetId }));
-      process.exit(1);
+    if (moduleReports) {
+      requireModuleReport('smoke', 'launch.moduleSmokeRequired');
+    } else {
+      const smokeReportPath = join(root, 'logos', 'resources', 'verify', 'smoke-report.md');
+      if (!reportHasPass(smokeReportPath)) {
+        console.error(t(locale, 'launch.smokeRequired', { module: targetId }));
+        process.exit(1);
+      }
     }
   }
 

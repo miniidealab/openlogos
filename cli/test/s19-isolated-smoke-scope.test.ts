@@ -155,7 +155,8 @@ describe('S19 独立 smoke 模块的应覆盖集合（smoke-scope-isolated-modul
 
   it('UT-S19-86: 只配置路径覆盖的模块不是独立模块（proposal-r1 F1）', () => {
     const variants: Array<[string, Record<string, string>]> = [
-      ['只写 report_path', { report_path: 'logos/resources/verify/core-smoke-report.md' }],
+      // 多模块项目中 <id>-smoke-report.md 是模块报告保留路径（module-scoped-phase-reports §2.99.2），路径覆盖用非保留文件名
+      ['只写 report_path', { report_path: 'logos/resources/verify/core-smoke-custom.md' }],
       ['只写 result_path', { result_path: 'logos/resources/verify/core-smoke-results.jsonl' }],
       ['空对象', {}],
     ];

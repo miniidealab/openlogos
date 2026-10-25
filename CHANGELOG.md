@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.12] - 2026-10-25
+
+本机全局发布（未发布到 npm）。
+
+### Fixed
+
+- **多模块项目中 initial 模块的验收、部署、冒烟阶段改认按模块的报告**（module-scoped-phase-reports）：0.16.11 及以前，这三个阶段的产物是全项目共用的 `acceptance-report.md` / `deployment-report.md` / `smoke-report.md`，多模块派生按模块前缀过滤永远判为未完成，initial 模块（如 runlogos 的 team）会在 phase.3-6 卡死；改认共用文件又会被其他模块的报告误判完成。
+  - 三个阶段改认 `<module>-acceptance-report.md`（「模块」行等于本模块且 Gate 3.5 PASS）、`<module>-deployment-report.md`（非空普通文件）、`<module>-smoke-report.md`（「模块」行等于本模块且 Gate 3.8 PASS），判定只读 Summary 表的这两行，不做全文匹配。
+  - 三个阶段只在前序阶段全部完成或跳过后才算完成，且不作 fallback-skip 的锚点；status / next / watch 的 phase 派生、overlay 派生与 `openlogos launch` 共用同一判定。
+  - `openlogos launch` 对多模块 initial 模块改认同一套模块报告；单模块项目判定不变。
+
+### Changed
+
+- `openlogos verify` 为本次覆盖的每个 initial 模块按其用例子集（本模块前缀规格 ∪ 不带前缀的规格）写模块验收报告；带 `modules` 的预跑命令失败只计入其服务的模块，无法归属的预跑失败、账本不自洽、沙箱失败计入每个被覆盖模块；报告在全部门禁裁决之后写入。
+- `openlogos deploy`（script / ci，含 `--reconcile`、`--rollback`）、`deploy --complete --result done` 与 `deploy-done` 在部署成功且必要记录全部提交后，为目标 initial 模块追加模块部署报告，版本通道同样写；失败、结果未知、记录失败均不写；发布失败以 `DEPLOY_RECORD_FAILED` 退出并带 `details.module_report_path`。
+- `openlogos smoke` 在目标模块确定为 initial 模块时写模块冒烟报告，未启用按模块区分时为每个 initial 模块写，回落项目级时不写。
+- 模块报告一律以原子发布写入（同目录临时文件后替换），失败不留可被接受的残留。
+- 多模块项目中模块报告路径为保留路径：`smoke.report_path` / `smoke.modules.<id>.report_path` 落在其上时，共用冒烟报告改写到默认 `smoke-report.md`，`diagnostics` 新增警告 `smoke_report_path_reserved`。
+
+### 升级提示
+
+- 多模块项目的 initial 模块需重跑一次 verify（以及部署、smoke）生成模块报告；已有共用报告不迁移、不回填。
+- 单模块项目与 launched 模块行为不变。
+
 ## [0.16.11] - 2026-10-20
 
 本机全局发布（未发布到 npm）。

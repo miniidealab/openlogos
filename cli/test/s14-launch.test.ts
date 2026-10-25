@@ -20,6 +20,15 @@ function writeLaunchGateReports(root: string, opts: { deploy?: boolean; smoke?: 
   if (opts.smoke) writeFileSync(join(verifyDir, 'smoke-report.md'), '# Smoke Report\nPASS');
 }
 
+/** module-scoped-phase-reports：多模块项目的 initial 模块改认本模块报告（功能规格 §2.99.8）。 */
+function writeModuleLaunchReports(root: string, moduleId: string) {
+  const verifyDir = join(root, 'logos', 'resources', 'verify');
+  const summary = (gate: string) => `## Summary\n\n| Metric | Value |\n|--------|-------|\n| Module | ${moduleId} |\n| **${gate}** | **PASS** |\n`;
+  writeFileSync(join(verifyDir, `${moduleId}-acceptance-report.md`), `# Acceptance Report\n\n${summary('Gate 3.5')}`);
+  writeFileSync(join(verifyDir, `${moduleId}-deployment-report.md`), '# Deployment Report\n\n## Deployment\n\n- deploy_id: d1\n');
+  writeFileSync(join(verifyDir, `${moduleId}-smoke-report.md`), `# Smoke Report\n\n${summary('Gate 3.8')}`);
+}
+
 describe('S14 Scenario Tests — launch command (module-level)', () => {
   let root: string;
   let cleanup: () => void;
@@ -128,6 +137,7 @@ describe('S14 Scenario Tests — launch command (module-level)', () => {
       ],
     });
     writeLaunchGateReports(root, { deploy: true, smoke: true });
+    writeModuleLaunchReports(root, 'core'); // 多模块 initial 模块只认本模块报告（module-scoped-phase-reports）
 
     launch('core');
 

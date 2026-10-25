@@ -332,4 +332,11 @@ function writeLaunchEvidence(root: string) {
   writeFileSync(join(verify, 'acceptance-report.md'), '# 验收\nPASS\n');
   writeFileSync(join(verify, 'deployment-report.md'), '# 部署\n');
   writeFileSync(join(verify, 'smoke-report.md'), '# Smoke\nPASS\n');
+  // module-scoped-phase-reports：多模块项目的 initial 模块 launch 只认本模块报告（功能规格 §2.99.8）
+  for (const id of ['core', 'team']) {
+    const summary = (gate: string) => `## Summary\n\n| Metric | Value |\n|--------|-------|\n| Module | ${id} |\n| **${gate}** | **PASS** |\n`;
+    writeFileSync(join(verify, `${id}-acceptance-report.md`), `# Acceptance Report\n\n${summary('Gate 3.5')}`);
+    writeFileSync(join(verify, `${id}-deployment-report.md`), '# Deployment Report\n\n- deploy_id: d1\n');
+    writeFileSync(join(verify, `${id}-smoke-report.md`), `# Smoke Report\n\n${summary('Gate 3.8')}`);
+  }
 }

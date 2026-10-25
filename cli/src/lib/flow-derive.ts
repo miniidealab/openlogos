@@ -38,6 +38,7 @@ import type { ProposalStep } from './proposal-lifecycle.js';
 import { mintStep, type MintedStep } from './step-registry.js';
 import type { ModuleInfo, PhaseProgressItem } from '../commands/status.js';
 import { deriveUiImpact } from './ui-first.js';
+import { applyFallbackSkipAndFrontier, isModuleReportComplete, REPORT_PHASE_BY_KEY, reportPhaseOfSharedPath, usesModuleReports } from './module-phase-report.js';
 import { evaluatePlanPackage } from './plan-package.js';
 import type { PlanPackageEvaluation } from './plan-package-contract.js';
 
@@ -93,6 +94,8 @@ export interface FlowPhasePlanItem {
   nodeId: string;
   overlaySkipped?: boolean; // M2 切片 1a：overlay op:skip / when=false 在 resolved 中标记的跳过
   coverageThreshold?: number; // S29：fan-out 聚合阈值（0<x<=1）；仅 done_when:all_present 节点；未设置则省略
+  /** resolved flow 中节点的 done_when（含 overlay 改写）；报告阶段据此判断是否套用模块报告判定（code-r1 F4）。 */
+  doneWhen?: string | null;
 }
 
 /**
@@ -120,6 +123,7 @@ export function buildInitialPhasePlan(root?: string): FlowPhasePlanItem[] {
         whenExpr: node.when ?? null,
         nodeId: node.id,
         overlaySkipped: node.skipped === true,
+        doneWhen: node.done_when ?? null,
         // S29：仅 done_when:all_present 的 fan-out 节点带阈值（校验已保证合法挂载）；未设置则 undefined
         ...(node.coverage_threshold != null ? { coverageThreshold: node.coverage_threshold } : {}),
       });
@@ -198,6 +202,7 @@ export function deriveModulePhaseProgressViaFlow(
 ): { progress: Record<string, PhaseProgressItem>; currentPhase: string | null } {
   const progress: Record<string, PhaseProgressItem> = {};
   const ctx = whenContext(mod);
+  const moduleReports = usesModuleReports(mod, isMultiModule);
 
   for (const item of plan) {
     const key = item.phaseKey;
@@ -240,6 +245,12 @@ export function deriveModulePhaseProgressViaFlow(
         skipped: false,
         scenario_coverage: { total, covered: covered.length, missing },
       };
+    } else if (moduleReports && REPORT_PHASE_BY_KEY[key] && item.doneWhen?.startsWith('file:')) {
+      // module-scoped-phase-reports：与 overlay 的 file: 谓词同一判据（spec/flow-spec.md §9）——谓词路径为内置报告路径时
+      // 按本模块报告判定，被 overlay 改写为其他 file: 路径时按「文件存在」（code-r1 F4）；前沿门照常施加
+      const path = item.doneWhen.slice('file:'.length).trim();
+      const phase = reportPhaseOfSharedPath(path);
+      progress[key] = { done: phase ? isModuleReportComplete(root, mod.id, phase) : existsSync(join(root, path)), skipped: false };
     } else {
       // 非场景阶段：多模块按 {module}- 前缀过滤，单模块任意文件
       const allFiles = listFiles(dir);
@@ -250,12 +261,10 @@ export function deriveModulePhaseProgressViaFlow(
     }
   }
 
-  // fallback-skip：已完成 phase 之前的空 phase 标 skipped（NON_FALLBACK 除外）
+  // fallback-skip：已完成 phase 之前的空 phase 标 skipped（NON_FALLBACK 除外）；
+  // 多模块 initial 模块的报告阶段不作锚点，并受前沿门约束（§2.99.4）
   const keys = plan.map(p => p.phaseKey);
-  const lastDoneIdx = keys.reduce((acc, k, i) => (progress[k].done ? i : acc), -1);
-  for (let i = 0; i < lastDoneIdx; i++) {
-    if (!progress[keys[i]].done && !NON_FALLBACK_SKIP_PHASE_KEYS.has(keys[i])) progress[keys[i]].skipped = true;
-  }
+  applyFallbackSkipAndFrontier(keys, progress, NON_FALLBACK_SKIP_PHASE_KEYS, moduleReports);
 
   const currentPhase = keys.find(k => !progress[k].done && !progress[k].skipped) ?? null;
   return { progress, currentPhase };

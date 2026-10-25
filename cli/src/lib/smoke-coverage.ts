@@ -10,7 +10,9 @@ export type SmokeCoverageDiagnosticCode =
   | 'smoke_reporter_missing'
   | 'smoke_cases_uncovered'
   /** module-scoped-env-smoke：smoke.modules.<id> 未登记（警告，不影响门禁；spec/environments.md §14.5）。 */
-  | 'smoke_module_unknown';
+  | 'smoke_module_unknown'
+  /** module-scoped-phase-reports：配置的报告路径落在模块报告保留路径上，共用报告改写到默认路径（警告，§2.99.2）。 */
+  | 'smoke_report_path_reserved';
 
 export interface SmokeCoverageDiagnostic {
   code: SmokeCoverageDiagnosticCode;
@@ -21,6 +23,9 @@ export interface SmokeCoverageDiagnostic {
   runner_paths?: string[];
   /** smoke_module_unknown：未登记的模块 id。 */
   module?: string;
+  /** smoke_report_path_reserved：落在保留路径上的配置项与原路径。 */
+  config_key?: string;
+  path?: string;
 }
 
 export interface SmokeCoverageCheck {

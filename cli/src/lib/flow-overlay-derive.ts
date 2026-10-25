@@ -23,6 +23,7 @@ import {
 import { NODE_TO_PHASE_KEY, PHASE_KEY_TO_NODE_ID, evalNodeWhen, detectProposalStepViaFlow } from './flow-derive.js';
 import type { ModuleInfo } from '../commands/status.js';
 import type { ProposalStep } from './proposal-lifecycle.js';
+import { isModuleReportComplete, reportPhaseOfSharedPath, usesModuleReports } from './module-phase-report.js';
 
 export type OverlayNodeState = 'done' | 'active' | 'skipped' | 'failed' | 'pending';
 
@@ -117,7 +118,12 @@ function evalPredicate(pred: string, node: FlowNode, ctx: DeriveCtx): boolean {
     return scoped.length > 0;
   }
   if (pred.startsWith('file:')) {
-    return existsSync(join(root, pred.slice('file:'.length).trim()));
+    const path = pred.slice('file:'.length).trim();
+    // module-scoped-phase-reports：多模块 initial 模块的内置三条报告谓词改按模块报告求值
+    // （spec/flow-spec.md §9）；前沿门由逐节点顺序走查天然满足。其他 file: 谓词仍为「文件存在」。
+    const phase = usesModuleReports(ctx.mod, ctx.isMultiModule) ? reportPhaseOfSharedPath(path) : null;
+    if (phase) return isModuleReportComplete(root, ctx.mod.id, phase);
+    return existsSync(join(root, path));
   }
   if (pred.startsWith('marker:')) {
     return proposalDir ? existsSync(join(proposalDir, pred.slice('marker:'.length).trim())) : false;

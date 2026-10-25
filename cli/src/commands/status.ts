@@ -91,6 +91,7 @@ import {
 import { contractVersion, mintStep } from '../lib/step-registry.js';
 import { deriveStateInconsistency, readLifecycleFactsAt, type StateInconsistency } from '../lib/lifecycle-gate.js';
 import type { StepMeta } from '../lib/step-registry.js';
+import { applyFallbackSkipAndFrontier, isModuleReportComplete, REPORT_PHASE_BY_KEY, usesModuleReports } from '../lib/module-phase-report.js';
 import type {
   ProposalFacts,
   ProposalStep,
@@ -373,6 +374,7 @@ export function deriveModulePhaseProgress(
 ): { progress: Record<string, PhaseProgressItem>; currentPhase: string | null } {
   const progress: Record<string, PhaseProgressItem> = {};
   const isBootstrapAdopted = isAdoptedBootstrap(mod.bootstrap);
+  const moduleReports = usesModuleReports(mod, isMultiModule);
 
   // Build set of phase keys to skip from explicit skip_phases declaration
   const explicitSkip = deriveExplicitSkipPhaseKeys(mod);
@@ -409,6 +411,9 @@ export function deriveModulePhaseProgress(
         skipped: false,
         scenario_coverage: { total: scenarios.length, covered: covered.length, missing },
       };
+    } else if (moduleReports && REPORT_PHASE_BY_KEY[key]) {
+      // module-scoped-phase-reports：与 flow 派生同一判据（§2.99.3）
+      progress[key] = { done: isModuleReportComplete(root, mod.id, REPORT_PHASE_BY_KEY[key]), skipped: false };
     } else {
       // In multi-module projects, only count files with the module's prefix.
       // In single-module projects, any file in the directory counts (backward compat).
@@ -421,12 +426,10 @@ export function deriveModulePhaseProgress(
   }
 
   // Fallback: mark skipped for empty phases that appear before a done phase
-  // (handles projects without skip_phases declared — backward compatibility)
+  // (handles projects without skip_phases declared — backward compatibility);
+  // report phases of multi-module initial modules are not anchors and obey the frontier gate (§2.99.4)
   const keys = PHASE_KEYS;
-  const lastDoneIdx = keys.reduce((acc, k, i) => (progress[k].done ? i : acc), -1);
-  for (let i = 0; i < lastDoneIdx; i++) {
-    if (!progress[keys[i]].done && !NON_FALLBACK_SKIP_PHASES.has(keys[i])) progress[keys[i]].skipped = true;
-  }
+  applyFallbackSkipAndFrontier(keys, progress, NON_FALLBACK_SKIP_PHASES, moduleReports);
 
   const currentPhase = keys.find(k => !progress[k].done && !progress[k].skipped) ?? null;
   return { progress, currentPhase };

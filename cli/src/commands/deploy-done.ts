@@ -23,6 +23,7 @@ import {
 } from '../lib/module-env-scope.js';
 import type { DeployLedgerRecord } from '../lib/environments.js';
 import { appendLedgerLine, removeOwnLedgerLine } from '../lib/deployment-ledger.js';
+import { appendModuleDeploymentReport, isMultiModuleInitial, moduleReportPath } from '../lib/module-phase-report.js';
 
 export const DEPLOYMENT_REPORT_PATH = 'logos/resources/verify/deployment-report.md';
 
@@ -599,7 +600,12 @@ export function writeDeployCompletion(input: DeployCompletionInput): DeployCompl
   };
 }
 
-export async function deployDone(format: OutputFormat = 'text', environment?: string, refInput?: string) {
+export interface DeployDoneHooks {
+  /** 模块部署报告临时文件的写入（用于构造发布中断，UT-S21-28）；缺省为 writeFileSync。 */
+  moduleReportWrite?: (tmpPath: string, content: string) => void;
+}
+
+export async function deployDone(format: OutputFormat = 'text', environment?: string, refInput?: string, hooks: DeployDoneHooks = {}) {
   const root = process.cwd();
   const configPath = join(root, 'logos', 'logos.config.json');
   const locale = readLocale(root);
@@ -661,6 +667,30 @@ export async function deployDone(format: OutputFormat = 'text', environment?: st
   }
   const markerRelativePath = completion.markerPath;
   const ledgerWritten = completion.ledgerWritten;
+
+  // module-scoped-phase-reports：提案模块为多模块项目中的 initial 模块时，落标成功后追加模块部署报告（§2.99.7）
+  const reportModule = activeProposalModule(root, active.slug, active.proposalDir, active.moduleId);
+  if (isMultiModuleInitial(root, reportModule)) {
+    const rel = moduleReportPath(reportModule!, 'deployment');
+    try {
+      appendModuleDeploymentReport(root, reportModule!, t(locale, 'deploy.report.title'), [
+        t(locale, 'deploy.report.section', { time: marker.recorded_at, environment: marker.environment ?? '-' }),
+        '',
+        `- ${t(locale, 'deploy.report.environment')}: ${marker.environment ?? '-'}`,
+        `- ${t(locale, 'deploy.report.channel')}: proposal / deploy-done`,
+        `- deploy_id: ${marker.deploy_id}`,
+        `- ref: ${marker.ref ?? t(locale, 'deploy.report.unconfirmed')}（${marker.ref_source}）`,
+        `- ${t(locale, 'deploy.report.result')}: done`,
+        `- recorded_at: ${marker.recorded_at}`,
+      ], hooks.moduleReportWrite);
+    } catch (error) {
+      failRaw(format, 'DEPLOY_RECORD_FAILED', t(locale, 'deploy.error.moduleReportFailed', {
+        deployId: marker.deploy_id, environment: marker.environment ?? '-', path: rel, reason: (error as Error).message,
+      }), 'deploy-done', {
+        details: { deploy_id: marker.deploy_id, environment: marker.environment, deployed: true, ledger_written: ledgerWritten, marker_path: markerRelativePath, module_report_path: rel },
+      });
+    }
+  }
   const checkedTasks = { checked: completion.deployTasksChecked, total: completion.deployTasksTotal };
   const clearedSmokeMarkers = completion.clearedSmokeMarkers;
   // S30·#1：cmd-gate verify 通过后磁盘无 VERIFY_PASS，必须把 cmdEval 回灌 detect，否则会误判停在 ready-to-verify
