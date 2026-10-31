@@ -2644,3 +2644,37 @@
 - 全部读写只在 `mktemp -d` 的一次性项目、一次性调用日志目录与一次性基线 prefix 内进行，结束即删除。
 - **不得**触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态目录、用户其他仓库（包括 runlogos）或本机全局 prefix。
 - 结果写入本仓 `logos/resources/verify/smoke-results.jsonl`，结果行带 `target_environment="test"`。
+
+## OpenLogos 0.16.13 CLI 管道输出完整排空安装态 smoke（SMOKE-core-303～305）
+
+> 这组用例验证 CLI 退出时管道输出完整排空（来源提案 fix-cli-exit-truncates-piped-output，场景 S16「非零退出时 JSON envelope 排空后退出 > CLI 入口统一设置阻塞写」EX-2.7、EX-2.8）确实进入了本机全局安装态。这是 CLI 运行时行为，只有全局 `openlogos` 升级后才对各项目（含 RunLogos driver 的消费）生效。
+>
+> 用例在 `mktemp -d` 一次性隔离项目内执行，经全局 `openlogos init` 建立后写入夹具；一律以 Node `child_process.spawn` 启动全局 CLI（默认 stdio 为 socketpair，macOS 下 8192 字节即截断），输出量 > 65536 字节，断言前先断言收到字节数。runner 以子进程调用全局 CLI，对全局安装态**只读**，不做安装或卸载；不触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态账本与用户其他仓库（包括 runlogos）。版本以部署记录与 `cli/src/lib/local-release-candidate.ts` 的候选版本为准，断言写成关系式，不硬编码 `0.16.13`。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-303 | 安装态版本与制品身份 | 本机全局已安装本次候选；部署记录中有候选版本 | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 检查全局包内存在 `dist/lib/stdio-blocking.js`，且 `dist/index.js` 引用 `ensureBlockingStdio` | ① `--version` 等于部署记录候选版本，入口无 workspace link；② `payloadHash` 自洽；③ 成立 | 保留读取结果；任一不符 → 停止后续流程，按部署方案以 `openlogos deploy --env test --rollback` 回到 0.16.12 |
+| SMOKE-core-304 | 安装态写出后立即退出的命令经 Node spawn 管道输出完整 | 本机全局已安装本次候选；临时 launched 单模块项目，活跃提案 `big-lint` 含 300 个缺段标记的 delta | ① Node `spawn` 全局 CLI `change-lint --format json` 读至 EOF；② Node `spawn` 全局 CLI `merge big-lint` 读 stderr 至 EOF | ① 收到字节数 > 65536，`JSON.parse` 成功，delta 违规条数为 300，退出码 2；② stderr > 65536 字节，逐条违规行数等于 ① 的违规总数，末尾自查提示在场，退出码 1 | 同上；任一不成立表示管道排空修复未进入安装态 |
+| SMOKE-core-305 | 安装态消费方暂停读取时运行期区间仍及时响应 | 本机全局已安装本次候选；POSIX；临时 git 项目，登记表 `prod` 为 script 部署（脚本先记录进程号并派生孙进程，再回显 > 65536 字节后休眠），`timeout_sec: 3` | ① Node `spawn` 全局 CLI `deploy --env prod --ref HEAD`（text 模式）且不读取输出，等待脚本与孙进程被终止；② 恢复读取直至 EOF；③ 另起 400 模块临时项目，Node `spawn` 全局 CLI `watch --format json --interval 60` 且不读取输出，经 `OPENLOGOS_STDIO_TRACE` 观测到 `watch-ready` 后发 SIGINT | ① 在 `timeout_sec` + 10s 内脚本与孙进程均已终止，此时 CLI 尚未退出；② 回显末行在场，退出码 1；③ 10s 内以退出码 0 退出、无信号终止 | 同上 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目与一次性日志目录内进行，结束即删除；部署夹具的 `deploy` 只作用于一次性项目自带的登记表与一次性发布目录。
+- **不得**触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态目录、用户其他仓库（包括 runlogos）或本机全局 prefix。
+- 结果写入本仓 `logos/resources/verify/smoke-results.jsonl`，结果行带 `target_environment="test"`。
+
+### 三、追溯与覆盖
+
+- 场景：S16「非零退出时 JSON envelope 排空后退出 > CLI 入口统一设置阻塞写」EX-2.7（SMOKE-core-304）、EX-2.8（SMOKE-core-305）。需求：`core-01-requirements.md`「S16: CLI 退出时管道输出完整排空要求」。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.13 本机测试环境发布（release-0-16-13）」。
+- 仓库内对应用例：UT-S16-46～48、ST-S16-06（对应 SMOKE-core-304）；UT-S16-51、UT-S16-53（对应 SMOKE-core-305）。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-release-0-16-13.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-303～SMOKE-core-305，不得依靠通配发现后无条件 PASS。
+- 适用窗口：活跃变更为 `release-0-16-13`，或 `OPENLOGOS_R01613_SMOKE=1`；窗口之外按既有留痕机制为全部 owned ID 写 skip。环境变量一律使用 `OPENLOGOS_R01613_` 前缀。
+- 适用性判定不得依赖自动流程不会设置的环境变量。只有部署记录确实缺失，或候选版本早于 0.16.13 时，才写显式 `skip` 并携带缺失项；非 POSIX 平台的 SMOKE-core-305 写显式 `skip`。有 skip 时不得写 `SMOKE_PASS`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-303～SMOKE-core-305 均被 runner 覆盖。

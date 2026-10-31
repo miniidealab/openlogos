@@ -5354,3 +5354,74 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 - 测试：UT-S11-101 起、ST-S11-53 起、UT-S13-122 起、ST-S13-33 起、UT-S14-22 起、ST-S14-27 起、UT-S19-90 起、ST-S19-33 起、UT-S21-23 起、UT-S42-29 起、ST-S42-09 起；安装态 smoke：SMOKE-core-298 起，以及通用的 SMOKE-core-268～SMOKE-core-271。
 - 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
 - 来源提案：module-scoped-phase-reports（决策 C01、C02）。
+
+## OpenLogos 0.16.13 本机测试环境发布（release-0-16-13）
+
+> 本节引用「本机测试环境脚本部署（scripts/deploy-local.mjs）」通用方案，只写本次的差异：版本号、CHANGELOG、源码回归范围、本仓 `openlogos sync` 与安装态 smoke。冻结、回滚制品、构建候选、试装、全局安装、复核与回执一律按通用方案第三～七节执行，不在本节复写。
+
+### 部署目标与授权边界
+
+把 CLI 退出时管道输出完整排空的修复（来源提案 `fix-cli-exit-truncates-piped-output`，归档提交 `0fafcc6`，场景 S16「非零退出时 JSON envelope 排空后退出 > CLI 入口统一设置阻塞写」EX-2.7、EX-2.8）装进本机全局安装态。RunLogos driver 以 Node `spawn` 读取 `change-lint --format json`、`merge` 等命令的输出，只有全局 `openlogos` 升级后才不再在 8192 字节处被截断。
+
+- **目标环境**：`test`（登记表 `proposal_default_env: test`，来源提案决策 C02，`source: policy`）。登记表中 `test.deploy` 为 `mode: script`、`script: scripts/deploy-local.mjs`。
+- **入口**：提案通道 `openlogos deploy --env test`，部署请求 HEAD；由 CLI 追加部署报告、写 `DEPLOY_DONE` 并勾选 `[deploy]`。提案通道已完成受控落标，部署成功后**不再**另行执行 `openlogos deploy-done`，否则会生成新的 deploy_id 和不带 ref 的账本记录，覆盖本次部署身份。
+- **授权**：用户 2026-10-31 对本提案全链路明确授权（决策 C01，不含 `git push`）；`next --auto` 模式以本次 deliver-entry 门的 `gate_auto_passed=true` 为执行依据。`test` 未配置 `promote_from` / `require_approval`。
+- **版本号边界**：0.16.13 只作本机全局版本，不进入 npm registry。本方案**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`；公开发布另立 release 提案。不改写其他仓库（包括 runlogos），不在其项目根运行任何命令。
+- **本仓行为**：本次只改 CLI 的输出写入方式，输出内容、envelope、退出码不变；本仓 verify / 部署 / smoke 的判定与 0.16.12 一致。
+
+### 部署前置与版本
+
+1. 本提案 delta 已 merge，`[code]` 切片实现并提交，`openlogos verify` PASS；`openlogos env check` 无 error，`openlogos deploy --env test --dry-run` 通过（通用方案第三节）。
+2. **请求提交已提交**：`openlogos deploy` 部署的是 HEAD。部署前确认 merge 后的规格、切片代码与验收报告都已提交、工作区干净；未提交时按「规格合并 → 代码 → 验收报告」的顺序补提交后再部署。
+3. **版本事实复核**：读取 `cli/package.json` 当前版本，计划时为 `0.16.12`（module-scoped-phase-reports 的本机全局版本，未发布到 npm）。候选为下一 patch `0.16.13`，执行 `npm view @miniidealab/openlogos@0.16.13 version` 应返回 E404（计划时 registry 最高为 `0.16.7`）。若实施前已有其他提案升版，或 registry 已存在候选版本号，候选改为「当时版本与 registry 最高版本中较大者的下一 patch」，并在部署记录写明实际值。
+4. **升版**：在实现中执行 `node cli/scripts/bump-version.mjs 0.16.13`，由脚本一次更新全部版本载体，并调用既有生成器重算 `cli/asset-manifest.json`，**禁止手改** manifest。脚本会把 `cli/src/lib/local-release-candidate.ts` 的回滚版本设为升版前版本，应为 `0.16.12`；不符时改为 `0.16.12`，并在部署记录说明。
+5. **CHANGELOG**：在 `## [Unreleased]` 之后新增 `## [0.16.13]` 条目，注明「本机全局发布（未发布到 npm）」，不改既有条目：
+   - **Fixed**：CLI 写出输出后立即退出时，经管道或 socket 读取的 stdout / stderr 不再被截断（Node `spawn` 消费方在 macOS 下此前只收到 8192 字节）。CLI 入口对非 TTY 的 stdout / stderr 设阻塞写，覆盖全部命令、全部退出码；`change-lint --format json` 的大量违规、`merge` preflight 违规清单都能完整读到，退出码不变。
+   - **Changed**：`deploy` 执行阶段（script 与 ci）与 `watch` 常驻期在运行期间保持异步写，消费方暂停读取时部署超时仍按时终止进程树、SIGINT / SIGTERM 仍完成清理；区间结束后先排空再恢复阻塞写，最终结论完整。
+   - **升级提示**：父进程以管道启动 CLI 却从不读取输出时，CLI 会在缓冲写满后等待读取，而不是丢掉尾部后退出。
+
+### 源码回归范围
+
+部署前的 verify 负责源码回归，脚本不跑测试（通用方案第八节）。升版后复跑以下检查，必须全绿：
+
+- `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`、`npm run build`。
+- 范围包括来源提案的 UT-S16-46～UT-S16-55、ST-S16-06，既有 S16（含 EX-2.6 的 UT-S16-42～45、ST-S16-05）、S23 watch、S42 / S43 部署全部用例，以及 UT-S19-46（版本身份）、UT-S19-49（asset-manifest 自洽）。
+
+### 部署、sync 与部署后检查
+
+1. 执行 `openlogos deploy --env test`（提案通道）。按通用方案第七节第 1、2 条读回回执与账本：
+   - 全局 `--version` 为 `0.16.13`；
+   - 入口 realpath 等于回执 `entry_realpath`，全局 `dist/index.js` 的 SHA-256 等于 `candidate_entry_sha256`；
+   - 记录候选 tarball 与回滚制品的路径与 SHA-256；回滚制品由脚本第 ③ 步从当前全局安装打包，计划时应为本机全局的 `0.16.12`；
+   - 部署前账本 `test.current_ref` 为 `06485bef9633ab4df1932aa6ec6af94b2ffca30a`（0.16.12，deploy `489a82fc`），部署成功后它成为 `previous_ref`。
+2. **本仓 sync**：本次不改随包规范与 Skill。在主工作树执行一次 `openlogos sync` 并读回：
+   - 本仓 AGENTS.md / CLAUDE.md 与 sync 前逐字节一致；
+   - sync 只预期刷新版本戳；产生的托管文件变化随部署记录一起由流程提交，不 push；
+   - 若 sync 再次向 `.claude/settings.json` 追加重复的 SessionStart 条目（已知缺陷），按前几版部署记录同样还原并记录。
+3. 经授权执行 `openlogos smoke --env test`：
+   - 本次行为用例：「OpenLogos 0.16.13 CLI 管道输出完整排空安装态 smoke（SMOKE-core-303～305）」；
+   - 通用安装态用例：「本机测试环境脚本部署安装态 smoke（SMOKE-core-268～SMOKE-core-271）」。
+
+### 失败处置与回滚
+
+回滚目标是 **0.16.12**，处置按通用方案第五节，本次差异如下：
+
+- **部署前置或 dry-run 失败**：不执行部署，修正后重试，或回流实现。
+- **脚本失败（部署未成功）**：脚本自动回装第 ③ 步的回滚制品（计划时为本机全局 0.16.12），复核 `--version` 为 `0.16.12`；账本记 `result=failed`，不推进。
+- **成功部署后要回到 0.16.12**：执行 `openlogos deploy --env test --rollback`。账本 `previous_ref` 为 `06485be…`（0.16.12 的部署提交），该提交含 `scripts/deploy-local.mjs`。回到 0.16.12 后，用 0.16.12 在本仓执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件。
+- **成功落账后 smoke 失败**：按通用方案第五节「(c)」处置：停止后续完成流程，保留失败证据，回流修复后以 `openlogos deploy --env test` 部署修复提交并重跑 smoke。不得手工回装旧包。
+- 本次无数据迁移：配置字段、文件格式与输出内容均不变；回到 0.16.12 后恢复原有的异步写行为。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`，不部署官网。
+- 不改写其他仓库（包括 runlogos），不在其项目根运行任何命令。
+- 不改任何 CLI 行为代码：修复已在来源提案验收并归档。
+
+### 追溯
+
+- 场景：S16「非零退出时 JSON envelope 排空后退出 > CLI 入口统一设置阻塞写」EX-2.7、EX-2.8。
+- 需求：`core-01-requirements.md`「S16: CLI 退出时管道输出完整排空要求」。
+- 测试：UT-S16-46～UT-S16-55、ST-S16-06；安装态 smoke：SMOKE-core-303～SMOKE-core-305，以及通用的 SMOKE-core-268～SMOKE-core-271。
+- 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
+- 来源提案：fix-cli-exit-truncates-piped-output；本提案：release-0-16-13（决策 C01、C02）。
