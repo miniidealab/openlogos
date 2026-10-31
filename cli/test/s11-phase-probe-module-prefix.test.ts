@@ -17,13 +17,18 @@
  *
  * 结果由全局 OpenLogos reporter 写入 logos/resources/verify/test-results.jsonl。
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { makeTempRoot, scaffoldProject } from './helpers.js';
+
+// 本文件用例逐条驱动多次真实子进程（bash 探测脚本、CLI status），单独运行单条约需 1～1.6s；全量 verify 与其它重型用例
+// 并发、且宿主机另有负载时整体放慢数倍，超过全局 10s 而误报超时（fix-cli-exit-truncates-piped-output
+// verify loop：UT-S11-82、UT-S11-84）。与 s42-script-deploy 同例：超时只放宽本文件，断言不变。
+vi.setConfig({ testTimeout: 60_000 });
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PHASE_HOOK = join(REPO_ROOT, 'plugin', 'bin', 'openlogos-phase');

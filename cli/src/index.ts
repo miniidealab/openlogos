@@ -25,6 +25,7 @@ import { baselineSeedBegin, baselineSeedCommit, baselineSeedStatus } from './com
 import { watch } from './commands/watch.js';
 import { impact } from './commands/impact.js';
 import { VERSION, parseFormat } from './lib/json-output.js';
+import { ensureBlockingStdio } from './lib/stdio-blocking.js';
 
 export { VERSION } from './lib/json-output.js';
 export type { OutputFormat } from './lib/json-output.js';
@@ -169,6 +170,8 @@ function nonValueTokens(args: string[]): string[] {
 }
 
 async function main() {
+  // S16 EX-2.7：管道 / socket 输出设阻塞写，任何「写出后立即 process.exit」都不丢尾部
+  ensureBlockingStdio();
   const args = process.argv.slice(2);
   const globalTokens = nonValueTokens(args);
 

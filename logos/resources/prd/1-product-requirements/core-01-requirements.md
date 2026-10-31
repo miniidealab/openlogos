@@ -2979,7 +2979,7 @@ Bash 写命令路径级管辖判定修复必须发布到本机全局才能生效
 ##### 约束：退出方式与兼容性
 1. 上述四个点在 envelope 写出后**不得立即调用 `process.exit`**；改为设置 `process.exitCode = <原退出码>` 并从命令函数返回，由进程在 stdout 排空后自然结束。
 2. 退出码**数值与语义不变**；envelope 结构、字段、marker 写入与结果文件**不变**——消费方只会多拿到此前被截掉的尾部字节。
-3. 非目标：人类可读（text）输出路径的 `process.exit`、`check-ui-hash-match` 等输出很小且为 exit 0 成功路径的命令、统一「输出并退出」helper，均不在本要求范围内。
+3. 非目标：人类可读（text）输出路径的 `process.exit`、`check-ui-hash-match` 等输出很小且为 exit 0 成功路径的命令，均不在本要求范围内；CLI 全部命令、stdout 与 stderr、任何退出码下的管道输出完整性，由「S16: CLI 退出时管道输出完整排空要求」统一约束（入口设置阻塞写，不新增「输出并退出」helper）。
 
 ## guard 以版本控制内容为保护对象需求
 
@@ -3798,3 +3798,40 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 - 功能规格：§2.99。
 - 场景：S11「initial phase 派生（flow-derive）与两套 legacy done 语义」、S13「多模块项目写模块验收报告」、S14「多模块 initial 模块的 launch 前置」、S19「多模块项目写模块冒烟报告」、S21「initial 模块的模块部署报告」、S42「initial 模块的模块部署报告」。
 - 测试：UT-S11-101 起、ST-S11-53 起、UT-S13-122 起、ST-S13-33 起、UT-S14-22 起、ST-S14-27 起、UT-S19-90 起、ST-S19-33 起、UT-S21-23 起、UT-S42-29 起、ST-S42-09 起；smoke：SMOKE-core-298 起。
+
+## S16: CLI 退出时管道输出完整排空要求
+
+**动因**：20261031 RunLogos 全自动 run 驱动 runlogos-website 提案 `team-account-oauth-license` 时停在 `merge-failed`。RunLogos 以 Node `child_process.spawn` 读取 `openlogos change-lint --format json`；该提案有 23 条违规，envelope 共 12661 字节，driver 只收到 8192 字节，JSON 解析失败，判为 `lint-unparsed`，spec-exit 准入按「lint 不可用」放行进了 merge。根因与「S16: 非零退出码下 JSON envelope 完整输出要求」相同：命令写出输出后立即调用 `process.exit(...)`，stdout / stderr 为管道或 socket 时 Node 在 POSIX 上异步写出，`process.exit` 不等待排空，超出缓冲的部分被丢弃。该反模式遍布 CLI（`cli/src/` 下约 150 处 `process.exit`），前一要求只修了 verify / smoke 四个退出点，本次在 `change-lint`（`process.exit(pass ? 0 : 2)`）复发；`merge` preflight 违规时逐条写 stderr 后 `process.exit(1)` 属同构点。Node `spawn` 默认以 socketpair 连接子进程 stdio，macOS 下截断点为 **8192 字节**，远小于 65536 字节管道缓冲；shell 管道与文件重定向是阻塞写，手工测试无法复现。
+
+**场景**：CI、脚本或 RunLogos 等外部工具以管道或 socket（非 TTY、非文件重定向）读取任一 `openlogos` 命令的 stdout / stderr，本次调用以任意退出码结束。
+
+**适用范围**：CLI 全部命令；stdout 与 stderr；任何退出码；JSON 与 text 两种输出格式。
+
+**验收条件**：
+
+##### 正常：change-lint 大量违规时 JSON envelope 完整
+- **GIVEN** 活跃提案存在足以使 `change-lint --format json` 的 envelope 超过 65536 字节的违规
+- **WHEN** 消费方以 Node `child_process.spawn` 读取 stdout 直至 EOF
+- **THEN** stdout 为完整 JSON，`JSON.parse` 成功、违规条数与 fixture 一致；退出码为 2
+
+##### 正常：merge preflight 违规时 stderr 完整
+- **GIVEN** 提案 preflight 违规条目使 stderr 输出超过 65536 字节
+- **WHEN** 消费方以 Node `child_process.spawn` 读取 stderr 直至 EOF
+- **THEN** stderr 中的违规条数与 fixture 一致、尾部未丢；退出码为 1
+
+##### 正常：text 模式大输出非零退出完整
+- **GIVEN** 一个以 text 格式输出超过 65536 字节后非零退出的代表性命令分支
+- **WHEN** 消费方以 Node `child_process.spawn` 读取输出直至 EOF
+- **THEN** 收到的字节数等于写出字节数；退出码与原语义一致
+
+##### 正常：运行期依赖计时器或信号的区间不被阻塞写冻结
+- **GIVEN** 父进程以 spawn 启动 `deploy`（script 模式或 ci 模式 script provider）且暂缓读取 stdout / stderr，部署脚本产生超过 65536 字节回显
+- **WHEN** 部署运行超过 `timeout_sec`，或 CLI 收到 SIGINT / SIGTERM
+- **THEN** 超时仍在 `timeout_sec` 加有限宽限内终止整个进程树（ci 模式为外层观察超时 `ci-observe-timeout` 按时推进）；中断时仍完成进程组清理并以 130 退出；`watch` 在消费方暂停时 SIGINT 仍及时退出；区间结束后的最终结论输出完整、退出码保留
+
+##### 约束：退出方式、运行期区间与兼容性
+1. CLI 入口 `main()` 最先对非 TTY 且支持 `setBlocking` 的 stdout / stderr 句柄设阻塞写，作为一次性命令的默认；各命令的 `process.exit` 调用不迁移。
+2. 输出期间依赖计时器或信号处理的运行期区间（`runDeployScript`、deploy ci 执行阶段、watch 常驻期）保持异步写；区间可嵌套，仅最外层区间结束时在事件循环可响应的状态下排空并恢复阻塞，内层结束不改变句柄状态。S42「超过 `timeout_sec` 终止整个进程树」与中断清理语义不变。区间内由信号触发的退出保持原样，中断时尾部回显完整性不在本要求承诺内。
+3. 退出码数值与语义不变；输出内容、envelope 结构、超时值与信号处理逻辑不变；「S16: 非零退出码下 JSON envelope 完整输出要求」的四个退出点保持原样。
+4. 不支持 `setBlocking` 的句柄（文件重定向）与 TTY 保持原状，设置失败不影响启动与输出。
+5. 测试对照的平台口径：截断对照仅在 darwin（POSIX 管道 / socket 异步写）上必须复现；其他平台（如 Windows 管道同步写）对照臂完整输出不判失败；修复后的完整输出与退出码在所有支持平台断言。

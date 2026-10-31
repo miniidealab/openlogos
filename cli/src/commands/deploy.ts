@@ -22,6 +22,7 @@ import {
 } from '../lib/environments.js';
 import { appendLedgerLine } from '../lib/deployment-ledger.js';
 import { runDeployScript, makeSecretMasker } from '../lib/deploy-runner.js';
+import { withAsyncStdio } from '../lib/stdio-blocking.js';
 import { removeTree } from '../lib/fs-remove.js';
 import {
   checkDispatchRef, dispatchWorkflow, downloadDeployResult, evaluateEvidence, ghUnavailableReason, parseStatusOutput,
@@ -896,7 +897,8 @@ async function runDeploy(root: string, locale: Locale, format: OutputFormat, opt
         executed: identity.executed, previous_ref: currentRef,
         ...gate,
       };
-      outcome = await executeCi(exec, pending, dispatchRef);
+      // ci 执行阶段（触发、轮询、观察超时）为运行期异步区间（S16 EX-2.8）；内层 runDeployScript 嵌套其中
+      outcome = await withAsyncStdio(() => executeCi(exec, pending, dispatchRef));
     }
     finish({
       root, locale, format, hooks, warnings, active, moduleDefaults, cmdEval: verifyResult?.cmdEval,

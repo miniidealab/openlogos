@@ -310,3 +310,104 @@ sequenceDiagram
 - 需求：`core-01-requirements.md`「S16: 非零退出码下 JSON envelope 完整输出要求」
 - 测试：`core-S16-test-cases.md`「非零退出码下 envelope 完整输出测试」（UT-S16-42～UT-S16-45、ST-S16-05）
 - 来源：RunLogos `BUGREPORT-slice-repair-successor-done-skips-verify-redispatch-loop.md`（run `drv-muhwbw2v-9soz`）
+
+### CLI 入口统一设置阻塞写
+
+#### 背景
+
+EX-2.6 只把 verify / smoke 四个 `--format json` 非零退出点改为 `process.exitCode` + 返回，CLI 其余约 150 处「写出后立即 `process.exit`」仍是同一反模式。20261031 RunLogos 以 Node `child_process.spawn` 读取 `openlogos change-lint --format json`（23 条违规、envelope 12661 字节），只收到 8192 字节，判为 `lint-unparsed`。Node `spawn` 默认以 socketpair 连接子进程 stdio，macOS 下截断点为 **8192 字节**，比 EX-2.6 夹具口径中的 65536 字节管道缓冲小得多；shell 管道与文件重定向是阻塞写，手工测试复现不了。最小验证：子进程输出 200012 字节 JSON 后 `process.exit(2)`，spawn 父进程只收到 8192 字节；入口对 stdout / stderr 句柄调用 `setBlocking(true)` 后完整收到 200012 字节，退出码仍为 2。
+
+同步写阻塞期间事件循环停转，计时器与信号回调都要等写入返回，这与自然退出（只等排空、事件循环照常运转）不同。因此入口阻塞只作为一次性命令的默认；输出期间依赖计时器或信号处理的运行期区间必须保持异步写。
+
+#### 时序
+
+```mermaid
+sequenceDiagram
+    participant Consumer as 消费方（RunLogos driver / CI 脚本）
+    participant CLI as openlogos CLI（main 入口）
+    participant Helper as stdio-blocking（ensureBlockingStdio / withAsyncStdio）
+    participant Cmd as 命令函数
+    participant Pipe as stdout / stderr（pipe 或 socketpair）
+
+    Consumer->>CLI: spawn `openlogos <command>`（stdio=pipe）
+    CLI->>Helper: ensureBlockingStdio()（main 第一行）
+    Helper->>Pipe: 非 TTY 且有 setBlocking 的句柄 setBlocking(true)，记录被设置的句柄
+    CLI->>Cmd: 分发命令
+    Cmd->>Pipe: 写出 JSON / text（阻塞写，调用返回即已交给内核）
+    Cmd->>CLI: process.exit(code)
+    Pipe-->>Consumer: 完整输出 + EOF
+    CLI-->>Consumer: 退出码 = code
+    Consumer->>Consumer: JSON.parse / 读全文，按退出码分流
+```
+
+#### 步骤说明
+
+1. 消费方以 Node `child_process.spawn` 启动任一 `openlogos` 命令，stdout / stderr 为管道或 socket。
+2. CLI `main()` 第一行调用 `ensureBlockingStdio()`：仅对非 TTY 且存在 `setBlocking` 方法的 stdout / stderr 句柄设阻塞，并记录被设置的句柄；任何异常吞掉，不影响启动与输出。
+3. 命令写出输出：阻塞写下调用返回时数据已交给内核。
+4. 命令调用 `process.exit(code)`（各命令的退出方式不迁移）。
+5. 消费方读到完整输出与 EOF，退出码与原语义一致。
+
+#### 运行期异步区间
+
+`withAsyncStdio(fn)` 按模块级活动深度计数管理句柄状态：
+
+1. 进入：深度 +1；仅当深度由 0 变 1 时把 `ensureBlockingStdio` 记录的句柄 `setBlocking(false)`。
+2. 结束（含抛错）：深度 −1；深度仍 > 0（内层结束、外层仍活动）时直接返回，不排空、不恢复、不改变句柄状态。
+3. 仅深度归 0（最外层结束）时 await stdout / stderr 排空（`writableLength` 归零或 `write('', cb)` 回调，期间事件循环照常运转），排空后深度仍为 0 才 `setBlocking(true)`；排空期间若有新区间进入则放弃本次恢复。
+
+适用区间（输出期间依赖计时器或信号处理）：
+
+| 区间 | 位置 | 依赖 |
+|---|---|---|
+| `runDeployScript` | `cli/src/lib/deploy-runner.ts` | 子进程输出回显、超时计时器杀进程树、SIGINT / SIGTERM 清理进程组 |
+| deploy ci 执行阶段 | `cli/src/commands/deploy.ts`（触发、轮询、观察超时） | 轮询 `sleep`、截止时间判断 |
+| watch 常驻期 | `cli/src/commands/watch.ts` | `setInterval` 轮询、SIGINT 处理 |
+
+嵌套实例：deploy ci 执行阶段（外层）内，script provider 的触发脚本与每轮状态查询各自调用 `runDeployScript`（内层）；内层返回后，外层输出 run_id、逐轮状态与截止时间判断仍在异步写下进行，最外层结束后才排空并恢复阻塞，随后的最终结论在阻塞写下完整输出。watch 常驻期以 SIGINT 或失败退出收尾，进入异步后不必恢复阻塞。区间内由信号触发的 `process.exit(130)` / `exit(0)` 保持原样。
+
+```mermaid
+sequenceDiagram
+    participant Consumer as 消费方（暂缓读取）
+    participant Deploy as deploy ci 执行阶段（外层区间）
+    participant Runner as runDeployScript（内层区间）
+    participant Helper as withAsyncStdio 深度计数
+    participant Pipe as stdout / stderr
+
+    Deploy->>Helper: 进入（深度 0→1）
+    Helper->>Pipe: setBlocking(false)
+    Deploy->>Runner: 触发脚本 / 状态查询
+    Runner->>Helper: 进入（深度 1→2，不改句柄）
+    Runner->>Pipe: 回显（异步写，缓冲在内存）
+    Note over Runner: 超时计时器与信号处理器照常执行
+    Runner->>Helper: 结束（深度 2→1，不排空、不恢复）
+    Deploy->>Pipe: 输出 run_id / 逐轮状态（仍为异步写）
+    Note over Deploy: 截止时间判断按时推进（ci-observe-timeout）
+    Deploy->>Helper: 结束（深度 1→0）
+    Helper->>Pipe: await 排空（事件循环运转）后 setBlocking(true)
+    Deploy->>Pipe: 最终结论（阻塞写）
+    Pipe-->>Consumer: 恢复读取后收到完整输出 + EOF
+```
+
+#### 与 EX-2.6 的关系
+
+EX-2.6 的四个退出点保持 `process.exitCode` + 返回，不回退；入口阻塞写与之兼容，互不冲突。
+
+#### 异常用例
+
+##### EX-2.7: Node spawn 消费方下写出后立即退出被截断
+- **触发条件**：任一命令（任意格式、任意退出码）向 stdout / stderr 写出超过消费方缓冲的内容后立即 `process.exit`；消费方以 Node `spawn` 读取（socketpair，macOS 下 8192 字节即截断）。
+- **期望响应**：入口已设阻塞写，写出调用返回时数据已交给内核，消费方读到完整输出；退出码不变。
+- **边界**：文件重定向（无 `setBlocking`）与 TTY 保持原状；设置失败不影响启动与输出。截断对照仅在 darwin 上必须复现，Windows 管道本就同步写，对照臂完整输出不判失败。
+
+##### EX-2.8: 消费方暂停读取时同步写冻结事件循环
+- **触发条件**：父进程暂缓读取 stdout / stderr，CLI 处于 deploy 执行阶段或 watch 常驻期并持续输出。
+- **期望响应**：这些区间经 `withAsyncStdio` 保持异步写，超时计时器按时终止整个进程树（S42），SIGINT / SIGTERM 完成进程组清理并以 130 退出，watch 收到 SIGINT 及时退出；ci 模式内层 `runDeployScript` 返回后外层仍为异步写，`ci-observe-timeout` 按时推进；最外层结束后才排空并恢复阻塞，最终结论完整、退出码保留。
+- **边界**：区间内由信号触发的退出不承诺尾部回显完整；进程树 / 进程组语义仅适用于 POSIX（detached 进程组）。
+
+#### 追溯
+
+- 需求：`core-01-requirements.md`「S16: CLI 退出时管道输出完整排空要求」
+- 测试：`core-S16-test-cases.md`「CLI 退出时管道输出完整排空测试」（UT-S16-46～UT-S16-55、ST-S16-06）
+- 关联场景：S42 部署超时终止进程树与中断清理（`core-S42-environment-deploy.md`）
+- 来源：20261031 RunLogos run 驱动 `team-account-oauth-license` 停在 `merge-failed`（`lint-unparsed`）

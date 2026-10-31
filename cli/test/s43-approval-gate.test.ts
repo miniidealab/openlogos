@@ -45,7 +45,10 @@ if [ -f "$PUBLISH_DIR/ci-done" ]; then echo "{\\"status\\":\\"completed\\",\\"co
 `;
 
 const SCRIPT_CFG = { mode: 'script', script: 'deploy/run.sh' };
-const CI_CFG = { mode: 'ci', provider: 'script', trigger_script: 'ci/trigger.sh', status_script: 'ci/status.sh', timeout_sec: 2, poll_interval_sec: 1 };
+// ci 观察截止时间自 executeCi 起算，含隔离工作树准备；触发脚本只拿剩余时间（下限 1s）。2s 在全量 verify 并发与
+// 宿主机负载下会被工作树准备耗尽，触发脚本被超时终止而报不出 run_id（ci-run-id-missing，
+// fix-cli-exit-truncates-piped-output verify loop 3）。放宽到 8s：状态脚本恒为运行中，仍必然走观察超时分支，断言不变。
+const CI_CFG = { mode: 'ci', provider: 'script', trigger_script: 'ci/trigger.sh', status_script: 'ci/status.sh', timeout_sec: 8, poll_interval_sec: 1 };
 const AGENT_CFG = { mode: 'agent', plan_section: '生产部署' };
 
 let root: string;

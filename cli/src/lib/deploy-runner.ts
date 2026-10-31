@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process';
 import { closeSync, mkdirSync, openSync, writeSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
+import { withAsyncStdio } from './stdio-blocking.js';
 
 export const OUTPUT_TAIL_MAX_LINES = 80;
 export const OUTPUT_TAIL_MAX_BYTES = 8 * 1024;
@@ -110,8 +111,15 @@ export function createStreamMasker(values: string[]): { push: (chunk: string) =>
   };
 }
 
-/** 执行部署脚本。不抛错：启动失败以 spawnError 返回。 */
+/**
+ * 执行部署脚本。不抛错：启动失败以 spawnError 返回。
+ * 运行期异步区间（S16 EX-2.8）：回显期间保持异步写，超时与信号处理不被消费方背压冻结。
+ */
 export function runDeployScript(run: DeployScriptRun): Promise<DeployScriptResult> {
+  return withAsyncStdio(() => runDeployScriptInRegion(run));
+}
+
+function runDeployScriptInRegion(run: DeployScriptRun): Promise<DeployScriptResult> {
   const mask = makeSecretMasker(run.secretValues);
   mkdirSync(dirname(run.logPath), { recursive: true });
   const logFd = openSync(run.logPath, 'a');

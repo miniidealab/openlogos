@@ -155,3 +155,44 @@ JSON 契约的字节级实例。
 - [ ] verify manifest 暂停管道完整输出与退出码语义：UT-S16-43、ST-S16-05
 - [ ] smoke 两个非零退出点管道完整输出：UT-S16-44、ST-S16-05
 - [ ] 截断反模式必红对照：UT-S16-45
+
+## CLI 退出时管道输出完整排空测试
+
+> 覆盖需求「S16: CLI 退出时管道输出完整排空要求」与场景 S16「非零退出时 JSON envelope 排空后退出 > CLI 入口统一设置阻塞写」EX-2.7、EX-2.8；来源变更 fix-cli-exit-truncates-piped-output。
+>
+> **夹具口径**：一律以 Node `child_process.spawn` 启动真实 CLI 子进程（默认 stdio 为 socketpair，macOS 下 8192 字节即截断），收集 stdout / stderr 全部 chunk 直至 `close` 事件后再拼接解析；不得用文件重定向或 `execSync` 的内部缓冲替代。输出量须超过 65536 字节，同时跨越 8KB 与 64KB 两种边界，断言前先断言「收到字节数 > 65536」，防夹具不够大导致空过。
+>
+> **平台口径**：截断对照沿用 UT-S16-45：对照臂载荷有限三档重试，仅 darwin 必须证明截断，其他平台（如 Windows 管道同步写）对照臂完整输出不判失败；修复后的完整输出与退出码在所有支持平台断言。进程树 / 进程组断言仅在 POSIX 执行。
+>
+> 测试实现必须写入 OpenLogos reporter，测试名包含对应 ID，`scenario_id="S16"`。
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S16-46 | change-lint 大量违规时 JSON 完整 | 构造违规足以使 envelope > 65536 字节的活跃提案 fixture；spawn `change-lint --format json` 读至 EOF：字节数 > 65536、`JSON.parse` 成功、违规条数与 fixture 一致；退出码为 2 |
+| UT-S16-47 | merge preflight 违规时 stderr 完整 | 构造 preflight 违规使 stderr > 65536 字节的 fixture；spawn `merge <slug>` 读 stderr 至 EOF：违规条数与 fixture 一致、末条违规存在（尾部未丢）；退出码为 1 |
+| UT-S16-48 | text 模式代表性大输出非零退出完整 | 选取一个 text 格式输出 > 65536 字节后非零退出的代表性分支；spawn 读至 EOF：收到字节数等于写出字节数（以末尾哨兵行校验）；退出码与原语义一致 |
+| UT-S16-49 | 不支持 `setBlocking` 的句柄与 TTY 保持原状 | `ensureBlockingStdio()` 对无 `_handle` / 无 `setBlocking` 的桩句柄、`setBlocking` 抛错的桩句柄均不抛错、不影响后续写出；`isTTY=true` 的桩句柄不被调用 `setBlocking`；文件重定向下 spawn CLI 输出完整、退出码不变；`withAsyncStdio` 只切换被 `ensureBlockingStdio` 记录的句柄（TTY 桩句柄不被切为异步） |
+| UT-S16-50 | 平台条件化截断必红对照 | 最小脚本：输出 JSON 后立即 `process.exit(2)`，载荷 200000 / 2000000 / 8000000 三档，未截断则加大重试；darwin 上必须出现「收到字节数 < 写出字节数且 `JSON.parse` 抛错」；其他平台未截断时断言输出完整可解析、退出码为 2；同一脚本在入口先调用 `ensureBlockingStdio()` 后所有平台断言字节数完整、`JSON.parse` 成功、退出码为 2 |
+| UT-S16-51 | deploy script 模式暂缓读取时超时仍终止进程树 | POSIX；部署脚本持续回显 > 65536 字节并派生孙进程后长时间运行；父进程 spawn `deploy`（text 模式）且暂缓读取 stdout / stderr；断言 CLI 在 `timeout_sec` 加有限宽限内完成超时处理，孙进程已被终止（进程树清理）；随后恢复读取，最终结论输出完整、退出码与超时语义一致 |
+| UT-S16-52 | deploy 暂缓读取时 SIGINT / SIGTERM 仍完成清理 | POSIX；同 UT-S16-51 夹具，部署运行中、父进程暂缓读取时分别向 CLI 发 SIGINT、SIGTERM；断言 CLI 在有限时间内以 130 退出、部署进程组已被终止 |
+| UT-S16-53 | watch 暂缓读取时 SIGINT 仍及时退出 | 父进程 spawn `watch` 且暂缓读取，快照输出累计 > 65536 字节后发 SIGINT；断言 CLI 在有限时间内以 0 退出 |
+| UT-S16-54 | `withAsyncStdio` 嵌套深度计数状态序列 | 以可观测桩句柄记录 `setBlocking` 调用序列：外层进入 → `false`；内层进入 → 无调用；内层结束 → 无调用、无排空等待（句柄仍非阻塞）；最外层结束 → 排空后 `true`；内层抛错路径同样不提前恢复；最外层排空期间有新区间进入 → 放弃本次恢复、句柄保持非阻塞 |
+| UT-S16-55 | ci 模式 script provider 嵌套区间下外层观察超时仍推进 | POSIX；`deploy` ci 模式 provider=script，触发脚本与状态脚本每次调用都回显 > 65536 字节，状态脚本持续返回未完成；父进程暂缓读取；断言内层 `runDeployScript` 返回后句柄仍为非阻塞（经测试钩子观测）、外层在 `timeout_sec` 加有限宽限内以 `ci-observe-timeout` 结束，最外层结束后才恢复阻塞；恢复读取后最终结论完整、退出码与既有语义一致 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S16-06 | 模拟 RunLogos driver 依次读取 change-lint 与 merge 的大输出并分流 | S16 EX-2.7 | launched 项目 fixture，活跃提案违规足以使 change-lint envelope 与 merge preflight stderr 各自 > 65536 字节 | 模拟 driver：以 Node `spawn` 依次运行 `change-lint --format json` 与 `merge <slug>`，各读至 EOF；前者 `JSON.parse`，后者按行解析违规清单，按退出码分流 | change-lint 解析成功、无 `lint-unparsed` 分支、退出码 2；merge 违规清单条数与 fixture 一致、退出码 1；两次均不再出现 8192 字节截断 |
+
+### 覆盖度校验
+
+- [ ] change-lint JSON 完整：UT-S16-46、ST-S16-06
+- [ ] merge stderr 完整：UT-S16-47、ST-S16-06
+- [ ] text 模式大输出完整：UT-S16-48
+- [ ] 不支持 `setBlocking` 的句柄与 TTY 保持原状：UT-S16-49
+- [ ] 平台条件化截断必红对照：UT-S16-50
+- [ ] 运行期异步区间保留 deploy 超时与中断、watch 中断语义：UT-S16-51、UT-S16-52、UT-S16-53
+- [ ] 嵌套异步区间仅最外层恢复阻塞：UT-S16-54、UT-S16-55

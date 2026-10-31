@@ -6,13 +6,18 @@
  * 夹具为 `mktemp -d` 下 `git init` 的隔离 launched 项目；全部用例以真实 `openlogos` 子进程执行。
  * 结果由 OpenLogos reporter 依 it 标题中的 ID 写入 logos/resources/verify/test-results.jsonl。
  */
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupFixtureRoots, cli, frontierFixture, invoke, put } from './frontier-fixture.js';
 import { computeDeltaDigest } from '../src/lib/merge-baseline.js';
+
+// 本文件用例逐条驱动多次真实子进程（git、CLI merge / status），单独运行单条即需 1～6s；全量 verify 与其它重型用例
+// 并发、且宿主机另有负载时整体放慢数倍，超过全局 10s 而误报超时（fix-cli-exit-truncates-piped-output
+// verify loop：UT-S11-95、ST-S09-198）。与 s42-script-deploy 同例：超时只放宽本文件，断言不变。
+vi.setConfig({ testTimeout: 60_000 });
 
 afterAll(cleanupFixtureRoots);
 

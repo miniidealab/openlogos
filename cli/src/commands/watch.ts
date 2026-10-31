@@ -4,6 +4,7 @@ import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import { FlowError } from '../lib/flow.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { collectStatusData } from './status.js';
+import { enterAsyncStdio, traceStdioEvent } from '../lib/stdio-blocking.js';
 import type { StatusData } from './status.js';
 
 /**
@@ -130,8 +131,22 @@ export function watch(format: OutputFormat = 'text', moduleId?: string, interval
     }
   };
 
+  // 常驻期为运行期异步区间（S16 EX-2.8）：消费方暂停读取时，轮询计时器与 SIGINT 处理不被阻塞写冻结。
+  // 常驻期以 SIGINT 或失败退出收尾，不再回到一次性输出；仅显式 stop() 时释放区间。
+  const releaseStdio = enterAsyncStdio();
+
   // 启动先输出一次初始快照（无需等变化）；失败则不进入轮询
-  if (!tickOrFail()) return;
+  let started: boolean;
+  try {
+    started = tickOrFail();
+  } catch (e) {
+    void releaseStdio();
+    throw e;
+  }
+  if (!started) {
+    void releaseStdio();
+    return;
+  }
 
   const timer = setInterval(() => {
     tickOrFail(timer);
@@ -142,12 +157,14 @@ export function watch(format: OutputFormat = 'text', moduleId?: string, interval
   const stop = () => {
     clearInterval(timer);
     process.removeListener('SIGINT', sigint);
+    void releaseStdio();
   };
   const sigint = () => {
     stop();
     process.exit(0); // 优雅退出，无写副作用
   };
   process.on('SIGINT', sigint);
+  traceStdioEvent('watch-ready'); // 观测点：常驻异步区间内 SIGINT 处理已就绪
 
   return { intervalMs, stop, sigint, nextSeq: () => stream.nextSeq };
 }
