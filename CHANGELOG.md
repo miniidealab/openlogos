@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.13] - 2026-10-31
+
+本机全局发布（未发布到 npm）。
+
+### Fixed
+
+- **CLI 写出输出后立即退出时，经管道或 socket 读取的 stdout / stderr 不再被截断**（fix-cli-exit-truncates-piped-output）：此前命令在写出后立即 `process.exit`，而 POSIX 上管道 / socket 为异步写，未排空的尾部被丢弃；Node `child_process.spawn` 默认以 socketpair 连接子进程 stdio，macOS 下只收到 8192 字节。RunLogos driver 读取 `openlogos change-lint --format json`（23 条违规、12661 字节）只拿到 8192 字节，判为 `lint-unparsed` 并放行进了 merge。
+  - CLI 入口对非 TTY 且支持 `setBlocking` 的 stdout / stderr 设阻塞写，覆盖全部命令、全部退出码与 JSON / text 两种格式；`change-lint --format json` 的大量违规、`merge` preflight 的违规清单都能完整读到，输出内容与退出码不变。
+  - 文件重定向与 TTY 保持原状；verify / smoke 既有的四个 `process.exitCode` 退出点不变。
+
+### Changed
+
+- `openlogos deploy` 的执行阶段（script 的部署脚本、ci 的触发 / 轮询 / 观察超时）与 `openlogos watch` 常驻期在运行期间保持异步写：消费方暂停读取时，部署超时仍按时终止整个进程树，SIGINT / SIGTERM 仍完成进程组清理，watch 收到 SIGINT 仍及时退出。区间可嵌套，只在最外层结束时排空并恢复阻塞写，区间之后的最终结论完整输出。
+
+### 升级提示
+
+- 父进程以管道启动 CLI 却从不读取输出时，CLI 会在缓冲写满后等待读取，而不是丢掉尾部后退出；请持续读取或改用文件重定向。
+
 ## [0.16.12] - 2026-10-25
 
 本机全局发布（未发布到 npm）。
