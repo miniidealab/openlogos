@@ -1291,3 +1291,36 @@ public_release_commit: 3d851a71a17c86d081ce9d69adf2ea88331a94fe
 
 - 安装态 smoke：执行 `openlogos smoke --env test`，覆盖 SMOKE-core-303～305（runner `scripts/smoke-release-0-16-13.js`）与通用用例 SMOKE-core-268～271。
 - 部署前已以自测模式验证 runner：候选为本地构建的 0.16.13 时三条均通过；以当时全局 0.16.12 为入口时三条均失败（SMOKE-core-304 复现 change-lint JSON 只收到 8192 字节）。
+
+# 部署报告：docs-prompt-cheatsheet / 官网提示词速查页上线（2026-11-11，**已部署：生产官网 openlogos.ai**）
+
+- website_docs_deploy_change: docs-prompt-cheatsheet
+- website_docs_deploy_url: https://73db153c.openlogos.pages.dev
+- website_docs_deploy_id: 73db153c-9f8a-4e54-a39c-cd073bc3794a
+
+## 一、部署事实
+
+- 目标环境：登记表 `prod`，Cloudflare Pages 项目 `openlogos`，生产域名 `https://openlogos.ai`（来源提案决策 C01）。
+- 部署提交：`4aa2f74b5a0454dfec7cd5b8a047fd2bd8a22108`（wrangler 显示 Source `4aa2f74`、Environment Production、Branch master）。
+- 执行命令：`cd website && npm run build && npx wrangler pages deploy dist --project-name openlogos --branch master`（wrangler 4.160.1，用户本机 Cloudflare 凭据）；上传 194 个文件（另 280 个已存在）。
+- 字体子集化依赖 fonttools / brotli：本机 python 未装，构建时把仓库外临时虚拟环境 `/Volumes/BuildWork/tmp/pcs-fonttools-venv/bin` 置于 PATH 前部，未改全局 Python。
+- 部署后线上 `https://openlogos.ai/getting-started/prompt-cheatsheet/` 与 `/zh/getting-started/prompt-cheatsheet/` 均返回 200。
+- 不做（决策 C02）：未升版本、未改 CHANGELOG、未打 tag、未 npm publish、未建 GitHub Release、未 git push。
+
+## 二、发布前检查摘要
+
+- 第 2 项（官网源码差异）：`git diff --stat v0.16.7..HEAD -- website` 共 12 个文件，均在允许清单内——第 1 项页面与入口、`website/scripts/smoke-releases.mjs`、`website/public/fonts/NotoSansSC-*.subset.woff2`（允许清单经 merge 增量修正补入，提交 `4aa2f74`）与 `website/src/data/releases.json`。首次部署尝试时该项因字体子集不在清单内而停止，未部署。
+- 第 3 项（版本基线）：页面引用的顶层命令均在 `npx @miniidealab/openlogos@0.16.7 --help` 中，`slice` 按已知 help 漏列例外；宿主差异逐条对照 `v0.16.7` 的 `spec/*-plugin.md`、`spec/pretooluse-guard.md` 与插件 runtime。
+- 第 5 项：`npm ci && npm run build` 通过，`npm test` 3/3 通过；构建后工作树干净（字体子集可稳定重现）。
+- 第 6 项：构建后 `releases.json` 的 `latestVersion` = `0.16.7` = npm `dist-tags.latest`。
+- 第 7 项：runner 自测模式（`OPENLOGOS_PCS_BASE=http://127.0.0.1:4329`，独立账本）SMOKE-core-306 / 307 / 21 / 23 全部 pass，offsite_requests=0、blocked_redirects=0，`deploy_record=not-required(self-test)`。
+- verify：Gate 3.6 PASS（部署后 runner 修复提交 `fad4bd8` 后再次 verify 仍 PASS）。
+
+## 三、回滚
+
+- 回滚目标：部署前的生产部署 `71d38164-afd1-4e47-a079-1c09762ddb96`（`https://71d38164.openlogos.pages.dev`，Source `3d851a7` = v0.16.7）。
+- 处置：内容异常或 smoke 失败时，在 Cloudflare Pages 控制台把生产回滚到上述部署；修复 `website/` 后重走发布前检查再部署。不涉及 npm、tag 或 GitHub Release；无数据迁移。
+
+## 四、后续
+
+- 正式 smoke：执行 `openlogos smoke`，runner `scripts/smoke-website-prompt-cheatsheet.js` 以正式模式对 `https://openlogos.ai` 执行 SMOKE-core-306～307 与复用的 SMOKE-core-21 / 23，结果摘要补入本节。
