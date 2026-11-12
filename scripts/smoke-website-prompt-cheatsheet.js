@@ -345,6 +345,9 @@ if (isMain) {
         id, status: row.status, timestamp, duration_ms: row.duration_ms, environment: ENVIRONMENT,
         target_environment: TARGET_ENVIRONMENT, detail: row.detail, evidence: row.evidence,
       };
+      // 窗口外的 skip 没有验证任何环境，不声明 target_environment：该字段表示 runner 实际验证的环境（spec/environments.md §6），
+      // 声明了会让其他环境的 smoke（如 --env test）在本记录上判为 SMOKE_ENV_EVIDENCE_MISMATCH
+      if (row.outOfWindow) delete record.target_environment;
       if (row.status === 'skip') {
         record.not_applicable_reason = row.detail;
         record.missing_requirements = row.missing ?? [];
@@ -356,7 +359,7 @@ if (isMain) {
   if (!SELF_TEST && activeChange() !== SLUG && process.env.OPENLOGOS_PCS_SMOKE !== '1') {
     const rows = new Map(OWNED.map(id => [id, {
       status: 'skip', detail: `非本案官网速查页验收窗口：需活跃变更 ${SLUG} 或 OPENLOGOS_PCS_SMOKE=1`,
-      missing: ['active-change', 'OPENLOGOS_PCS_SMOKE'], evidence: [], duration_ms: 0,
+      missing: ['active-change', 'OPENLOGOS_PCS_SMOKE'], evidence: [], duration_ms: 0, outOfWindow: true,
     }]));
     writeRecords(rows, OWNED);
     console.log(`smoke 不适用（已为 ${OWNED.join(', ')} 写 skip 留痕）`);
