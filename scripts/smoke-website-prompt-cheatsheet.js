@@ -140,14 +140,31 @@ export function parseAiTools(helpText) {
  */
 export function parseDeployRecord(text) {
   if (text === null) return { values: {}, missing: ['logos/resources/verify/deployment-report.md'] };
-  const values = {};
-  const missing = [];
-  for (const key of DEPLOY_RECORD_KEYS) {
-    const v = new RegExp(`^\\s*[-*]?\\s*\`?${key}\`?:\\s*\`?([^\\s\`]+)`, 'm').exec(text)?.[1];
-    if (v) values[key] = v; else missing.push(`deployment-report:${key}`);
+  // 部署报告是按提案追加的多份报告（以一级标题分隔），旧报告可能含同名键（如 0.16.0 官网部署的 url / id）。
+  // 先定位本 slug 的 change 行，再只在它所属的那份报告（到下一个一级标题为止）里读 url / id。
+  const lines = text.split(/\r?\n/);
+  const valueOf = (line, key) => new RegExp(`^\\s*[-*]?\\s*\`?${key}\`?:\\s*\`?([^\\s\`]+)`).exec(line)?.[1] ?? null;
+  const changeKey = DEPLOY_RECORD_KEYS[0];
+  const changes = lines.map((line, i) => ({ i, v: valueOf(line, changeKey) })).filter(c => c.v !== null);
+  const own = changes.filter(c => c.v === SLUG).pop();
+  if (!own) {
+    const other = changes.pop();
+    return {
+      values: {},
+      missing: [other
+        ? `deployment-report:${changeKey}=${SLUG}（当前为 ${other.v}，属旧部署记录）`
+        : `deployment-report:${changeKey}`],
+    };
   }
-  if (values.website_docs_deploy_change && values.website_docs_deploy_change !== SLUG) {
-    missing.push(`deployment-report:website_docs_deploy_change=${SLUG}（当前为 ${values.website_docs_deploy_change}，属旧部署记录）`);
+  let start = own.i;
+  while (start > 0 && !/^# /.test(lines[start])) start -= 1;
+  let end = own.i + 1;
+  while (end < lines.length && !/^# /.test(lines[end])) end += 1;
+  const values = { [changeKey]: SLUG };
+  const missing = [];
+  for (const key of DEPLOY_RECORD_KEYS.slice(1)) {
+    const v = lines.slice(start, end).map(line => valueOf(line, key)).filter(Boolean).pop();
+    if (v) values[key] = v; else missing.push(`deployment-report:${key}`);
   }
   return { values, missing };
 }

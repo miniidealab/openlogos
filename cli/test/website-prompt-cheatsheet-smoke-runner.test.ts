@@ -195,6 +195,31 @@ describe('速查页 smoke — SMOKE-core-306 / 307 页面判据', () => {
     expect(ok.missing).toEqual([]);
     expect(mod.parseDeployRecord('website_docs_deploy_url: x\nwebsite_docs_deploy_id: y').missing).toEqual(['deployment-report:website_docs_deploy_change']);
   });
+
+  it('部署报告含更早提案的同名键时，只读本 slug 所在那份报告的 url / id', async () => {
+    const mod = await loadRunner();
+    const parsed = mod.parseDeployRecord([
+      '# 部署报告：website-docs-0-16-0',
+      '- website_docs_deploy_url: https://old.openlogos.pages.dev',
+      '- website_docs_deploy_id: old-id',
+      '',
+      '# 部署报告：docs-prompt-cheatsheet',
+      '- website_docs_deploy_change: docs-prompt-cheatsheet',
+      '- website_docs_deploy_url: https://new.openlogos.pages.dev',
+      '- website_docs_deploy_id: new-id',
+      '',
+      '# 部署报告：later-change',
+      '- website_docs_deploy_id: later-id',
+    ].join('\n'));
+    expect(parsed.missing).toEqual([]);
+    expect(parsed.values).toEqual({
+      website_docs_deploy_change: 'docs-prompt-cheatsheet',
+      website_docs_deploy_url: 'https://new.openlogos.pages.dev',
+      website_docs_deploy_id: 'new-id',
+    });
+    const noOwnUrl = mod.parseDeployRecord('# a\n- website_docs_deploy_url: https://old\n# b\n- website_docs_deploy_change: docs-prompt-cheatsheet\n- website_docs_deploy_id: x');
+    expect(noOwnUrl.missing).toEqual(['deployment-report:website_docs_deploy_url']);
+  });
 });
 
 /** 起一个本地 HTTP 服务：routes[path] = [status, location?]，记录收到的请求路径。 */
