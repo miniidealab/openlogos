@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.14] - 2026-11-12
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- **`openlogos branch sync`：把主分支同步进当前分支，由 CLI 处置工具自己写出的文件的冲突**（branch-sync-generated-files，场景 S44，规范 `spec/branch-sync.md`）。多个提案在各自分支上并行推进时，合并回主分支前先同步主分支；历史回放中这一步 95% 会冲突，其中绝大部分落在验收产物与登记表上。
+  - 同步处置清单内的文件一律取主分支版本（逐字节，不受换行与过滤转换影响），主分支没有而本分支有的删除：共用验收报告、多模块项目中各模块的验收报告、测试结果账本（含回归与增量结果路径），以及 `branch_sync.replace_paths` 追加的同类文件。
+  - `logos/logos-project.yaml` 对照两条分支的共同起点逐条合并：`modules` / `features` / `scenarios` 按 `id`、`resource_index` 按 `path`，单侧的新增、修改、删除都保留；删除与修改并发、两边改成不同内容、两边新增同键而内容不同报冲突且不写回；计数器取两边较大者并在两边都推进时提示可能重号；人工写的索引描述原样保留，合并后只补录遗漏。
+  - 没有剩余冲突时完成合并提交；仍有冲突时保留合并现场，按路径列出类别与原因，退出码 2。只要引入了主分支的提交，就清除未归档提案的 `VERIFY_PASS` / `VERIFY_FAIL` / `DEPLOY_DONE` / `SMOKE_PASS` / `SMOKE_FAIL`，提示重新验收。
+  - 发起合并前的任何拒绝都不产生改动；合并发起后任一步失败都中止合并回到同步前。
+- **`openlogos branch status`**：只读输出当前分支、主分支及其来源、共同起点、落后与领先的提交数。主分支依次取 `--base`、`branch_sync.base_branch`、远端 `origin` 的默认分支。
+- 两个命令都支持 `--base <ref>` 与 `--format json`（`spec/cli-json-output.md`「`openlogos branch sync|status --format json`」）。
+- `logos.config.json` 新增可选配置 `branch_sync`（`base_branch`、`replace_paths`），`spec/logos.config.schema.json` 同步增加定义。该配置只影响同步，verify 沙箱的写入白名单不变。
+
+### 升级提示
+
+- `branch sync` 只调用本机 git，不推送、不拉取、不创建分支；主分支引用是否最新由调用方负责。合并的输入是命令开始时解析到的那个提交，冲突标记里主分支一侧显示的是提交哈希。
+- 基线运行目录、基线事件账本与部署报告不会被替换或删除；同一次基线运行的同一文件两边改动不同时列为剩余冲突，不自动取舍。
+- 主分支新增的路径在工作区已被未跟踪或被忽略的本地文件占用时，同步在发起合并前拒绝并列出路径（git 在真正的合并中会直接覆盖被忽略的文件）。
+- 规格文档与代码的冲突不在处理范围内，只如实列出；统一发号不在本版本内。
+
 ## [0.16.13] - 2026-10-31
 
 本机全局发布（未发布到 npm）。
