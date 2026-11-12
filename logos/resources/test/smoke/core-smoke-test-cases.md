@@ -2786,3 +2786,37 @@ SMOKE-core-21 / 23 的既有认领者是 `website/scripts/smoke-releases.mjs`（
 - 自测模式：设置 `OPENLOGOS_FRIEND_LINK_BASE=<本地预览 URL>` 时进入自测模式，结果写独立账本（`OPENLOGOS_SMOKE_RESULT_PATH` 不得指向项目正式账本，路径按真实路径比较），该值的 origin 必须是 `localhost` 或 `127.0.0.1`，否则用例判 fail。未设置即为正式模式，`<base>` 固定为 `https://openlogos.ai`。
 - runner 写结果前先删除 SMOKE-core-308 在目标账本中的旧记录，保证只有一条结果。结果写入 smoke reporter，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`，`target_environment` 为 `prod`；**失败不得写 pass**。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-308 被 runner 覆盖。
+
+## OpenLogos 0.16.14 提案分支同步安装态 smoke（SMOKE-core-309～311）
+
+> 这组用例验证「提案分支同步主分支」（来源提案 branch-sync-generated-files，场景 S44，规范 `spec/branch-sync.md`）在本机全局安装态中以 0.16.14 的身份可用。完整行为已由仓库内 S44 的 33 个用例覆盖；安装态只取证三件事：装上的是本次候选、`branch status` 与 `branch sync` 能在真实仓库上跑通、关键保护在安装态生效。
+>
+> 用例在 `mktemp -d` 一次性 git 仓库内执行：经全局 `openlogos init` 建立项目后写入夹具，在 `main` 上提交共同起点，分出 `proposal/a`，两条分支各自提交；仓库不配置远端，以 `--base main` 指定主分支。runner 以子进程调用全局 CLI，对全局安装态**只读**，不做安装或卸载；不触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态账本与用户其他仓库（包括 runlogos）。版本以部署记录与 `cli/src/lib/local-release-candidate.ts` 的候选版本为准，断言写成关系式，不硬编码 `0.16.14`。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-309 | 安装态版本与制品身份 | 本机全局已安装本次候选；部署记录中有候选版本 | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 检查全局包内存在 `dist/commands/branch.js`、`dist/lib/branch-sync.js`、`dist/lib/registry-merge.js` 与 `spec/branch-sync.md`，以 `JSON.parse` 读取包内 `spec/logos.config.schema.json`；④ 执行 `openlogos --help` | ① `--version` 等于部署记录候选版本，入口无 workspace link；② `payloadHash` 自洽；③ 四个文件都在，schema 解析成功且 `properties.branch_sync` 含 `base_branch` 与 `replace_paths`；④ 帮助中有 `branch <sync\|status>` 一行 | 保留读取结果；任一不符 → 停止后续流程，按部署方案以 `openlogos deploy --env test --rollback` 回退 |
+| SMOKE-core-310 | 安装态 `branch status` 与 `branch sync` 主链路 | 本机全局已安装本次候选；一次性仓库：共同起点的登记表含场景 S01 与 `scenario_counter.next_id: 50`；`main` 重写验收报告与测试结果账本、新增场景 S50、计数器推进到 51；`proposal/a` 重写验收报告与测试结果账本、新增场景 S51、计数器推进到 51，提案目录下有 `VERIFY_PASS` | ① 全局 CLI `branch status --base main --format json`；② 全局 CLI `branch sync --base main --format json`；③ 读取验收报告、测试结果账本、登记表与提案目录；④ `git status --porcelain` 与 `git rev-list --parents -n 1 HEAD` | ① 退出码 0，`behind=1`、`ahead=1`，`merge_base` 等于 `git merge-base` 的结果；② 退出码 0，`result=synced`，`replaced` 含验收报告与测试结果账本，`registry.status=merged`，计数器 `merged=51` 且 `both_advanced=true`，`invalidated_markers` 列出 `VERIFY_PASS`；③ 两个文件的字节等于 `git cat-file blob main:<path>`，登记表同时含 S50 与 S51，`VERIFY_PASS` 已不存在；④ 工作区干净，HEAD 是以同步前的提交与 `main` 为两个父提交的合并提交 | 同上；任一不成立表示同步能力未完整进入安装态 |
+| SMOKE-core-311 | 安装态下的冲突报告与未入库文件保护 | 本机全局已安装本次候选；两个一次性仓库：甲在 SMOKE-core-310 的构造上让两条分支修改同一份需求文档的同一段；乙中 `main` 新增并跟踪 `notes.md`，`proposal/a` 有自己的提交且工作区有一个被 `.gitignore` 忽略的本地 `notes.md` | ① 在甲执行全局 CLI `branch sync --base main --format json`；② 在甲再次执行同一命令；③ 在乙记录全部文件、`git ls-files -s` 与 HEAD 的 SHA-256 后执行同一命令 | ① 退出码 2，`result=conflicts`，`remaining_conflicts` 只有该需求文档（`category=spec`、`reason=git-conflict`），`MERGE_HEAD` 存在，验收报告已取 `main` 版本；② 退出码 1，错误码 `BRANCH_OPERATION_IN_PROGRESS`；③ 退出码 1，错误码 `BRANCH_UNTRACKED_COLLISION`，`details.paths` 为 `["notes.md"]`，`MERGE_HEAD` 不存在，全部文件（含本地 `notes.md`）、索引与 HEAD 的 SHA-256 与执行前一致 | 同上 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性仓库内进行，结束即删除；`git` 操作只作用于这些一次性仓库，不配置远端、不联网。
+- **不得**触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态目录、本仓的 git 分支与工作区、用户其他仓库（包括 runlogos）或本机全局 prefix。
+- 结果写入本仓 `logos/resources/verify/smoke-results.jsonl`，结果行带 `target_environment="test"`。
+
+### 三、追溯与覆盖
+
+- 场景：S44「提案分支同步主分支：生成文件与登记表」Step 1～12（SMOKE-core-310）；EX-44.12、EX-44.15 与剩余冲突报告（SMOKE-core-311）。需求：`core-01-requirements.md`「S44: 提案分支同步主分支：生成文件与登记表」S44-AC-01、S44-AC-03、S44-AC-06、S44-AC-07、S44-AC-08、S44-AC-11、S44-AC-15、S44-AC-17。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.14 本机测试环境发布（release-0-16-14）」。
+- 仓库内对应用例：UT-S44-28（对应 SMOKE-core-309 的 schema 检查）；ST-S44-01、UT-S44-22（对应 SMOKE-core-310）；ST-S44-02、UT-S44-24（对应 SMOKE-core-311）。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-release-0-16-14.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-309～SMOKE-core-311，不得依靠通配发现后无条件 PASS。
+- 适用窗口：活跃变更为 `release-0-16-14`，或 `OPENLOGOS_R01614_SMOKE=1`；窗口之外按既有留痕机制为全部 owned ID 写 skip。环境变量一律使用 `OPENLOGOS_R01614_` 前缀。
+- 适用性判定不得依赖自动流程不会设置的环境变量。只有部署记录确实缺失，或候选版本早于 0.16.14 时，才写显式 `skip` 并携带缺失项。有 skip 时不得写 `SMOKE_PASS`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-309～SMOKE-core-311 均被 runner 覆盖。

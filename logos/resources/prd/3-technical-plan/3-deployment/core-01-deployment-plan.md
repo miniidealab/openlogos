@@ -5562,3 +5562,77 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 - 沿用：「官网提示词速查页发布检查（docs-prompt-cheatsheet）」，本文件 §十五「仅部署官网文档」口径。
 - 页面设计：`core-02-docs-website-experience.md`「二、信息结构」页脚条目。
 - smoke：`core-smoke-test-cases.md`「官网友情链接发布后 smoke（SMOKE-core-308）」。
+
+## OpenLogos 0.16.14 本机测试环境发布（release-0-16-14）
+
+> 本节引用「本机测试环境脚本部署（scripts/deploy-local.mjs）」通用方案，只写本次的差异：版本号、CHANGELOG、源码回归范围、本仓 `openlogos sync` 与安装态 smoke。冻结、回滚制品、构建候选、试装、全局安装、复核与回执一律按通用方案第三～七节执行，不在本节复写。
+
+### 部署目标与授权边界
+
+给已经装在本机全局的「提案分支同步主分支」能力一个可分辨的版本号。该能力来自提案 `branch-sync-generated-files`（归档提交 `89ec967`，场景 S44），新增 `openlogos branch sync` 与 `openlogos branch status`；它没有升版，2026-11-12 已以版本通道装到本机全局（deploy `b4c84de2`），版本号仍是 0.16.13。于是本机先后有两份内容不同的安装态都叫 0.16.13（提交 `6aed03a` 与 `89ec967`），`openlogos --version` 分不出有没有 `branch` 命令。本次把版本号升到 0.16.14 后重新部署，不改任何 CLI 行为代码。
+
+- **目标环境**：`test`（登记表 `proposal_default_env: test`，来源提案决策 C02，`source: policy`）。登记表中 `test.deploy` 为 `mode: script`、`script: scripts/deploy-local.mjs`。
+- **入口**：提案通道 `openlogos deploy --env test`，部署请求 HEAD；由 CLI 追加部署报告、写 `DEPLOY_DONE` 并勾选 `[deploy]`。提案通道已完成受控落标，部署成功后**不再**另行执行 `openlogos deploy-done`，否则会生成新的 deploy_id 和不带 ref 的账本记录，覆盖本次部署身份。
+- **授权**：升版与部署由用户 2026-11-12 明确要求（决策 C01）。`openlogos merge`、`verify`、部署执行、`smoke`、`archive` 仍各自是人类确认点；`next --auto` 模式下以对应门的 `gate_auto_passed=true` 为执行依据。`test` 未配置 `promote_from` / `require_approval`。本方案不含 `git push`。
+- **版本号边界**：0.16.14 只作本机全局版本，不进入 npm registry。本方案**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`；公开发布另立 release 提案。不改写其他仓库（包括 runlogos），不在其项目根运行任何命令。
+- **本仓行为**：0.16.14 相对当前全局安装态（提交 `89ec967`）只有版本号、CHANGELOG 与安装态 smoke runner 的差异；本仓 verify / 部署 / smoke 的判定不变。
+
+### 部署前置与版本
+
+1. 本提案 delta 已 merge，`[code]` 切片实现并提交，`openlogos verify` PASS；`openlogos env check` 无 error，`openlogos deploy --env test --dry-run` 通过（通用方案第三节）。
+2. **请求提交已提交**：`openlogos deploy` 部署的是 HEAD。部署前确认 merge 后的规格、切片代码与验收报告都已提交、工作区干净；未提交时按「规格合并 → 代码 → 验收报告」的顺序补提交后再部署。
+3. **版本事实复核**：读取 `cli/package.json` 当前版本，计划时为 `0.16.13`（未发布到 npm）。候选为下一 patch `0.16.14`，执行 `npm view @miniidealab/openlogos@0.16.14 version` 应返回 E404（计划时 registry 最高为 `0.16.7`）。若实施前已有其他提案升版，或 registry 已存在候选版本号，候选改为「当时版本与 registry 最高版本中较大者的下一 patch」，并在部署记录写明实际值。
+4. **升版**：在实现中执行 `node cli/scripts/bump-version.mjs 0.16.14`，由脚本一次更新全部版本载体，并调用既有生成器重算 `cli/asset-manifest.json`，**禁止手改** manifest。脚本会把 `cli/src/lib/local-release-candidate.ts` 的回滚版本设为升版前版本，应为 `0.16.13`；不符时改为 `0.16.13`，并在部署记录说明。
+5. **CHANGELOG**：在 `## [Unreleased]` 之后新增 `## [0.16.14]` 条目，注明「本机全局发布（未发布到 npm）」，不改既有条目：
+   - **Added**：`openlogos branch sync`——把主分支同步进当前分支。验收报告与测试结果账本（及 `branch_sync.replace_paths` 追加的同类文件）取主分支版本；`logos-project.yaml` 对照两条分支的共同起点逐条合并（单侧的新增、修改、删除都保留，并发改动报冲突，计数器取较大者）；没有剩余冲突时完成合并提交，仍有冲突时保留合并现场并列出剩余冲突（退出码 2）；引入主分支提交后清除验收与交付标记。
+   - **Added**：`openlogos branch status`——只读输出当前分支、主分支及其来源、共同起点、落后与领先的提交数。两个命令都支持 `--base <ref>` 与 `--format json`。
+   - **Added**：`logos.config.json` 可选配置 `branch_sync`（`base_branch`、`replace_paths`）；根规范 `spec/branch-sync.md`。
+   - **升级提示**：`branch sync` 不推送、不拉取，主分支引用是否最新由调用方负责；基线运行目录、基线事件账本与部署报告不会被替换或删除；主分支新增的路径在工作区已被未跟踪或被忽略的文件占用时，同步在发起合并前拒绝。
+
+### 源码回归范围
+
+部署前的 verify 负责源码回归，脚本不跑测试（通用方案第八节）。升版后复跑以下检查，必须全绿：
+
+- `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`、`npm run build`。
+- 范围包括来源提案的 UT-S44-01～UT-S44-28、ST-S44-01～ST-S44-05，既有 S13（verify 与沙箱写入白名单）、S18（资源索引补录）、S33（基线事务锁与恢复门）、S42 / S43 部署全部用例，以及 UT-S19-46（版本身份）、UT-S19-49（asset-manifest 自洽）。
+
+### 部署、sync 与部署后检查
+
+1. 执行 `openlogos deploy --env test`（提案通道）。按通用方案第七节第 1、2 条读回回执与账本：
+   - 全局 `--version` 为 `0.16.14`；
+   - 入口 realpath 等于回执 `entry_realpath`，全局 `dist/index.js` 的 SHA-256 等于 `candidate_entry_sha256`；
+   - 记录候选 tarball 与回滚制品的路径与 SHA-256；回滚制品由脚本第 ③ 步从当前全局安装打包，计划时应为提交 `89ec967` 的 0.16.13 安装态；
+   - 部署前账本 `test.current_ref` 为 `89ec9671db4ccd4c7b8036e4482060d5f651c672`（0.16.13，deploy `b4c84de2`），部署成功后它成为 `previous_ref`。
+2. **本仓 sync**：来源提案新增了根规范 `spec/branch-sync.md`，并修改了 `spec/cli-json-output.md` 与 `spec/logos.config.schema.json`，本仓 `logos/spec/` 下的托管副本尚未刷新。在主工作树执行一次 `openlogos sync` 并读回：
+   - `logos/spec/branch-sync.md` 存在，且与全局安装包内的 `spec/branch-sync.md` 逐字节一致；`logos/spec/cli-json-output.md`、`logos/spec/logos.config.schema.json` 与包内对应文件逐字节一致；
+   - 本仓 AGENTS.md / CLAUDE.md 的变化只来自托管内容与版本戳，不出现与本次发布无关的改写；
+   - sync 产生的托管文件变化随部署记录一起由流程提交，不 push；
+   - 若 sync 再次向 `.claude/settings.json` 追加重复的 SessionStart 条目（已知缺陷），按前几版部署记录同样还原并记录。
+3. 经授权执行 `openlogos smoke --env test`：
+   - 本次行为用例：「OpenLogos 0.16.14 提案分支同步安装态 smoke（SMOKE-core-309～311）」；
+   - 通用安装态用例：「本机测试环境脚本部署安装态 smoke（SMOKE-core-268～SMOKE-core-271）」。
+
+### 失败处置与回滚
+
+回滚目标是**提交 `89ec967` 的 0.16.13 安装态**（含 `branch` 命令、版本号为 0.16.13），处置按通用方案第五节，本次差异如下：
+
+- **部署前置或 dry-run 失败**：不执行部署，修正后重试，或回流实现。
+- **脚本失败（部署未成功）**：脚本自动回装第 ③ 步的回滚制品，复核 `--version` 为 `0.16.13` 且 `openlogos branch status` 可用；账本记 `result=failed`，不推进。
+- **成功部署后要回退**：执行 `openlogos deploy --env test --rollback`。账本 `previous_ref` 为 `89ec967…`，该提交含 `scripts/deploy-local.mjs`。回退后用回退到的版本在本仓执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件。
+- **要回到没有 `branch` 命令的 0.16.13**：以版本通道执行 `openlogos deploy --env test --ref 6aed03a`。
+- **成功落账后 smoke 失败**：按通用方案第五节「(c)」处置：停止后续完成流程，保留失败证据，回流修复后以 `openlogos deploy --env test` 部署修复提交并重跑 smoke。不得手工回装旧包。
+- 本次无数据迁移：配置字段、文件格式与既有命令的输出均不变。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`，不部署官网。
+- 不改写其他仓库（包括 runlogos），不在其项目根运行任何命令。
+- 不改任何 CLI 行为代码：`branch` 命令已在来源提案验收并归档。
+
+### 追溯
+
+- 场景：S44「提案分支同步主分支：生成文件与登记表」。
+- 需求：`core-01-requirements.md`「S44: 提案分支同步主分支：生成文件与登记表」。
+- 测试：UT-S44-01～UT-S44-28、ST-S44-01～ST-S44-05；安装态 smoke：SMOKE-core-309～SMOKE-core-311，以及通用的 SMOKE-core-268～SMOKE-core-271。
+- 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
+- 来源提案：branch-sync-generated-files；本提案：release-0-16-14（决策 C01、C02）。
