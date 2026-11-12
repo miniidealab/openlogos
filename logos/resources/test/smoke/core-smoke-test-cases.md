@@ -2745,3 +2745,44 @@ SMOKE-core-21 / 23 的既有认领者是 `website/scripts/smoke-releases.mjs`（
 - 自测模式：设置 `OPENLOGOS_PCS_BASE=<本地预览 URL>` 时进入自测模式，结果写独立账本，不进项目正式 smoke 账本；该值的 origin 必须是 `localhost` 或 `127.0.0.1`，否则全部用例判 fail。未设置 `OPENLOGOS_PCS_BASE` 即为正式模式，`<base>` 固定为 `https://openlogos.ai`，不接受其他来源的地址。
 - runner 写结果前先删除本 runner 记账 ID（SMOKE-core-306、307、21、23）在目标账本中的旧记录，保证每个 ID 只有一条结果。结果写入 smoke reporter，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`，`target_environment` 为 `prod`；**失败不得写 pass**。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-306～SMOKE-core-307 均被 runner 覆盖。
+
+## 官网友情链接发布后 smoke（SMOKE-core-308）
+
+> 这组用例验证官网营销页 footer 的 Markdown6 友情链接（来源提案 add-markdown6-friend-link）已在生产环境上线，且写法满足外链安全与可访问性要求。
+>
+> **执行对象**：正式模式固定为生产域名 `https://openlogos.ai`，下文 `<base>` 指该域名。自测模式下 `<base>` 为本地预览 URL（`cd website && npm run preview`）。
+>
+> **URL 重定位与重定向**：沿用「官网提示词速查页发布后 smoke（SMOKE-core-306～307）」的规则——origin 为 `https://openlogos.ai` 的地址改写到 `<base>` 的 origin 后再请求，其他 origin 的地址（含重定向 Location）不请求、只记入 evidence；重定向逐跳跟随并逐跳记录，跳数设上限。**不请求 `https://markdown6.com/` 本身**：本用例只验证官网上的链接写法，不验证第三方站点可用性。
+>
+> **执行边界**：runner 对公网**只读**，只发 HTTP GET。不执行 `wrangler`、`npm publish`、`git tag`、`git push` 或任何写操作。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-308 | 中英文营销页 footer 含 Markdown6 友情链接且写法合规 | 正式模式：官网已按部署方案「官网友情链接发布检查（add-markdown6-friend-link）」部署，且本次部署记录已写入；自测模式：本地预览已启动 | ① GET `<base>/`、`<base>/zh/`、`<base>/about/`、`<base>/zh/about/`；② 取每页 `<footer class="site-footer">` 元素内的 HTML；③ 在 footer 内找出 `href` 规范化后等于 `https://markdown6.com/` 的 `<a>` 元素 | ① 均返回 200；② 每页恰好一个 `site-footer`；③ 每页 footer 内恰好一个指向 `https://markdown6.com/` 的链接，其属性满足：`target="_blank"`；`rel` 同时含 `noopener` 与 `noreferrer`；有非空 `aria-label`；链接文本含 `Markdown6`。footer 文本含友情链接标签：中文页含「友情链接」，英文页含 "Friends" | 保留每个 URL 的状态码、footer 中匹配到的链接数量与属性。缺链接或属性不合规时修正 `website/src/layouts/BaseLayout.astro`，重走部署方案发布前检查后重新部署；页面出现错误内容时，先按部署方案在 Cloudflare Pages 回滚 |
+
+### 二、执行边界
+
+- 公网只读（见本节导言）；命令图中不得出现部署或发布写操作。
+- 断言不硬编码主机路径、墙上时钟或部署 ID。
+- **部署记录只在正式模式要求**：
+  - 自测模式不要求生产部署记录，evidence 写 `deploy_record=not-required(self-test)`；
+  - 正式模式读取 `logos/resources/verify/deployment-report.md` 中 `website_docs_deploy_change: add-markdown6-friend-link` 所属那份报告（到下一个一级标题为止）里的 `website_docs_deploy_url` 与 `website_docs_deploy_id`。缺 change 行、change 行属于其他提案，或该份报告缺 url / id，用例写显式 `skip` 并在 `missing_requirements` 中列出缺失项。URL 与 ID 只写入 evidence，不参与判定。
+- 判据只看 HTTP 状态码、footer 元素、链接属性与固定标签文字是否出现，不解析其余人类可读文案。
+- 网络不可达、正式模式缺本次部署记录时写显式 `skip` 并带缺失项。这些都是可补齐的环境缺口，**不得**标 `reason_code:"platform-unavailable"`；有 skip 时不得写 `SMOKE_PASS`。
+
+### 三、追溯与覆盖
+
+- 页面设计：`core-02-docs-website-experience.md`「二、信息结构」页脚条目。
+- 部署：`core-01-deployment-plan.md`「官网友情链接发布检查（add-markdown6-friend-link）」。
+- 来源提案：add-markdown6-friend-link（决策 C01、C02、C03）。
+- 覆盖关系：营销页 footer 友情链接的存在、唯一性、外链安全属性与中英文标签 → SMOKE-core-308。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-website-friend-link.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-308，不得依靠通配发现后无条件 PASS。
+- 适用窗口：活跃变更为 `add-markdown6-friend-link`，或设置 `OPENLOGOS_FRIEND_LINK_SMOKE=1`；窗口之外为 SMOKE-core-308 写 skip 留痕。环境变量一律使用 `OPENLOGOS_FRIEND_LINK_` 前缀。
+- 自测模式：设置 `OPENLOGOS_FRIEND_LINK_BASE=<本地预览 URL>` 时进入自测模式，结果写独立账本（`OPENLOGOS_SMOKE_RESULT_PATH` 不得指向项目正式账本，路径按真实路径比较），该值的 origin 必须是 `localhost` 或 `127.0.0.1`，否则用例判 fail。未设置即为正式模式，`<base>` 固定为 `https://openlogos.ai`。
+- runner 写结果前先删除 SMOKE-core-308 在目标账本中的旧记录，保证只有一条结果。结果写入 smoke reporter，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`，`target_environment` 为 `prod`；**失败不得写 pass**。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-308 被 runner 覆盖。
