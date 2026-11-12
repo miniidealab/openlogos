@@ -1324,3 +1324,34 @@ public_release_commit: 3d851a71a17c86d081ce9d69adf2ea88331a94fe
 ## 四、后续
 
 - 正式 smoke：执行 `openlogos smoke`，runner `scripts/smoke-website-prompt-cheatsheet.js` 以正式模式对 `https://openlogos.ai` 执行 SMOKE-core-306～307 与复用的 SMOKE-core-21 / 23，结果摘要补入本节。
+
+# 部署报告：add-markdown6-friend-link / 官网营销页 footer 增加 Markdown6 友情链接（2026-11-11，**已部署：生产官网 openlogos.ai**）
+
+- website_docs_deploy_change: add-markdown6-friend-link
+- website_docs_deploy_url: https://f226566a.openlogos.pages.dev
+- website_docs_deploy_id: f226566a-4c93-4843-8930-8637aa21e8ad
+
+## 一、部署事实
+
+- 目标环境：登记表 `prod`，Cloudflare Pages 项目 `openlogos`，生产域名 `https://openlogos.ai`（来源提案决策 C01）。授权依据：RunLogos `--auto` 运行中 deliver 门 `gate_auto_passed=true`（`GATE_AUTO_PASSED` 审计行 `deliver-entry` 2026-11-12T05:17:40.891Z）。
+- 部署提交：`6818cb7bc94129707464f3c9f6e2d6d02a61bd71`（wrangler 显示 Source `6818cb7`、Environment Production、Branch master）。
+- 执行命令：`cd website && npm run build && npx wrangler pages deploy dist --project-name openlogos --branch master`（用户本机 Cloudflare 凭据）；上传 27 个文件（另 447 个已存在）。字体子集化沿用仓库外临时虚拟环境 `/Volumes/BuildWork/tmp/pcs-fonttools-venv/bin`。
+- 部署后线上 `/`、`/zh/`、`/about/`、`/zh/about/` 各含 1 个 `href="https://markdown6.com/"` 链接。
+- 不做（决策 C02）：未升版本、未改 CHANGELOG、未打 tag、未 npm publish、未建 GitHub Release、未 git push。
+
+## 二、发布前检查摘要
+
+- 第 2 项（官网源码差异）：`git diff --stat 4aa2f74..HEAD -- website` 只有 `website/src/layouts/BaseLayout.astro`（+35 行）；字体子集未重新生成。
+- 第 3 项：`npm ci && npm run build` 通过，`npm test` 3/3 通过；构建后工作树干净。
+- 第 4 项：构建后 `releases.json` 的 `latestVersion` = `0.16.7` = npm `dist-tags.latest`。
+- 第 5 项：runner 自测模式（`OPENLOGOS_FRIEND_LINK_BASE=http://127.0.0.1:4331`，独立账本）SMOKE-core-308 pass，offsite_requests=0、blocked_redirects=0，`deploy_record=not-required(self-test)`。
+- verify：Gate 3.6 PASS（`VERIFY_PASS` 在场）。
+
+## 三、回滚
+
+- 回滚目标：部署前的生产部署 `73db153c-9f8a-4e54-a39c-cd073bc3794a`（`https://73db153c.openlogos.pages.dev`，Source `4aa2f74`）。
+- 处置：内容异常或 smoke 失败时，在 Cloudflare Pages 控制台把生产回滚到上述部署；修复 `website/` 后重走发布前检查再部署。不涉及 npm、tag 或 GitHub Release；无数据迁移。
+
+## 四、后续
+
+- 正式 smoke：执行 `openlogos smoke`，runner `scripts/smoke-website-friend-link.js` 以正式模式对 `https://openlogos.ai` 执行 SMOKE-core-308，结果摘要补入本节。
