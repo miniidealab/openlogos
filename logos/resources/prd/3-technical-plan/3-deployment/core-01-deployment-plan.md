@@ -5448,7 +5448,7 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
    - `website/src/content/docs/getting-started/prompt-cheatsheet.mdx` 与 `website/src/content/docs/zh/getting-started/prompt-cheatsheet.mdx` 都已落盘，slug 一致；
    - `website/astro.config.mjs` 的「快速开始」分组在「首次 AI 协作」之后登记该页（中文标签「提示词速查」）；
    - 中英文 `getting-started/index.md` 都含指向该页的入口。
-2. **官网源码差异只含本提案**：`git diff --stat v0.16.7..HEAD -- website` 的文件清单只能是第 1 项列出的文件、`website/scripts/smoke-releases.mjs`（smoke 规格「复用用例的记账交接」要求的窗口改动），以及 `website/src/data/releases.json`（0.16.7 发布同步时提交的生成数据）。出现其他文件说明有未公开版本的文档改动混入，停止部署并报告。
+2. **官网源码差异只含本提案**：`git diff --stat v0.16.7..HEAD -- website` 的文件清单只能是第 1 项列出的文件、`website/scripts/smoke-releases.mjs`（smoke 规格「复用用例的记账交接」要求的窗口改动）、`website/public/fonts/NotoSansSC-*.subset.woff2`（新页面引入新汉字后由 `npm run build` 的字体子集化步骤重新生成的构建产物，不含文档内容），以及 `website/src/data/releases.json`（0.16.7 发布同步时提交的生成数据）。出现其他文件说明有未公开版本的文档改动混入，停止部署并报告。
 3. **版本基线核对**（页面按已公开的 0.16.7 编写）：
    - 页面中出现的每个 `openlogos <命令>` 顶层命令，都在 `npx -y @miniidealab/openlogos@0.16.7 --help` 的 Commands 段中（`slice` 按已知 help 漏列例外处理，以 0.16.7 源码 `cli/src/index.ts` 的分派为准）；
    - 宿主差异区块的每条事实（命令触发方式、门禁对 shell 命令与文件写入的处理）都能在 `git show v0.16.7:spec/<宿主>-plugin.md` 或 `git show v0.16.7:spec/pretooluse-guard.md` 中找到依据；无依据的条目删除，不得凭记忆补写。
