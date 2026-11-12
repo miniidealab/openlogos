@@ -5425,3 +5425,79 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 - 测试：UT-S16-46～UT-S16-55、ST-S16-06；安装态 smoke：SMOKE-core-303～SMOKE-core-305，以及通用的 SMOKE-core-268～SMOKE-core-271。
 - 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
 - 来源提案：fix-cli-exit-truncates-piped-output；本提案：release-0-16-13（决策 C01、C02）。
+
+## 官网提示词速查页发布检查（docs-prompt-cheatsheet）
+
+本提案 `docs-prompt-cheatsheet` 在官网「快速开始」分组新增中英文「提示词速查」页（slug `getting-started/prompt-cheatsheet`），并在入门简介页加入口。改动只在 `website/` 源码与新增的 smoke runner，不改 CLI 运行时行为，不发 npm 包。沿用「OpenLogos 0.16.0 官网文档补齐发布检查」与 §十五「仅部署官网文档」的口径，只走 `website_release_sync` 的构建与部署链路，不走 §一的 tag 驱动发布。
+
+### 部署目标与授权边界
+
+- **目标环境（生产，登记表 `prod`）**：Cloudflare Pages 项目 `openlogos`，生产域名 `https://openlogos.ai`。`prod` 未配置 `deploy`、`require_approval`、`promote_from`，部署不会停在审批或晋级；`openlogos deploy` 对该环境不可用（`DEPLOY_NOT_CONFIGURED`），部署由本机命令完成后用 `openlogos deploy-done` 记录。
+- **部署方式**（来源提案决策 C01）：verify 通过后在本机执行官网构建与部署，使用用户本机的 Cloudflare 凭据。
+- **不做**（来源提案决策 C02）：不升版本号，不改 `CHANGELOG.md`，不打 tag，不执行 `npm publish` / `npm dist-tag`，不创建或编辑 GitHub Release。
+- **人类确认点**：
+  - 部署执行需要用户明确授权；
+  - `git push` 是独立的人类确认点，在 archive 之后再询问，部署授权不连带覆盖它。当前分支含未推送的 0.16.8～0.16.13 提交，推送什么由用户届时单独决定；
+  - 全自动 `--auto` 模式下按 standing 授权执行。
+
+### 发布前检查
+
+依次全部通过才可部署：
+
+1. **页面齐备**：
+   - `website/src/content/docs/getting-started/prompt-cheatsheet.mdx` 与 `website/src/content/docs/zh/getting-started/prompt-cheatsheet.mdx` 都已落盘，slug 一致；
+   - `website/astro.config.mjs` 的「快速开始」分组在「首次 AI 协作」之后登记该页（中文标签「提示词速查」）；
+   - 中英文 `getting-started/index.md` 都含指向该页的入口。
+2. **官网源码差异只含本提案**：`git diff --stat v0.16.7..HEAD -- website` 的文件清单只能是第 1 项列出的文件、`website/scripts/smoke-releases.mjs`（smoke 规格「复用用例的记账交接」要求的窗口改动），以及 `website/src/data/releases.json`（0.16.7 发布同步时提交的生成数据）。出现其他文件说明有未公开版本的文档改动混入，停止部署并报告。
+3. **版本基线核对**（页面按已公开的 0.16.7 编写）：
+   - 页面中出现的每个 `openlogos <命令>` 顶层命令，都在 `npx -y @miniidealab/openlogos@0.16.7 --help` 的 Commands 段中（`slice` 按已知 help 漏列例外处理，以 0.16.7 源码 `cli/src/index.ts` 的分派为准）；
+   - 宿主差异区块的每条事实（命令触发方式、门禁对 shell 命令与文件写入的处理）都能在 `git show v0.16.7:spec/<宿主>-plugin.md` 或 `git show v0.16.7:spec/pretooluse-guard.md` 中找到依据；无依据的条目删除，不得凭记忆补写。
+4. **不含客户信息**：页面不出现来源客户的名称、客户内部系统名称或客户对话原文。
+5. **构建与测试**：`cd website && npm ci && npm run build` 通过（含 releases 数据生成、字体抓取与子集化），`cd website && npm test` 全绿。
+6. **发布动态不回退**：构建后 `website/src/data/releases.json` 的 `latestVersion` 等于 `npm view @miniidealab/openlogos dist-tags.latest`（计划时为 `0.16.7`）。生成脚本失败时会回退到已提交缓存，因此必须核对这个值。
+7. **smoke runner 自测**：`scripts/smoke-website-prompt-cheatsheet.js` 以自测模式指向本地预览（`cd website && npm run preview`），对 SMOKE-core-306～307 与复用的 SMOKE-core-21 / 23 全部 pass。自测在部署前进行，不要求生产部署记录（evidence 注明 `deploy_record=not-required(self-test)`），不得借用旧部署记录。自测结果写独立账本，不进项目正式 smoke 账本。站内绝对 URL 按 smoke 规格「官网提示词速查页发布后 smoke」的 URL 重定位规则改写到预览 origin，evidence 的实际请求 URL 清单中没有任何一条去往其他 origin。
+8. **记录回滚目标**：执行只读命令 `npx wrangler pages deployment list --project-name openlogos`，记下当前生产部署的 ID 与来源提交，作为回滚目标。
+
+### 部署执行
+
+- 前提：工作树干净，待部署提交已包含本提案全部 `website/` 改动与 smoke runner；发布前检查全部通过。
+- 命令：
+  ```bash
+  cd website && npm run build && npx wrangler pages deploy dist --project-name openlogos --branch master
+  ```
+  显式写出 `--branch master`，让部署落到生产，不随当前 git 分支（本提案在 `feat/ontology-layer` 上进行）落到预览环境。
+- 记录 wrangler 输出的部署 URL、部署 ID，以及部署对应的 git 提交号。
+
+### 部署后检查
+
+按以下顺序执行。正式 smoke 依赖本次部署记录，因此先写记录、再跑 smoke：
+
+1. **先写本次部署事实**：部署成功、拿到 URL、ID 与提交号后，立即写入 `logos/resources/verify/deployment-report.md`，内容包括：
+   - `website_docs_deploy_change: docs-prompt-cheatsheet`、`website_docs_deploy_url: <wrangler 输出的部署 URL>`、`website_docs_deploy_id: <部署 ID>` 三行（smoke 正式模式读取这三行，change 行不等于本提案即视为旧记录）；
+   - 部署提交号与回滚目标部署 ID；
+   - 发布前检查第 2、3、5、6、7 项的结果摘要。
+2. **记录部署完成**：执行 `openlogos deploy-done --env prod --ref <部署提交号>`（Gate 3.7）。
+3. **正式 smoke**：执行 `openlogos smoke`，经 `scripts/run-smoke.js` 完整发现链路运行。runner 正式模式对 `https://openlogos.ai` 执行，SMOKE-core-306～307 与复用的 SMOKE-core-21 / 23 全部 pass；正式账本中这四个 ID 各恰有一条来自生产的记录（交接规则见 smoke 规格「复用用例的记账交接」）。
+4. **补入结果**：把 smoke 结果摘要追加到第 1 步的部署记录。
+
+### 失败处置与回滚
+
+- **部署前任一检查失败**：不部署，修复后重走全部发布前检查。不产生公网痕迹。
+- **wrangler 部署失败**（凭据、网络、配额）：生产仍是原部署，不需要回滚。修复环境后重新执行部署命令。
+- **部署成功但 smoke 失败，或发现内容错误**：
+  1. 在 Cloudflare Pages 控制台把生产回滚到「发布前检查第 8 项」记录的部署；
+  2. 修复 `website/` 源码后重走发布前检查并重新部署；
+  3. 不涉及 npm、tag 或 GitHub Release。
+- **回滚范围**：只影响官网静态内容。`releases.json` 数据随回滚的那次部署一起恢复，不手改。
+
+### 数据与兼容
+
+- 无数据库，无数据迁移。
+- 文档 URL 只增不删，既有页面 slug 全部保留，外部链接不失效。
+- CLI 包与 npm registry 不变；`/releases` 的 latest 仍为 npm `dist-tags.latest`。
+
+### 追溯
+
+- 来源提案：docs-prompt-cheatsheet（决策 C01 部署方式、C02 不发版且 push 单独确认）。
+- 沿用：「OpenLogos 0.16.0 官网文档补齐发布检查」，本文件 §十一「官网发布动态构建策略」、§十五「仅部署官网文档」口径。
+- smoke：`core-smoke-test-cases.md`「官网提示词速查页发布后 smoke（SMOKE-core-306～307）」。

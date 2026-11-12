@@ -2678,3 +2678,70 @@
 - 适用性判定不得依赖自动流程不会设置的环境变量。只有部署记录确实缺失，或候选版本早于 0.16.13 时，才写显式 `skip` 并携带缺失项；非 POSIX 平台的 SMOKE-core-305 写显式 `skip`。有 skip 时不得写 `SMOKE_PASS`。
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-303～SMOKE-core-305 均被 runner 覆盖。
+
+## 官网提示词速查页发布后 smoke（SMOKE-core-306～307）
+
+> 这组用例验证官网新增的中英文「提示词速查」页（slug `getting-started/prompt-cheatsheet`，来源提案 docs-prompt-cheatsheet）已在生产环境上线，内容满足两条判据：
+> - 页面可达、入口齐全，覆盖两条主线、核心命令与人类确认点（306）；
+> - 宿主差异区块覆盖 0.16.7 的全部具体宿主，并写明 ZCode / Qoder / WorkBuddy 下哪些 CLI 步骤由人在终端执行（307）。
+>
+> 中文路由与字体用复用的在案用例确认不受影响。
+>
+> **执行对象**：正式模式固定为生产域名 `https://openlogos.ai`，下文 `<base>` 指该域名。自测模式下 `<base>` 为本地预览 URL（`cd website && npm run preview`）。
+>
+> **URL 重定位**：沿用「官网文档 0.16.0 补齐发布后 smoke（SMOKE-core-235～238）」导言中的同名规则。origin 为 `https://openlogos.ai` 的站内 URL 改写到 `<base>` 的 origin 后再请求，其他 origin 的 URL 不请求、只记入 evidence；逐条记录实际请求 URL，出现任何一条去往其他 origin 的实际请求，当次所有用例判 fail。
+>
+> **宿主口径**：速查页按已公开的 0.16.7 编写，判据用的宿主集合也固定为 0.16.7 的取值，不随本机 CLI 版本变化。固定集合 H₀ = `claude-code`、`opencode`、`codex`、`cursor`、`zcode`、`qoder`、`workbuddy`。来源是 `v0.16.7` 提交中 `cli/src/index.ts` 帮助文本的 `--ai-tool <…>` 取值，去掉 `other` 与 `all`；runner 内以常量写死，并在注释中注明来源。取值到页面显示名的固定映射：`claude-code`→`Claude Code`、`opencode`→`OpenCode`、`codex`→`Codex`、`cursor`→`Cursor`、`zcode`→`ZCode`、`qoder`→`Qoder`、`workbuddy`→`WorkBuddy`。runner 另外读取本机 `openlogos --version` 与 `--help` 中的 `--ai-tool` 取值，**只写入 evidence，不参与判定**：本机 CLI 多出 H₀ 之外的取值时，在 evidence 中记为 `hosts_beyond_baseline=<取值>`，提示速查页在下次公开发版时更新，本用例不因此失败。
+>
+> **执行边界**：runner 对公网**只读**，只发 HTTP GET，并在本机执行 `openlogos --version` 与 `openlogos --help`。不执行 `wrangler`、`npm publish`、`git tag`、`git push` 或任何写操作。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-306 | 中英文速查页可达、入口齐全，覆盖两条主线、核心命令与人类确认点 | 正式模式：官网已按部署方案「官网提示词速查页发布检查（docs-prompt-cheatsheet）」部署，且本次部署记录已写入；自测模式：本地预览已启动 | ① GET `<base>/getting-started/prompt-cheatsheet` 与 `<base>/zh/getting-started/prompt-cheatsheet`；② 从 ① 两页的侧边栏提取「快速开始」/ "Getting Started" 分组内的链接序列；③ GET `<base>/getting-started` 与 `<base>/zh/getting-started`，提取正文中的站内链接；④ 取 ① 两页的正文区域（Starlight `.sl-markdown-content`，去掉 `<script>` 与 `<style>`），按 h2 / h3 标题切成小节 | ① 均返回 200；② 分组含指向本语言速查页的链接，且紧跟在本语言 `getting-started/first-collaboration` 链接之后（路径比较忽略末尾 `/`）；③ 英文简介页含指向 `/getting-started/prompt-cheatsheet` 的链接，中文简介页含指向 `/zh/getting-started/prompt-cheatsheet` 的链接；④ 每页同时满足：存在标题含「场景 A」与「场景 B」的小节（英文页为 "Scenario A" 与 "Scenario B"）；正文包含 `openlogos next`、`openlogos change`、`openlogos merge`、`openlogos verify`、`openlogos archive` 五个命令；存在标题含「人类确认点」的小节（英文页标题含 "human confirmation"，不区分大小写），该小节正文同时包含 `merge`、`verify`、`archive`、`git push` | 保留每个 URL 的状态码、侧边栏链接序列与缺失项清单。缺页、缺入口或缺判据内容时补写 `website/` 源码，重走部署方案发布前检查后重新部署；页面出现错误内容时，先按部署方案在 Cloudflare Pages 回滚 |
+| SMOKE-core-307 | 宿主差异区块覆盖 0.16.7 全部具体宿主，并写明终端执行的步骤 | 同 SMOKE-core-306 | ① 取本节「宿主口径」的固定集合 H₀ 及其显示名；② 对 ① 中两页（SMOKE-core-306 ①），在正文区域找出宿主差异区块：标签（`[role="tab"]`）文本中出现任一宿主显示名的 Starlight Tabs 组件；③ 收集该区块全部标签文本；④ 定位标签文本同时含 `ZCode`、`Qoder`、`WorkBuddy` 的标签页，取其对应面板（`[role="tabpanel"]`）的正文 | ② 每页恰好找到一个宿主差异区块；③ 每页的标签文本合起来覆盖 H₀ 的全部显示名（大小写敏感，按子串匹配）；④ 每页都能定位到该标签页，面板正文同时包含 `openlogos change`、`openlogos merge`、`openlogos verify`，并包含「终端」（英文页为 "terminal"，不区分大小写） | 保留 H₀、本机 CLI 版本与 `--ai-tool` 取值（evidence）、每页标签文本清单、缺失的显示名与面板缺失项。宿主缺失或面板缺内容时补写 `website/` 源码后重新部署。速查页基线升级到新的公开版本时，另立变更同时更新页面与 H₀，不得在 runner 中改为读取本机 CLI |
+
+### 二、复用的在案用例
+
+以下在案用例沿用其原定义，本次只规定执行对象（定义不在本节重复登记）：
+
+- 中文路由与语言切换用例 SMOKE-core-21：对 `<base>/zh`、`<base>/zh/getting-started`、`<base>/zh/getting-started/prompt-cheatsheet` 执行。
+- 中文字体用例 SMOKE-core-23：对已部署站点执行。从中文营销页与中文速查页的 CSS 提取 `NotoSansSC-*.subset.woff2` 引用，逐个 GET，确认返回 200 且体积非空。
+
+### 三、复用用例的记账交接
+
+SMOKE-core-21 / 23 的既有认领者是 `website/scripts/smoke-releases.mjs`（按本地 `dist` 断言）。`scripts/run-smoke.js` 按路径排序执行 runner，`scripts/smoke-website-prompt-cheatsheet.js` 先于 `website/scripts/smoke-releases.mjs` 执行。后者会先删除其 `WEBSITE_SMOKE_IDS` 的已有结果再重写，不交接就会删掉本次生产证据，换成本地构建结果。因此：
+
+- **交接窗口**：活跃变更为 `docs-prompt-cheatsheet`，或设置 `OPENLOGOS_PCS_SMOKE=1`。
+- **窗口内**：`website/scripts/smoke-releases.mjs` 把 SMOKE-core-21 / 23 视为让出 ID：仍按本地构建执行断言并打印结果，但不删除、也不写入这两个 ID 的记录。这两个 ID 只由 `scripts/smoke-website-prompt-cheatsheet.js` 按 `<base>` 记账。
+- **窗口外**：`website/scripts/smoke-releases.mjs` 行为不变。既有 `website-docs-0-16-0` 窗口（让出 07 / 08 / 21 / 23）保持不变，两个窗口的让出集合取并集。
+- **必要改动范围**：只改 `website/scripts/smoke-releases.mjs` 的窗口判定与让出集合，不引入新的调度机制，不改 `scripts/run-smoke.js` 的发现顺序。
+- **验证**：在交接窗口内经完整发现链路执行 `node scripts/run-smoke.js`。结束后正式账本中 SMOKE-core-21、23、306、307 各恰有一条记录，且都来自 `scripts/smoke-website-prompt-cheatsheet.js`（`target_environment` 为 `prod`，evidence 中实际请求 URL 的 origin 都等于 `<base>` 的 origin）。
+
+### 四、执行边界
+
+- 公网只读（见本节导言）；命令图中不得出现部署或发布写操作。
+- 断言不硬编码主机路径、墙上时钟或部署 ID。
+- **部署记录只在正式模式要求**：
+  - 自测模式不要求生产部署记录（部署前还没有本次部署），evidence 写 `deploy_record=not-required(self-test)`；
+  - 正式模式读取 `logos/resources/verify/deployment-report.md` 中本次部署的三行：`website_docs_deploy_change: docs-prompt-cheatsheet`、`website_docs_deploy_url: <部署 URL>`、`website_docs_deploy_id: <部署 ID>`。缺任一行，或 `website_docs_deploy_change` 不等于 `docs-prompt-cheatsheet`（即读到的是旧部署的记录），全部用例写显式 `skip` 并在 `missing_requirements` 中列出缺失项。URL 与 ID 只写入 evidence，不参与判定。
+- 判据只看 HTTP 状态码、链接集合、标题与固定判据标记是否出现，不解析其余人类可读文案。
+- 网络不可达、正式模式缺本次部署记录时写显式 `skip` 并带缺失项。这些都是可补齐的环境缺口，**不得**标 `reason_code:"platform-unavailable"`；有 skip 时不得写 `SMOKE_PASS`。本机未安装 CLI 不影响判定，只在 evidence 中记为缺失。
+
+### 五、追溯与覆盖
+
+- 部署：`core-01-deployment-plan.md`「官网提示词速查页发布检查（docs-prompt-cheatsheet）」，以及 §十一、§十五。
+- 来源提案：docs-prompt-cheatsheet（决策 C01、C02）。
+- 覆盖关系：
+  - 页面可达、侧边栏与简介页入口、两条主线、核心命令、人类确认点 → SMOKE-core-306；
+  - 宿主差异覆盖 0.16.7 全部具体宿主、ZCode / Qoder / WorkBuddy 终端执行说明 → SMOKE-core-307；
+  - 中文路由、中文字体不受影响 → 复用的 SMOKE-core-21 / 23（记账交接见第三节）。
+
+### 六、自动化与证据要求
+
+- 新增 runner `scripts/smoke-website-prompt-cheatsheet.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行。runner 显式分派 SMOKE-core-306～SMOKE-core-307 及第二节复用用例，不得依靠通配发现后无条件 PASS。
+- 适用窗口与第三节交接窗口相同：活跃变更为 `docs-prompt-cheatsheet`，或设置 `OPENLOGOS_PCS_SMOKE=1`。窗口之外只为 SMOKE-core-306～307 写 skip 留痕，不写 SMOKE-core-21 / 23。环境变量一律使用 `OPENLOGOS_PCS_` 前缀。
+- 自测模式：设置 `OPENLOGOS_PCS_BASE=<本地预览 URL>` 时进入自测模式，结果写独立账本，不进项目正式 smoke 账本；该值的 origin 必须是 `localhost` 或 `127.0.0.1`，否则全部用例判 fail。未设置 `OPENLOGOS_PCS_BASE` 即为正式模式，`<base>` 固定为 `https://openlogos.ai`，不接受其他来源的地址。
+- runner 写结果前先删除本 runner 记账 ID（SMOKE-core-306、307、21、23）在目标账本中的旧记录，保证每个 ID 只有一条结果。结果写入 smoke reporter，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`，`target_environment` 为 `prod`；**失败不得写 pass**。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-306～SMOKE-core-307 均被 runner 覆盖。
