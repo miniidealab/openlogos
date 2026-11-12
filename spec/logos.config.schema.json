@@ -244,6 +244,28 @@
           "description": "测试代码根目录列表（相对项目根目录）"
         }
       }
+    },
+    "branch_sync": {
+      "type": "object",
+      "description": "提案分支同步主分支的配置（可选）。只被 openlogos branch sync / openlogos branch status 读取，规则见 spec/branch-sync.md。本对象不影响 openlogos verify：verify 沙箱的写入白名单不读取本对象。",
+      "properties": {
+        "base_branch": {
+          "type": "string",
+          "minLength": 1,
+          "description": "主分支的引用（如 main 或 origin/main）。主分支的确定顺序为：命令行 --base、本字段、远端 origin 的默认分支；本字段一旦写出就不再回落到远端默认分支，解析不到提交时报 BRANCH_BASE_UNRESOLVED。"
+        },
+        "replace_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "default": [],
+          "description": "项目追加的同步处置路径：同步主分支时这些文件与内置项（验收报告、测试结果账本）一样取主分支的版本，主分支没有而本分支有的删除。只应填写每次验收都会整份重写的文件。条目语法：项目根相对路径，/ 分隔；以 / 结尾表示该目录下的全部文件，否则只表示单个文件；* 只能独占一个路径段并恰好匹配一个段。条目必须位于 logos/resources/verify/ 之下，且不得与保护路径重叠（基线运行目录 logos/resources/verify/baseline-seed-runs/、基线事件账本 logos/resources/verify/baseline-events.jsonl、部署报告 logos/resources/verify/deployment-report.md 与 logos/resources/verify/<模块>-deployment-report.md）。拒绝：绝对路径、含 .. / . / 空段、含反斜杠、空串。位置与重叠约束由 CLI 在读取时校验，不合法时 openlogos branch sync 以 BRANCH_SYNC_CONFIG_INVALID 拒绝执行。",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
     }
   },
   "definitions": {

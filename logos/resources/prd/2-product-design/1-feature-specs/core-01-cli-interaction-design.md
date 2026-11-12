@@ -951,3 +951,199 @@ Examples 段增加：
 - **GIVEN** 已初始化项目，`.gitignore` 含两个起始标记
 - **WHEN** 用户运行 `openlogos sync`
 - **THEN** 指令文件、Skills 等其余同步照常完成；`.gitignore` 逐字节不变；stderr 点名区块损坏，结尾输出「sync 部分完成」，退出码 1
+
+## S44: 提案分支同步主分支 — 交互规格
+
+S44 包含一个命令组 `openlogos branch`，两个子命令：`sync` 与 `status`。行为规则以功能规格「2.100 提案分支同步主分支：同步处置清单与登记表合并」与 `spec/branch-sync.md` 为准，本节规定命令形态、输出文案与退出码；JSON 结构见 `spec/cli-json-output.md`「`openlogos branch sync|status --format json`」。
+
+**通用约定**：
+
+- 必须在项目根（`logos/logos.config.json` 所在目录）运行。
+- 输出语言跟随 `logos.config.json` 的 `locale`（`en` / `zh`），下文每条文案给出两种语言；`Error: ` 前缀在两种语言下都保留，输出到 stderr。
+- 成功项用 `  ✓ ` 前缀，未改动项用 `  · ` 前缀，警告用 `⚠ `，提示用 `ℹ `，需要处理的项用 `  ✗ ` 前缀。
+- 提交哈希在文本模式下显示前 8 位，JSON 模式下为完整的 40 位。
+- 两个命令都不联网、不推送、不拉取。
+
+### S44-1: openlogos branch sync — 把主分支同步进当前分支
+
+**命令格式**：
+
+```
+openlogos branch sync [--base <ref>] [--format json]
+```
+
+**参数设计**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `--base <ref>` | string | 否 | 主分支的引用（如 `main`、`origin/main`）。缺省时取 `branch_sync.base_branch`，再取远端 `origin` 的默认分支 |
+| `--format json` | flag | 否 | 输出 JSON envelope |
+
+**交互流程**：
+
+1. 检查前置条件（项目根、git 仓库、没有进行中的合并或变基等、已跟踪文件无未提交改动）；任一不满足 → 报错退出 1，不做任何改动。
+2. 确定主分支与共同起点；本分支已包含主分支 → 输出「已是最新」后退出 0。
+3. 计算同步处置清单并校验 `branch_sync` 配置与整份清单（任何来源的路径不得与保护路径重叠）；非法 → 逐条点名后退出 1。
+4. 取得模块锁，持锁检查基线提交记录并重新确认仓库状态；不通过 → 报错退出 1。
+5. 检查主分支新增的路径有没有被未入库的本地文件占用；有 → 列出路径后退出 1。随后发起合并（满足纯快进条件时快进，否则为不快进的合并）。
+6. 清单内的文件取主分支版本；登记表逐条合并并补录资源索引。
+7. 清除未归档提案的验收与交付标记。
+8. 没有剩余冲突 → 完成提交，输出「已同步」，退出 0；仍有冲突 → 保留合并现场，列出剩余冲突，退出 2。
+
+**输出示例：无冲突完成**（zh）：
+
+```
+同步主分支：origin/main（3f9a2c1e，来源：远端默认分支）
+当前分支：proposal/add-export  共同起点：8b1d04aa
+
+同步处置清单：
+  ✓ 取主分支版本：logos/resources/verify/acceptance-report.md
+  ✓ 取主分支版本：logos/resources/verify/test-results.jsonl
+登记表 logos/logos-project.yaml：
+  ✓ 已按条目合并
+  ⚠ scenario_counter 两边都推进过（本分支 45，主分支 46，取 46），请检查是否重号
+验收与交付标记：
+  ✓ 已清除 add-export：VERIFY_PASS
+
+✓ 已同步，合并提交 c07e55b2。
+ℹ 主分支的内容已经进入本分支，请重新运行 openlogos verify。
+```
+
+**输出示例：仍有冲突**（zh，退出码 2）：
+
+```
+同步主分支：main（3f9a2c1e，来源：--base）
+当前分支：proposal/add-export  共同起点：8b1d04aa
+
+同步处置清单：
+  ✓ 取主分支版本：logos/resources/verify/acceptance-report.md
+  ✓ 已删除（主分支没有）：logos/resources/verify/team-acceptance-report.md
+登记表 logos/logos-project.yaml：
+  ✗ 条目冲突，未写回：
+      scenarios / S44：两边新增了相同编号而内容不同的条目
+验收与交付标记：
+  ✓ 已清除 add-export：VERIFY_PASS
+
+✗ 仍有 2 处冲突，合并尚未完成：
+  ✗ [登记表] logos/logos-project.yaml（条目冲突）
+  ✗ [规格] logos/resources/prd/1-product-requirements/core-01-requirements.md（git 冲突）
+ℹ 解决以上冲突后执行 git commit 完成合并；放弃本次同步请执行 git merge --abort。
+ℹ 是否还有冲突以本命令的结果为准：登记表条目冲突在 git 中不一定显示为未合并。
+```
+
+**输出示例：拒绝执行**（zh，退出码 1，输出到 stderr）：
+
+```
+Error: [BRANCH_WORKTREE_DIRTY] 已跟踪的文件有未提交改动，同步未执行。请先提交或暂存这些改动：
+  cli/src/commands/verify.ts
+  logos/logos-project.yaml
+```
+
+**输出文案**：
+
+| 情形 | en | zh |
+|------|----|----|
+| 标题行 | `Syncing base branch: <ref> (<sha8>, source: <source>)` | `同步主分支：<ref>（<sha8>，来源：<source>）` |
+| 来源取值 | `--base` / `config` / `remote default branch` | `--base` / `配置` / `远端默认分支` |
+| 分支行 | `Current branch: <name>  Merge base: <sha8>` | `当前分支：<name>  共同起点：<sha8>` |
+| HEAD 分离 | `Current branch: (detached HEAD)` | `当前分支：（HEAD 分离）` |
+| 取主分支版本 | `  ✓ Took base version: <path>` | `  ✓ 取主分支版本：<path>` |
+| 删除 | `  ✓ Deleted (absent on base): <path>` | `  ✓ 已删除（主分支没有）：<path>` |
+| 清单无改动 | `  · Nothing to replace` | `  · 没有需要处置的文件` |
+| 登记表已合并 | `  ✓ Merged entry by entry` | `  ✓ 已按条目合并` |
+| 登记表无需合并 | `  · Changed on at most one side; git result kept` | `  · 至多一边有改动，沿用 git 的结果` |
+| 登记表跳过 | `  ⚠ Entry merge skipped (<reason>); git result kept` | `  ⚠ 未做条目合并（<reason>），沿用 git 的结果` |
+| 登记表冲突 | `  ✗ Entry conflicts; file not written:` | `  ✗ 条目冲突，未写回：` |
+| 冲突类型 both-added-different | `both sides added the same key with different content` | `两边新增了相同编号而内容不同的条目` |
+| 冲突类型 both-modified | `both sides changed it differently` | `两边改成了不同内容` |
+| 冲突类型 delete-modify | `deleted on one side, modified on the other` | `一边删除，另一边修改` |
+| 索引补录 | `  ✓ Resource index: <n> entries added` | `  ✓ 资源索引补录 <n> 条` |
+| 计数器提示 | `  ⚠ <counter> advanced on both sides (ours <a>, base <b>, using <m>); check for duplicate numbers` | `  ⚠ <counter> 两边都推进过（本分支 <a>，主分支 <b>，取 <m>），请检查是否重号` |
+| 标记已清除 | `  ✓ Cleared <slug>: <markers>` | `  ✓ 已清除 <slug>：<markers>` |
+| 无标记可清 | `  · No markers to clear` | `  · 没有需要清除的标记` |
+| 已同步（合并提交） | `✓ Synced. Merge commit <sha8>.` | `✓ 已同步，合并提交 <sha8>。` |
+| 已同步（快进） | `✓ Synced by fast-forward to <sha8>.` | `✓ 已同步，快进到 <sha8>。` |
+| 已是最新 | `Already up to date with <ref>; nothing changed.` | `已包含 <ref> 的最新提交，未做任何改动。` |
+| 重新验收提示 | `ℹ Base branch content is now in this branch; run openlogos verify again.` | `ℹ 主分支的内容已经进入本分支，请重新运行 openlogos verify。` |
+| 仍有冲突 | `✗ <n> conflicts remain; the merge is not finished:` | `✗ 仍有 <n> 处冲突，合并尚未完成：` |
+| 冲突行 | `  ✗ [<category>] <path> (<reason>)` | `  ✗ [<category>] <path>（<reason>）` |
+| 类别取值 | `registry` / `config` / `spec` / `verify record` / `proposal` / `other` | `登记表` / `配置` / `规格` / `验收目录记录` / `提案` / `其他` |
+| 原因取值 | `git conflict` / `entry conflict` / `baseline run diverged` | `git 冲突` / `条目冲突` / `基线运行两边不一致` |
+| 冲突后续提示 | `ℹ Resolve the conflicts above, then run git commit to finish the merge; run git merge --abort to give up this sync.` | `ℹ 解决以上冲突后执行 git commit 完成合并；放弃本次同步请执行 git merge --abort。` |
+| 以本命令为准 | `ℹ Trust this command's result: registry entry conflicts may not show as unmerged in git.` | `ℹ 是否还有冲突以本命令的结果为准：登记表条目冲突在 git 中不一定显示为未合并。` |
+
+「以本命令为准」一行只在剩余冲突中含条目冲突或基线运行分歧时输出。
+
+### S44-2: openlogos branch status — 查看分支与主分支的关系
+
+**命令格式**：
+
+```
+openlogos branch status [--base <ref>] [--format json]
+```
+
+参数与 `sync` 相同。只读：不修改文件、不取锁、不检查工作区是否干净。
+
+**输出示例**（zh）：
+
+```
+当前分支：proposal/add-export（a41c9e07）
+主分支：origin/main（3f9a2c1e，来源：远端默认分支）
+共同起点：8b1d04aa
+落后 3 个提交，领先 5 个提交。
+ℹ 运行 openlogos branch sync 把主分支同步进来。
+```
+
+**输出文案**：
+
+| 情形 | en | zh |
+|------|----|----|
+| 当前分支 | `Current branch: <name> (<sha8>)` | `当前分支：<name>（<sha8>）` |
+| 主分支 | `Base branch: <ref> (<sha8>, source: <source>)` | `主分支：<ref>（<sha8>，来源：<source>）` |
+| 共同起点 | `Merge base: <sha8>` | `共同起点：<sha8>` |
+| 落后与领先 | `Behind by <n> commits, ahead by <m> commits.` | `落后 <n> 个提交，领先 <m> 个提交。` |
+| 落后时的提示 | `ℹ Run openlogos branch sync to bring the base branch in.` | `ℹ 运行 openlogos branch sync 把主分支同步进来。` |
+| 已是最新 | `Up to date with <ref>.` | `已包含 <ref> 的最新提交。` |
+
+### S44-3: 帮助信息与错误文案
+
+全局帮助（`openlogos --help`）的 Commands 段增加：
+
+```
+  branch <sync|status> [--base <ref>]     Sync the base branch into the current branch; show branch status
+```
+
+Examples 段增加：
+
+```
+  openlogos branch status
+  openlogos branch sync --base origin/main --format json
+```
+
+错误文案与错误码（文本模式输出 `Error: [<code>] <message>`；JSON 模式用于错误 envelope）。除另有说明外，退出码均为 1，且工作区、索引与分支指向不变：
+
+| 场景 | en 文案 | zh 文案 | 错误码 |
+|------|---------|---------|--------|
+| 未初始化 | `logos/logos.config.json not found.` + `Run 'openlogos init' first to initialize the project.` | 同 en（沿用既有全局文案） | `PROJECT_NOT_INITIALIZED` |
+| 非 git 仓库 | `Not inside a git repository, or git is not available.` | `当前目录不在 git 仓库中，或 git 不可用。` | `BRANCH_NOT_GIT_REPO` |
+| 主分支无法确定 | `Cannot determine the base branch. Pass --base <ref>, or set branch_sync.base_branch.` | `无法确定主分支。请用 --base <ref> 指定，或配置 branch_sync.base_branch。` | `BRANCH_BASE_UNRESOLVED` |
+| 引用解析不到提交 | `Base ref "<ref>" (from <source>) does not resolve to a commit.` | `主分支引用 "<ref>"（来源：<source>）解析不到提交。` | `BRANCH_BASE_UNRESOLVED` |
+| 没有共同起点 | `The current branch and <ref> have no common ancestor.` | `当前分支与 <ref> 没有共同起点。` | `BRANCH_NO_MERGE_BASE` |
+| 有进行中的操作 | `A <operation> is in progress; finish or abort it first. Sync was not run.` | `有进行中的<operation>，请先完成或放弃它。同步未执行。` | `BRANCH_OPERATION_IN_PROGRESS` |
+| 工作区有未提交改动 | `Tracked files have uncommitted changes; sync was not run. Commit or stash them first:` + 文件清单（至多 10 个，超过时追加省略行） | `已跟踪的文件有未提交改动，同步未执行。请先提交或暂存这些改动：` + 文件清单 | `BRANCH_WORKTREE_DIRTY` |
+| 配置非法 | `<config_key> has an invalid value "<value>": <reason>. Sync was not run.` | `<config_key> 的取值 "<value>" 非法：<reason>。同步未执行。` | `BRANCH_SYNC_CONFIG_INVALID` |
+| 未入库文件占用 | `Untracked or ignored files occupy paths the base branch would add; sync was not run. Move or remove them first:` + 路径清单（至多 10 个，超过时追加省略行） | `主分支要新增的路径已被未跟踪或被忽略的本地文件占用，同步未执行。请先移走或删除它们：` + 路径清单 | `BRANCH_UNTRACKED_COLLISION` |
+| 基线事务未终结或锁被占用 | `A baseline seed transaction of module "<module>" is unfinished or its lock is held; finish its recovery first. Sync was not run.` | `模块 "<module>" 有未终结的基线事务或事务锁被占用，请先完成恢复。同步未执行。` | `baseline_commit_in_progress` |
+| git 拒绝发起合并 | `git refused to start the merge: <detail>` | `git 拒绝发起合并：<detail>` | `BRANCH_SYNC_MERGE_FAILED` |
+| 中途失败，已恢复 | `Sync failed at step <step>: <detail>. The merge was aborted; the repository is back to its state before the sync.` | `同步在 <step> 步骤失败：<detail>。已中止合并，仓库已回到同步前。` | `BRANCH_SYNC_FAILED` |
+| 中途失败，未能恢复 | `Sync failed at step <step>: <detail>. Aborting the merge also failed; run git merge --abort manually.` | `同步在 <step> 步骤失败：<detail>。中止合并也失败了，请手工执行 git merge --abort。` | `BRANCH_SYNC_FAILED` |
+| 未知子命令 | `Unknown action 'xxx'.` + `Usage: openlogos branch <sync\|status> [--base <ref>]` | `未知动作 'xxx'。` + 同一用法行 | — |
+
+`<operation>` 取值：`merge` / `rebase` / `cherry-pick` / `revert` / `bisect`（zh：`合并` / `变基` / `拣选` / `回退` / `二分查找`）。配置非法的 `<config_key>` 取值：`branch_sync.replace_paths`、`branch_sync.base_branch`、`verify.result_path`、`verify.regression_result_path`、`verify.incremental_result_path`（后三项只会因与保护路径重叠而出现）。`<reason>` 取值：`not under logos/resources/verify/` / `overlaps a protected path` / `invalid syntax` / `not a string array`（zh：`不在 logos/resources/verify/ 之下` / `与保护路径重叠` / `写法非法` / `不是字符串数组`）。
+
+### 验收条件（交互级）
+
+- **GIVEN** 结果为「仍有冲突」 **WHEN** 读取文本输出 **THEN** 每个剩余冲突各占一行，含类别、路径与原因；末尾给出完成合并与放弃同步的两条 git 命令；退出码为 2。
+- **GIVEN** 任一拒绝执行的情形 **WHEN** 读取 stderr **THEN** 首行为 `Error: [<code>] …`，文案中明确写出「同步未执行」（en：`Sync was not run`），退出码为 1，stdout 无输出。
+- **GIVEN** `locale` 为 `en` 与 `zh` 的两个项目 **WHEN** 分别执行两个子命令 **THEN** 输出语言与 `locale` 一致，路径、引用、错误码与提交哈希在两种语言下相同。
+- **GIVEN** `--format json` **WHEN** 结果为「仍有冲突」 **THEN** stdout 只有一行 JSON envelope，没有文本行；退出码为 2。

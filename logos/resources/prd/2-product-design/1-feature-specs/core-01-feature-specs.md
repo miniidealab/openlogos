@@ -5589,3 +5589,117 @@ verify 与 smoke 的报告写入允许路径扩展到对应模块报告（`logos
 - 场景：`core-S11-status-progress.md`「initial phase 派生（flow-derive）与两套 legacy done 语义」、`core-S13-verify.md`「多模块项目写模块验收报告」、`core-S14-launch-lifecycle.md`「多模块 initial 模块的 launch 前置」、`core-S19-smoke-gate.md`「多模块项目写模块冒烟报告」、`core-S21-deploy-done-marker.md` 与 `core-S42-environment-deploy.md`「initial 模块的模块部署报告」。
 - 测试：UT-S11-101 起、ST-S11-53 起、UT-S13-122 起、ST-S13-33 起、UT-S14-22 起、ST-S14-27 起、UT-S19-90 起、ST-S19-33 起、UT-S21-23 起、UT-S42-29 起、ST-S42-09 起；smoke：SMOKE-core-298 起。
 - 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.12 本机测试环境发布（module-scoped-phase-reports）」。
+
+## 2.100 提案分支同步主分支：同步处置清单与登记表合并
+
+> 来源变更：branch-sync-generated-files（决策 C01；proposal-r1 F1～F4 处置）。权威规范见 `spec/branch-sync.md`；JSON 形态见 `spec/cli-json-output.md`「`openlogos branch sync|status --format json`」；本节描述用户可见行为。场景：S44。
+
+### 2.100.1 命令与适用范围
+
+- 新增命令组 `openlogos branch`，两个子命令：`sync`（把主分支同步进当前分支）与 `status`（只读：当前分支、主分支、共同起点、落后与领先的提交数）。它与既有的 `openlogos sync`（重新生成 AI 指令文件）无关。
+- 两个命令在项目根运行，不要求存在活跃提案；只调用本机 git，不联网、不推送、不拉取、不创建分支与合并请求。主分支的引用是否最新由调用方负责。
+- 都支持 `--base <ref>` 与 `--format json`。
+
+### 2.100.2 主分支的确定
+
+依次取：`--base` 参数；`logos.config.json` 的 `branch_sync.base_branch`；远端 `origin` 的默认分支。前面的来源给出了引用就不再回落。三者都没有或引用解析不到提交时报 `BRANCH_BASE_UNRESOLVED`，提示用 `--base` 指定；两条分支没有共同起点时报 `BRANCH_NO_MERGE_BASE`。
+
+### 2.100.3 同步处置清单
+
+同步时一律取主分支版本的文件集合。只收**重新验收就会整份重写**的文件。
+
+- **内置项**：共用验收报告；多模块项目中各已登记模块的验收报告；测试结果账本（`verify.result_path`）；配置了的回归与增量结果路径。这些路径直接取自 verify 既有的路径解析，不另行定义。
+- **项目追加项**：`logos.config.json` 的 `branch_sync.replace_paths`，用于项目自己写进验收目录、每次验收整份重写的文件。条目必须位于 `logos/resources/verify/` 之下，写法与 `guard.exempt` 的条目语法一致（`/` 结尾表示目录，`*` 独占一段）。
+- **不进清单、也不能经任何配置进入清单的文件（保护路径）**：基线运行目录（每次运行的 staging、resolved、backup、commit-journal、run.json）、基线事件账本、部署报告（共用与各模块）。内置项与追加项合成清单后统一校验：任何来源的路径与它们重叠——包括 `verify.result_path`、`verify.regression_result_path`、`verify.incremental_result_path` 指向这些位置——都报 `BRANCH_SYNC_CONFIG_INVALID` 并点名来源配置项，同步不执行。verify 对这些配置的处理不变。
+- **不进清单的其他文件**：部署制品与证据包、冒烟结果与报告。
+
+不进清单的文件按普通文件交给 git 合并，CLI 不替换也不删除。两条分支各自独有的基线运行位于不同目录，同步后都保留；两条分支把同一次基线运行的同一个文件改成了不同内容时，CLI 把它报告为剩余冲突，不自动取舍。
+
+清单只供同步使用。verify 沙箱的写入白名单不读清单，配置 `branch_sync.replace_paths` 不会让测试进程多出任何可写路径。
+
+处置规则（只处理被 git 跟踪的文件，未跟踪或被忽略的同名文件不动；主分支跟踪了同一路径时同步在发起合并前拒绝，见 §2.100.6）：
+
+| 主分支上 | 本分支上 | 处置 |
+|---|---|---|
+| 有 | 有或无 | 取主分支的内容 |
+| 无 | 有 | 删除 |
+
+### 2.100.4 登记表合并
+
+`logos/logos-project.yaml` 在两条分支上都改过时，CLI 对照共同起点的版本逐条合并，不采用 git 的文本合并结果。
+
+- **按键合并的列表**：`modules`、`features`、`scenarios` 以 `id` 为键，`resource_index` 以 `path` 为键。
+
+  | 情形 | 结果 |
+  |---|---|
+  | 只有一边新增 | 保留该条目 |
+  | 只有一边修改 | 取修改后的值 |
+  | 只有一边删除，另一边没动 | 保留删除 |
+  | 两边做了相同的改动 | 取其一 |
+  | 一边删除、另一边修改 | 冲突 |
+  | 两边改成不同内容 | 冲突 |
+  | 两边新增键相同而内容不同的条目 | 冲突 |
+
+- **计数器**：`scenario_counter`、`feature_counter`、`decision_counter` 的 `next_id` 取两边较大者；两边都推进过时在结果中提示可能重号。CLI 不检测、不修正重号。
+- **其余顶层字段**：按整个值比较，只有一边改动时取改动的一边，两边改动不同为冲突。
+- **资源索引的描述**：人工写的描述是条目内容的一部分，原样保留；CLI 不重新生成已有条目的描述。条目合并完成后调用既有的索引补录，只为磁盘上存在而索引中没有的文件补一条，不改写、不删除已有条目（含指向自动扫描范围之外文件的登记项）。
+- **全有或全无**：出现任何冲突时 CLI 不写回登记表，把它列入剩余冲突并逐条点名所在字段与键；没有冲突时以本分支的版本为底稿写回，保留注释与排版，主分支新增的条目追加在所属列表末尾。
+- 只有一边改过登记表时沿用 git 的结果；任一版本缺失或无法解析时不做条目合并，git 报告了冲突就列入剩余冲突。
+
+### 2.100.5 与基线事务的关系
+
+同步会改写登记表，基线事务也写这个文件。发起合并之前，CLI 先取得每个模块既有的事务锁，**持锁之后**再检查有没有未终结或损坏的基线提交记录：拿不到锁，或存在这样的记录时，以 `baseline_commit_in_progress` 拒绝并提示先完成恢复，不做任何改动。先取锁后检查，是为了不让基线进程在检查与取锁之间写下未终结的记录而不被发现。持锁期间 CLI 还会重新确认 HEAD、主分支提交与工作区状态没有变化。`branch sync` 自己不执行恢复。锁持有到命令结束。
+
+### 2.100.6 拒绝执行的情形
+
+以下情形 `branch sync` 拒绝执行，工作区、索引、分支指向与提案标记都不变：
+
+| 情形 | 错误码 |
+|---|---|
+| 不是 OpenLogos 项目根 | `PROJECT_NOT_INITIALIZED` |
+| 不在 git 仓库内或 git 不可用 | `BRANCH_NOT_GIT_REPO` |
+| 有进行中的合并、变基、拣选、回退或二分查找 | `BRANCH_OPERATION_IN_PROGRESS` |
+| 已跟踪的文件有未提交改动 | `BRANCH_WORKTREE_DIRTY` |
+| 主分支无法确定 / 没有共同起点 | `BRANCH_BASE_UNRESOLVED` / `BRANCH_NO_MERGE_BASE` |
+| `branch_sync` 配置非法，或清单中任何来源的路径与保护路径重叠 | `BRANCH_SYNC_CONFIG_INVALID` |
+| 拿不到模块锁，或持锁检查时基线事务未终结 | `baseline_commit_in_progress` |
+| 主分支新增的路径在工作区已被未跟踪或被忽略的文件占用 | `BRANCH_UNTRACKED_COLLISION` |
+| git 因其他原因拒绝发起合并 | `BRANCH_SYNC_MERGE_FAILED` |
+
+未入库文件的占用由 CLI 在发起合并前自行检查并列出路径，快进与不快进都适用。git 在真正的合并中会直接覆盖被忽略的本地文件（`--no-overwrite-ignore` 只在快进时生效），而这些内容被覆盖后中止合并也找不回来，所以不能等合并之后再处理。
+
+合并发起之后中途失败（替换文件、写回登记表、清除标记或提交时出错）：CLI 中止本次合并，回到同步前，报 `BRANCH_SYNC_FAILED` 并说明是否已恢复。
+
+### 2.100.7 结果与退出码
+
+| 结果 | 含义 | 退出码 |
+|---|---|---|
+| 已同步（`synced`） | 主分支已同步进来并完成提交，工作区干净。本分支没有自己的提交、且主分支上未归档提案目录下没有被跟踪的验收与交付标记时为纯快进；否则为一个合并提交（被跟踪标记的删除在其中） | 0 |
+| 已是最新（`up-to-date`） | 本分支已包含主分支；不产生提交、不清除标记、不取锁 | 0 |
+| 仍有冲突（`conflicts`） | 清单内文件与登记表已按规则处理，还有别的冲突；合并现场保留 | 2 |
+
+拒绝执行与中途失败的退出码为 1。
+
+结果为「仍有冲突」时，CLI 列出每个剩余冲突的路径、类别（登记表、配置、规格、验收目录记录、提案、其他）与原因，不修改这些文件中的冲突内容。调用方解决后自行完成提交，或以 `git merge --abort` 放弃；合并进行期间再次执行 `branch sync` 会被拒绝。登记表条目冲突与基线运行文件分歧在 git 索引中不一定呈现为未合并，是否还有冲突以本命令的结果为准。
+
+### 2.100.8 验收与交付标记失效
+
+只要同步引入了主分支的提交（已同步或仍有冲突），CLI 清除本分支上每个未归档提案的 `VERIFY_PASS`、`VERIFY_FAIL`、`DEPLOY_DONE`、`SMOKE_PASS`、`SMOKE_FAIL`（与增量修正使用同一份失效清单），在结果中列出并提示重新验收。已是最新时不清除。
+
+### 2.100.9 `branch status`
+
+只读输出当前分支（HEAD 分离时为空）、主分支及其来源、共同起点、落后与领先的提交数。不修改文件、不取锁、不检查工作区是否干净、不预测冲突。
+
+### 2.100.10 兼容与非目标
+
+- 不执行这两个命令的项目行为不变；既有命令的输出、退出码与写入范围不变。
+- **不改 verify 沙箱的写入白名单**，不改 verify 的任何行为。
+- 不处理规格文档与代码的冲突；不统一发号；不创建分支、工作目录与合并请求；不推送、不拉取。
+- 不把验收产物改为不入库。
+
+### 2.100.11 追溯
+
+- 需求：「S44: 提案分支同步主分支：生成文件与登记表」（S44-AC-01～S44-AC-17）。
+- 规范：`spec/branch-sync.md`（配置项契约见 §4.8；`spec/logos.config.schema.json` 的 `branch_sync` 定义随实现交付）；`spec/cli-json-output.md`「`openlogos branch sync|status --format json`」。
+- 架构：「五十六、提案分支同步：同步处置清单与登记表合并」；场景：`core-S44-branch-sync-generated-files.md`；交互设计：「S44: 提案分支同步主分支 — 交互规格」。
+- 测试：`core-S44-test-cases.md`。

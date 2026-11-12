@@ -3410,3 +3410,114 @@ openlogos approve --env <id|alias> --ref <revision> [--note <文字>] --format j
 ### `next --auto` 的 smoke 命令文本
 
 `### 11.2 auto_execute` 表中 `ready-to-smoke` 一行的 `command` 取值细化：活跃提案 `DEPLOY_DONE` 为合法新格式且 `environment` 非空时为 `openlogos smoke --env <environment>`；旧空格式、`environment` 为 null 或读取失败时仍为 `openlogos smoke`。与是否启用按模块区分无关；字段集合与类型不变。
+
+## `openlogos branch sync|status --format json`（branch-sync-generated-files）
+
+> 来源变更：branch-sync-generated-files（决策 C01）。行为与判据的权威定义见 `spec/branch-sync.md`；本节只定义 JSON 形态。信封沿用 §1.2，`command` 为 `"branch sync"` 或 `"branch status"`；错误沿用 §6 通用错误 envelope。
+
+### branch 用法
+
+```bash
+openlogos branch sync   [--base <ref>] --format json
+openlogos branch status [--base <ref>] --format json
+```
+
+### branch sync 输出（stdout，退出码 0 或 2）
+
+结果为 `synced`、`up-to-date` 时退出码 0；结果为 `conflicts` 时仍是 stdout 上的 success envelope，退出码 2——命令本身执行成功，只是还有冲突需要处理，调用方需要读取 `data` 才能继续。
+
+```jsonc
+{
+  "command": "branch sync",
+  "version": "<cli-version>",
+  "timestamp": "<ISO-8601>",
+  "data": {
+    "result": "conflicts",                 // "synced" | "up-to-date" | "conflicts"
+    "branch": "proposal/add-export",       // HEAD 分离时为 null
+    "base": {
+      "ref": "origin/main",                // 解析所用的引用原文
+      "source": "remote-default",          // "flag" | "config" | "remote-default"
+      "commit": "<40 位 commit>"
+    },
+    "merge_base": "<40 位 commit>",
+    "head_before": "<40 位 commit>",
+    "head_after": "<40 位 commit>",        // synced：同步后的 HEAD（纯快进时等于 base.commit，否则为合并提交）；up-to-date / conflicts：等于 head_before
+    "fast_forward": false,                 // true：纯快进（本分支没有自己的提交，且没有被跟踪的标记需要删除）；其余为 false
+    "replaced": [                          // 同步处置清单内被处置的文件，按 path 升序；up-to-date 时为 []
+      { "path": "logos/resources/verify/acceptance-report.md", "action": "took-base" },
+      { "path": "logos/resources/verify/team-acceptance-report.md", "action": "deleted" }
+    ],
+    "registry": {
+      "path": "logos/logos-project.yaml",
+      "status": "merged",                  // "merged" | "not-needed" | "skipped" | "conflict"
+      "reason": null,                      // status=skipped 时的原因："missing" | "unparsable" | "shape-unsupported"；其余为 null
+      "counters": [                        // 仅列出本次条目合并中处理过的整数计数器；其他 status 下为 []
+        { "name": "scenario_counter", "base": 44, "ours": 45, "theirs": 46, "merged": 46, "both_advanced": true }
+      ],
+      "index_backfilled": 0,               // 条目合并后资源索引补录的条数
+      "conflicts": []                      // status=conflict 时非空，见下
+    },
+    "remaining_conflicts": [               // 按 path 升序；result=conflicts 时非空，其余为 []
+      { "path": "logos/resources/prd/1-product-requirements/core-01-requirements.md", "category": "spec", "reason": "git-conflict" }
+    ],
+    "invalidated_markers": [               // 按 slug 升序；每项的 markers 按名称升序；没有被清除的标记时为 []
+      { "slug": "add-export", "markers": ["VERIFY_PASS"] }
+    ],
+    "diagnostics": [                       // 可为 []
+      { "code": "counter_both_advanced", "message": "…", "counter": "scenario_counter" }
+    ]
+  }
+}
+```
+
+字段说明：
+
+- `replaced[].action`：`took-base`（取主分支内容）或 `deleted`（主分支没有、本分支有，已删除）。两边内容本就相同的路径不出现。
+- `registry.status`：`merged` 已按条目合并并写回；`not-needed` 至多一边改过登记表，沿用 git 的结果；`skipped` 无法做条目合并（见 `reason`），沿用 git 的结果；`conflict` 条目合并出现冲突，未写回。
+- `registry.conflicts[]`：每项 `{ "field": "scenarios", "key": "S44", "kind": "both-added-different" }`。`field` 为登记表顶层字段名；`key` 为键控列表中的键，整字段冲突时为 `null`；`kind` ∈ `both-added-different` | `both-modified` | `delete-modify`。按 `field`、`key` 升序。
+- `remaining_conflicts[].category` ∈ `registry` | `config` | `spec` | `verify-record` | `proposal` | `other`；`reason` ∈ `git-conflict` | `registry-entry-conflict` | `baseline-run-diverged`。同一路径只出现一次；同时命中多个原因时取 `registry-entry-conflict`、`baseline-run-diverged`、`git-conflict` 中排在前面的一个。
+- `result` 与其他字段的关系：`conflicts` ⟺ `remaining_conflicts` 非空；`registry.status=conflict` 时登记表必在 `remaining_conflicts` 中；`up-to-date` 时 `replaced`、`invalidated_markers`、`remaining_conflicts` 均为 `[]`，`registry.status` 为 `not-needed`，`fast_forward` 为 `false`。
+- `diagnostics[].code` 目前只有 `counter_both_advanced`（附 `counter` 字段）。消费方遇到未知 code 应忽略该条。
+
+消费方约定：是否还有冲突以 `result` 与 `remaining_conflicts` 为准，不以 git 索引的未合并状态为准（原因为 `registry-entry-conflict`、`baseline-run-diverged` 的路径在索引中不一定呈现为未合并）。
+
+### branch status 输出（stdout，退出码 0）
+
+```jsonc
+{
+  "command": "branch status",
+  "version": "<cli-version>",
+  "timestamp": "<ISO-8601>",
+  "data": {
+    "branch": "proposal/add-export",       // HEAD 分离时为 null
+    "head": "<40 位 commit>",
+    "base": { "ref": "origin/main", "source": "remote-default", "commit": "<40 位 commit>" },
+    "merge_base": "<40 位 commit>",
+    "behind": 3,                           // 主分支有而本分支没有的提交数
+    "ahead": 5,                            // 本分支有而主分支没有的提交数
+    "up_to_date": false                    // behind == 0
+  }
+}
+```
+
+### branch 失败输出（stderr，退出码 1）
+
+通用错误 envelope。除 `BRANCH_SYNC_CONFIG_INVALID`、`BRANCH_UNTRACKED_COLLISION` 与 `BRANCH_SYNC_FAILED` 外不带 `details`。
+
+| 错误码 | 命令 | 说明 |
+|---|---|---|
+| `PROJECT_NOT_INITIALIZED` | sync / status | 当前目录不是 OpenLogos 项目根 |
+| `BRANCH_NOT_GIT_REPO` | sync / status | 不在 git 仓库内，或 git 不可用 |
+| `BRANCH_BASE_UNRESOLVED` | sync / status | 主分支无法确定，或给出的引用解析不到提交；message 提示用 `--base` 指定 |
+| `BRANCH_NO_MERGE_BASE` | sync / status | 本分支与主分支没有共同起点 |
+| `BRANCH_OPERATION_IN_PROGRESS` | sync | 有进行中的合并、变基、拣选、回退或二分查找 |
+| `BRANCH_WORKTREE_DIRTY` | sync | 已跟踪的文件有未提交改动 |
+| `BRANCH_SYNC_CONFIG_INVALID` | sync | `branch_sync` 配置非法，或同步处置清单中有路径与保护路径重叠；`error.details` = `{ "entries": [{ "config_key": "branch_sync.replace_paths", "value": "…", "reason": "outside-verify-dir" }] }`。`config_key` 取 `branch_sync.replace_paths`、`branch_sync.base_branch`、`verify.result_path`、`verify.regression_result_path`、`verify.incremental_result_path` 之一（后三项只会带 `protected-path`）；`reason` 取 `syntax`、`outside-verify-dir`、`protected-path`、`type` 之一；`entries` 按 `config_key`、`value` 升序 |
+| `baseline_commit_in_progress` | sync | 拿不到模块事务锁，或持锁检查时存在未终结或损坏的基线提交记录；沿用基线事务既有的错误码 |
+| `BRANCH_UNTRACKED_COLLISION` | sync | 主分支新增的路径在工作区已被未跟踪或被忽略的文件、目录占用；`error.details` = `{ "paths": ["…"] }`，按升序；合并未发起 |
+| `BRANCH_SYNC_MERGE_FAILED` | sync | git 因其他原因拒绝发起合并，仓库状态未变；message 含 git 的原始报错 |
+| `BRANCH_SYNC_FAILED` | sync | 合并发起后中途失败；`error.details` = `{ "step": "replace", "restored": true }`，`step` 取 `replace`、`registry`、`markers`、`commit` 之一；`restored: false` 表示中止合并也失败，仓库可能仍处于合并进行中 |
+
+除 `BRANCH_SYNC_FAILED` 且 `restored: false` 外，以上错误发生时工作区、索引与分支指向均与执行前一致。
+
+文本模式：成功时逐行打印结果、主分支与共同起点、被处置的文件、登记表状态、剩余冲突与被清除的标记；错误打印 `Error: [<code>] <message>`。

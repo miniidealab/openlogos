@@ -307,3 +307,41 @@ flowchart LR
 ### 元数据 apply
 
 merge 时把 S41、S42、S43 登记进 `logos/logos-project.yaml` 的 `scenarios`（`module: core`，`feature: F05` 验收与部署门禁；S41、S42 此前漏登记，本次补登），将 `scenario_counter.next_id` 推进到 44、`decision_counter.next_id` 推进到 15；把 `core-S43-environment-promotion-approval.md`、`core-S43-test-cases.md` 纳入 `resource_index`。
+
+## S44 场景登记与依赖关系（branch-sync-generated-files）
+
+### 场景地图增量
+
+| 编号 | 场景名称 | 主要实现 | 测试规格 | 状态 |
+|---|---|---|---|---|
+| S44 | 提案分支同步主分支：生成文件与登记表 | `commands/branch.ts` / `lib/branch-sync.ts` / `lib/registry-merge.ts`（只读复用 `verify-config.ts`、`module-phase-report.ts`、`baseline-seed-txn.ts`、`sync-resource-index.ts`、`merge-baseline.ts`） | `core-S44-test-cases.md` | 进行中 |
+
+### 依赖关系
+
+```mermaid
+flowchart LR
+    S13["S13 验收报告与测试结果账本（路径解析）"] -->|只读：清单内置项| S44["S44 提案分支同步主分支"]
+    S18["S18 资源索引补录"] -->|条目合并后补充遗漏| S44
+    S33["S33 基线事务（模块锁与恢复门）"] -->|同步前过门、全程持锁| S44
+    S09["S09 验收与交付标记失效清单"] -->|同步后清除标记| S44
+    S44 -->|JSON 结果| RL["RunLogos（提案分支合并流程）"]
+    S44 -->|提示重新验收| S13
+```
+
+### 依赖说明
+
+1. S44 的同步处置清单内置项只读地取自 S13 的路径解析；S13 的 verify 行为与沙箱写入白名单不因 S44 改变。
+2. S44 在登记表条目合并写回之后调用 S18 的补录实现，只追加遗漏条目；人工写的描述与扫描范围外的登记项由条目合并保留。
+3. S44 与 S33 共用模块级事务锁与未终结提交记录的检测；S44 不执行恢复，也不替换、不删除基线运行材料。
+4. S44 清除标记所用的集合与 S09 增量修正的失效清单是同一份。
+5. 不执行 `openlogos branch` 的项目，S13、S18、S33、S09 的既有行为不变。
+
+### 场景索引增量
+
+- [S44：提案分支同步主分支：生成文件与登记表](./core-S44-branch-sync-generated-files.md)
+- 对应测试：`logos/resources/test/core-S44-test-cases.md`。
+- 根规范：`spec/branch-sync.md`。
+
+### 元数据 apply
+
+merge 时把 S44 登记进 `logos/logos-project.yaml` 的 `scenarios`（`module: core`，`feature: F04` 变更提案与切片生命周期，与 S09 同组）。登记表当前的 `scenarios` 只登记到 S40、`scenario_counter.next_id` 为 41，而场景实现目录中已有 S41～S43 的文档：本次一并补登 S41、S42、S43（`module: core`，`feature: F05` 验收与部署门禁），并把 `scenario_counter.next_id` 推进到 45。把 `core-S44-branch-sync-generated-files.md`、`core-S44-test-cases.md` 与 `spec/branch-sync.md` 纳入 `resource_index`。

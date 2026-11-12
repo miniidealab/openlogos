@@ -6,16 +6,25 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 2536 |
+| Defined cases | 2569 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 2536 |
-| Passed | 2511 |
+| Executed cases | 2569 |
+| Passed | 2544 |
 | Failed | 0 |
 | Skipped | 25 |
 | Uncovered | 0 |
 | Coverage | 100% |
 | Pass rate | 100% |
 | **Gate 3.5** | **PASS** |
+
+## Slice Verification
+
+- Mode: `final`
+- Attempted slice: `null`
+- Confirmed slices: `slice-01-branch-status-and-base-resolution`, `slice-02-branch-sync-main-path`, `slice-03-branch-sync-protection-and-recovery`
+- Eligible tests: 2569
+- Pending tests: 0
+- Final: true
 
 ## Skipped Cases
 

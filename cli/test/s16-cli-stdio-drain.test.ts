@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -291,6 +291,24 @@ function startDeploy(f: DeployFixture): ChildProcess {
 const readPid = (f: DeployFixture, name: string) => Number(readFileSync(join(f.publish, name), 'utf-8').trim());
 const pidsReady = (f: DeployFixture) => existsSync(join(f.publish, 'child.pid')) && existsSync(join(f.publish, 'script.pid'));
 
+/**
+ * 等待部署脚本写出两个 pid 文件。超时时把 CLI 子进程的现场带进错误信息（是否已退出、发布目录里有什么、
+ * stderr 尾部）：2026-11-12 canonical verify 中 UT-S16-51 在此超时一次，仅凭「waitFor timeout」无法区分
+ * 「CLI 提前失败退出」「脚本尚未启动」与「脚本在写出 pid 之前就被部署超时终止」。
+ */
+async function waitForDeployStart(f: DeployFixture, child: ChildProcess, label: string): Promise<void> {
+  try {
+    await waitFor(() => pidsReady(f), 30_000, label);
+  } catch (error) {
+    const files = existsSync(f.publish) ? readdirSync(f.publish).join(',') || '(empty)' : '(missing)';
+    const exit = `exitCode=${child.exitCode} signal=${child.signalCode}`;
+    const out = await Promise.race([collect(child), sleep(3000).then(() => null)]);
+    const tail = (b: Buffer) => b.toString('utf8').slice(-600);
+    const output = out ? `stderr_tail=${JSON.stringify(tail(out.stderr))} stdout_tail=${JSON.stringify(tail(out.stdout))}` : 'output=(3s 内未读到 close)';
+    throw new Error(`${(error as Error).message}；${exit} publish=[${files}] trace_events=${readTrace(f.trace).length} ${output}`);
+  }
+}
+
 interface TraceEvent { at: number; event: string; depth: number }
 function readTrace(path: string): TraceEvent[] {
   if (!existsSync(path)) return [];
@@ -302,10 +320,13 @@ function readTrace(path: string): TraceEvent[] {
 
 describe.skipIf(!POSIX)('S16 EX-2.8 — 消费方暂停读取时运行期区间保持事件循环可响应', () => {
   it('UT-S16-51: deploy script 模式暂缓读取时超时仍终止进程树', async () => {
-    const timeoutSec = 3;
+    // 部署超时自脚本进程创建起算。3s 的预算在全量 verify 的并发负载下可能先于脚本写出两个 pid 文件触发——
+    // 那样进程树已被终止而 pid 文件永远不会出现，本用例会在「部署脚本启动」处超时（与 s43 用例把 ci 超时
+    // 从 2s 放宽到 8s 是同一类问题）。放宽到 8s：脚本仍必然被超时终止，下方断言随 timeoutSec 伸缩、不变。
+    const timeoutSec = 8;
     const f = deployProject({ mode: 'script', script: 'deploy/run.sh', timeout_sec: timeoutSec });
     const child = startDeploy(f); // 暂缓读取：不挂 data 监听
-    await waitFor(() => pidsReady(f), 30_000, '部署脚本启动');
+    await waitForDeployStart(f, child, '部署脚本启动');
     const scriptPid = readPid(f, 'script.pid');
     const grandchild = readPid(f, 'child.pid');
     const startedAt = Date.now();
@@ -326,7 +347,7 @@ describe.skipIf(!POSIX)('S16 EX-2.8 — 消费方暂停读取时运行期区间�
     for (const sig of ['SIGINT', 'SIGTERM'] as const) {
       const f = deployProject({ mode: 'script', script: 'deploy/run.sh', timeout_sec: 120 });
       const child = startDeploy(f);
-      await waitFor(() => pidsReady(f), 30_000, `${sig} 部署脚本启动`);
+      await waitForDeployStart(f, child, `${sig} 部署脚本启动`);
       const scriptPid = readPid(f, 'script.pid');
       const grandchild = readPid(f, 'child.pid');
       // 让回显写满消费方缓冲（消费方始终未读取）

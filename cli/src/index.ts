@@ -12,6 +12,7 @@ import { smoke } from './commands/smoke.js';
 import { deployDone } from './commands/deploy-done.js';
 import { deploy } from './commands/deploy.js';
 import { approve } from './commands/approve.js';
+import { branchCommand } from './commands/branch.js';
 import { launch } from './commands/launch.js';
 import { detect } from './commands/detect.js';
 import { indexCommand } from './commands/index-cmd.js';
@@ -114,13 +115,14 @@ Commands:
   env list                                 List registered environments with current ref and last deploy / smoke
   env show <id|alias>                      Show one environment's configuration and recent history
   env check [<id|alias>] [--probe]         Validate logos/environments.yaml (and probe health / version URLs with --probe)
+  branch <sync|status> [--base <ref>]     Sync the base branch into the current branch; show branch status
 
 Options:
   --help, -h         Show this help message
   --version, -v      Show version number
   --fresh-sandbox    verify / smoke: rebuild the persistent sandbox workspace from scratch
   --all              verify: check every module (skip module-scoped verify range)
-  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, deploy, approve, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list, env list, env show, env check)
+  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, deploy, approve, branch sync, branch status, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list, env list, env show, env check)
 
 Examples:
   openlogos init my-saas-project
@@ -136,6 +138,8 @@ Examples:
   openlogos smoke --fresh-sandbox
   openlogos deploy-done --env staging
   openlogos deploy --env staging --ref v1.2.0
+  openlogos branch status
+  openlogos branch sync --base origin/main --format json
   openlogos detect --format json
   openlogos change add-remember-me
   openlogos merge add-remember-me
@@ -428,6 +432,17 @@ async function main() {
       // 版本管理范围配置（S40，功能规格 §2.88.4）：AI 发起的 add / remove 由 guard 交宿主原生审批。
       const { scopeCommand } = await import('./commands/scope.js');
       scopeCommand(command, args.slice(1));
+      break;
+    }
+    case 'branch': {
+      // 提案分支同步主分支（branch-sync-generated-files，spec/branch-sync.md）
+      const rest = args.slice(1);
+      const baseIdx = rest.indexOf('--base');
+      const baseValue = baseIdx === -1 ? undefined : rest[baseIdx + 1];
+      // --base 出现但缺值时传空串，按 BRANCH_BASE_UNRESOLVED 拒绝，不折叠成「未传」
+      const base = baseIdx === -1 ? undefined : (baseValue === undefined || baseValue.startsWith('--') ? '' : baseValue);
+      const action = rest.find((a, i) => !a.startsWith('--') && !(i > 0 && VALUE_OPTIONS.has(rest[i - 1])));
+      await branchCommand(action, format, { base });
       break;
     }
     case 'env': {
