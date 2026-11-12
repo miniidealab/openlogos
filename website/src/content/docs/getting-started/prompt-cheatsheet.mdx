@@ -1,0 +1,242 @@
+---
+title: Prompt Cheat Sheet
+description: One-page reference for OpenLogos prompts — building a system from new requirements, and adding features to an existing codebase. What to say to the AI at each step, and who runs it.
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+This page is a quick reference: each step has a prompt you can copy as-is, plus who is responsible for running it. For full walkthroughs, read [Quick Start](/getting-started/quick-start), [First AI Collaboration](/getting-started/first-collaboration), and [Adopt Existing Project](/getting-started/adopt-existing-project).
+
+This page is written for OpenLogos **0.16.7** (check yours with `openlogos --version`).
+
+## Three things to know first
+
+**1. Documents come before code.** OpenLogos moves from Why → What → How: requirements first, then product design, then architecture, scenario sequence diagrams, API / DB, test cases, and finally code. Each step's output is the AI's context for the next step, so **document quality directly determines code quality**.
+
+**2. The AI writes, you confirm.** The AI produces documents and code by following Skills; you review and decide at key points (see "Human confirmation points" below).
+
+**3. The write guard decides who runs what.** Once a project is launched, code cannot change without an active change proposal. Guard strength differs between AI tools — in some tools the AI cannot run commands like `openlogos merge` for you, and you run them in a terminal yourself. See "Differences between AI tools" below.
+
+<Aside type="caution">
+Run every `openlogos` command from the project root (the directory containing `logos/logos.config.json`); otherwise you get `logos.config.json not found`.
+</Aside>
+
+## Human confirmation points
+
+The AI does not perform these actions without your explicit authorization:
+
+| Confirmation point | Meaning |
+|---|---|
+| Approve the plan | After the change proposal (`proposal.md` + `tasks.md`) is written, deltas start only after you approve |
+| `openlogos merge` | Merge the proposal's spec deltas into the main documents |
+| `openlogos verify` | Run tests and produce the acceptance report |
+| Deployment and `openlogos smoke` | Only when the proposal requires deployment |
+| `openlogos archive` | Archive the change proposal |
+| `git push` | Push the code |
+
+## Prompts for any moment
+
+| You want to | Say to the AI |
+|---|---|
+| Know what to do next | `What should I do now? Run openlogos next and give me the next step and a ready-to-use prompt` |
+| See overall progress | `Run openlogos status and summarize the current phase, the active proposal, and the next confirmation point` |
+| Understand a guard denial | `That action was denied by the OpenLogos guard. Explain why and tell me what to do next` |
+| Report a bug | `I found a problem: <symptom>. Only analyze it and propose a fix — do not change any code` |
+| Review code | `Use the code-reviewer Skill to review <file or module>` |
+
+`openlogos next` itself prints a ready-made "Tell AI: …" prompt. **When unsure, run next first.**
+
+## Scenario A: Build a system from new requirements
+
+A new project (`openlogos init`) starts in the initial lifecycle and moves through the phases in order. Advance one phase at a time, and **review each phase's output before moving on**.
+
+### Prompts by phase
+
+| Phase | Say to the AI | Output | What to review |
+|---|---|---|---|
+| Phase 1 Requirements | `Help me write the requirements document. Product background: <one sentence: what it is, who it is for, what problem it solves>` | `logos/resources/prd/1-product-requirements/` | Scenarios (S01, S02, …) are complete; acceptance criteria are testable; the "out of scope" list is explicit |
+| Phase 2 Product design | `Create the product design based on the requirements` | `logos/resources/prd/2-product-design/` | Interaction flows and error paths; for GUI products, click through the HTML prototypes in a browser |
+| Phase 3-0 Architecture | `Design the technical architecture based on the requirements and product design. Constraints: <language, framework, database, deployment environment, team standards>` | `prd/3-technical-plan/1-architecture/` | Technology choices match team standards; module boundaries |
+| Phase 3-1 Scenario modeling | `Write scenario implementation documents and sequence diagrams for all scenarios` (many scenarios: `Model S01 and S02 first`) | `prd/3-technical-plan/2-scenario-implementation/` | Sequence steps and error branches |
+| Phase 3-2 API and DB | `Design the API and database from the scenario sequence diagrams` | `logos/resources/api/`, `logos/resources/database/` | Every endpoint traces back to a sequence diagram; tables, indexes, constraints |
+| Phase 3-3 Deployment plan | `Design the deployment plan and smoke verification strategy` | `prd/3-technical-plan/3-deployment/` | Environments, rollback, smoke commands |
+| Phase 3-4 Test cases | `Design unit test and scenario test cases for all scenarios`; for API projects add `Design the API orchestration tests` | `logos/resources/test/`, `logos/resources/scenario/` | Case IDs (such as `UT-S01-01`) cover normal and error paths |
+| Phase 3-5 Implementation | See "Implement in batches" below | Business code + test code + reporter | Each batch's case IDs match the test documents |
+| Phase 3-6 Acceptance | Run `openlogos verify` | `logos/resources/verify/acceptance-report.md` | The result is PASS; hand failing cases back to the AI |
+
+### Requirements input template
+
+The more specific your Phase 1 answers, the better everything downstream. You can send this in one message:
+
+```text
+Help me write the requirements document.
+- What the product is: <one sentence>
+- Target users: <a concrete role>
+- Problem to solve: <how it is done today and where it hurts>
+- Core goal and how to measure it: <e.g. "review time drops from 2 days to 4 hours">
+- Must-have features: <3–6 items>
+- Explicitly out of scope: <list them to prevent scope creep>
+- Constraints: <compliance, existing systems to integrate, launch date, etc.>
+```
+
+### Implement in batches
+
+For larger projects, split Phase 3-5 by scenario or sub-module, and close the loop in every batch:
+
+```text
+Run Phase 3 Step 5 for this implementation; this batch covers only <S01 or a sub-module>.
+Every batch must deliver together: (1) business code; (2) the matching UT/ST test code; (3) the OpenLogos
+reporter writing to logos/resources/verify/test-results.jsonl.
+Before writing code, list the UT/ST case IDs this batch covers and align them with logos/resources/test/.
+```
+
+Do not postpone tests to a final batch.
+
+### After the first build
+
+`openlogos launch` checks that the module is ready: acceptance has passed, and **a module that requires deployment also needs a deployment report and a passing smoke run**. So after Phase 3-6 acceptance passes:
+
+1. **Projects that deploy** (the default):
+   - Say `Execute the deployment according to the deployment plan` (the `deployment-executor` Skill; deployment is a human confirmation point). When it finishes it writes `logos/resources/verify/deployment-report.md`.
+   - Run `openlogos smoke` until it passes (`logos/resources/verify/smoke-report.md` shows PASS).
+2. **Projects that explicitly do not deploy**: declare `deployment_required: false` for the module in `logos/logos-project.yaml` (or add `deployment` to its `skip_phases`); launch then no longer requires deployment or smoke.
+3. Run `openlogos launch` to move the project into the launched lifecycle.
+
+From then on every change follows "Change proposal workflow" below, the same as Scenario B. Command details: [`openlogos smoke`](/cli/smoke) and [`openlogos launch`](/cli/launch).
+
+## Scenario B: Understand an existing project and add a feature
+
+### Adopt
+
+1. Run `openlogos adopt` in the project root. The project goes straight to the launched lifecycle — **you do not have to backfill historical documents first**.
+2. Fill in `tech_stack` in `logos/logos-project.yaml`; projects without an HTTP API or database declare the applicable `skip_phases`.
+3. Check that `verify.pre_run_command` in `logos/logos.config.json` is your test command.
+4. Add the OpenLogos reporter to your test framework and put case IDs in test names.
+
+Details: [Adopt Existing Project](/getting-started/adopt-existing-project).
+
+### Let the AI read the code first
+
+Reading files is never blocked by the write guard, so code analysis is available at any time. **Do it before starting each new feature.**
+
+Whole-codebase survey:
+
+```text
+Read through this project's code. Only analyze — do not modify any file. Report:
+1. Module layout and what each directory is responsible for
+2. Core business flows (described as user scenarios, with entry points: routes, pages, commands, scheduled jobs)
+3. Data model and main tables
+4. External dependencies (other systems, middleware, third-party services)
+5. Test status (framework, coverage, how to run)
+6. Technical debt and risks you see
+```
+
+Impact analysis for a new feature:
+
+```text
+I want to build a new feature: <description>. Only analyze — do not modify anything:
+1. Which modules, files, endpoints, and tables need to change or be added
+2. Which existing behavior must stay unchanged
+3. Which existing business scenarios are involved
+4. A suggested approach, and the questions you need me to answer
+```
+
+<Aside type="tip">
+To register the whole codebase as a current-state baseline (system map + scenario candidates) in one go, say `Use brownfield-adopter to build a current-state baseline for the core module`. It is an optional accelerator; skipping it does not block development. See [brownfield-adopter](/skills/brownfield-adopter).
+</Aside>
+
+### Build the first feature
+
+Go straight to "Change proposal workflow" below. When filling in the proposal, hand the impact analysis to the AI:
+
+```text
+Help me fill in change proposal <slug>. Requirement: <feature description>.
+Use the impact analysis above as evidence, and for scenarios this change touches that have no spec documents yet, write their specs from the current behavior.
+```
+
+You never backfill everything up front: each change writes the specs for the scenarios it touches, and `logos/resources/` grows with every proposal.
+
+## Change proposal workflow
+
+This applies after `launch` in Scenario A and to everyday work in Scenario B. In the "Who runs it" column, "you / AI" depends on your AI tool — see the next section.
+
+| # | Step | Command or prompt | Who runs it |
+|---|---|---|---|
+| 1 | Create the proposal | `openlogos change <slug>` (lowercase with hyphens, e.g. `add-export-excel`) | you / AI |
+| 2 | Write the plan | Say: `Help me fill in change proposal <slug>. Requirement: <description>` | AI |
+| 3 | Check the plan | `openlogos change-lint`, must exit 0 | you / AI |
+| 4 | **Approve the plan** | Review `proposal.md` and `tasks.md`, then say: `Plan approved. Produce the deltas item by item from tasks.md` | you |
+| 5 | Check the deltas | `openlogos change-lint` | you / AI |
+| 6 | **Merge the specs** | After reviewing the deltas, run `openlogos merge <slug>` | you authorize |
+| 7 | Plan slices | Say: `Specs are merged. Use slice-planner to plan the code slices`; the slices are written by `openlogos slice plan --file <file>` | AI + you / AI |
+| 8 | **Approve slices** | Review the slices, then say: `Slices approved. Start implementing` | you |
+| 9 | Implement | The AI writes code and tests; when tests fail, paste the output as-is: `Test results below, please fix: <output>` | AI |
+| 10 | **Acceptance** | `openlogos verify` | you authorize |
+| 11 | Deploy and smoke | Only when the proposal has `[deploy]` tasks | you authorize |
+| 12 | **Archive** | `openlogos archive <slug>` | you authorize |
+| 13 | **Push** | `git push` | you authorize |
+
+Only one proposal can be active at a time; archive it before opening the next.
+
+### Prompts by kind of change
+
+| Kind of change | After creating the proposal, say |
+|---|---|
+| New feature | `Help me fill in change proposal <slug>. Requirement: <description>` |
+| Requirement change | `Help me fill in change proposal <slug>. Requirement <X> changes to <Y> because <…>` |
+| Interface change | `Help me fill in change proposal <slug>. Endpoint <path> needs <change>; the design stays the same` |
+| Bug fix | `Help me fill in change proposal <slug>. Symptom: <…>; steps to reproduce: <…>; expected: <…>` |
+
+A code-only proposal with no spec delta still runs `openlogos merge <slug>` (a "no-delta merge") before slice planning.
+
+## Differences between AI tools
+
+The prompts are the same in every tool. What differs is how commands are triggered and whether the AI can run CLI commands for you.
+
+<Tabs>
+<TabItem label="Claude Code">
+- **Triggering commands**: slash commands `/openlogos:status`, `/openlogos:next`, `/openlogos:change`, and so on; Skills load automatically from the conversation.
+- **Guard**: full strength. File edits are blocked beforehand; shell commands get a pre-check and a post-execution comparison.
+- **Who runs it**: the AI can run `openlogos` commands for you. Human confirmation points (merge, verify, deployment, smoke, archive, `git push`) still need your explicit authorization in the conversation, e.g. `Run openlogos merge <slug>`.
+</TabItem>
+<TabItem label="Codex / OpenCode">
+- **Triggering commands**: OpenCode uses slash commands `/openlogos:status`, `/openlogos:change`, and so on; Codex invokes Skills with `$openlogos:<skill>`, e.g. `$openlogos:change-writer`.
+- **Guard**: only injects phase context at session start — **no write interception**. The workflow relies on the rules in `AGENTS.md` and on your review.
+- **Who runs it**: the AI can run commands for you; human confirmation points still need your explicit authorization. With no guard as a safety net, review more carefully.
+</TabItem>
+<TabItem label="Cursor">
+- **Triggering commands**: explicit command Skills `/openlogos-<command>`, e.g. `/openlogos-status`.
+- **Guard**: partial strength. Shell commands get a pre-check and a post-execution check; file edits are only reported afterwards, never blocked beforehand.
+- **Who runs it**: the AI can run commands for you; human confirmation points need your explicit authorization. Watch for after-the-fact reports of out-of-scope edits.
+</TabItem>
+<TabItem label="ZCode / Qoder / WorkBuddy">
+- **Triggering commands**: pick the OpenLogos plugin commands (status, next, change, …) from the host's command list; Skills come from the plugin. **Start a new session** after `init`, `adopt`, `sync`, or `launch` to load the plugin.
+- **Guard**: a conservative PreToolUse hard block. In a launched project the AI can only run single read-only commands such as `pwd`, `ls`, `cat`, `sed`, `rg`, read-only `git` subcommands, and `openlogos status` / `next` / `flow` (no `;`, `|`, `>`, and similar characters); file writes are narrowed to the proposal's current step.
+- **Who runs it**: in a launched project, `openlogos change`, `openlogos change-lint`, `openlogos merge`, `openlogos slice plan`, `openlogos verify`, `openlogos archive`, tests, builds, and `git commit` are **run by you in a terminal**. The AI tells you the exact command; you run it in the terminal and paste the result back. A guard denial is the protection working, not a failure. The initial lifecycle (the first build in Scenario A) does not enable this hard block.
+- The host's native memory is not treated as authorization; do not put OpenLogos rules into native memory.
+</TabItem>
+</Tabs>
+
+More detail: [PreToolUse Guard](/specs/pretooluse-guard) and each tool's plugin spec page.
+
+## Tips for steadier output
+
+1. **Advance one phase or one scenario at a time**: `Do S01 first` produces much better output than `Do all scenarios`.
+2. **Name the file**: `Based on section 3 of logos/resources/prd/1-product-requirements/<file> …` is more precise than `Based on the requirements`.
+3. **Ask before writing**: `Before you start, list the questions you need me to answer` — especially for Phase 1, Phase 3-0, and change proposals.
+4. **Add "only analyze, do not modify"** to analysis requests so the AI does not start editing.
+5. **Put team constraints in the prompt**: tech stack, coding standards, security and compliance requirements. State them in Phase 3-0 and in change proposals; they go into the documents and carry forward.
+6. **Paste errors verbatim**: terminal output and test failures, not a paraphrase.
+7. **Start a new session after long conversations**: after each phase or slice. The context lives in the documents, so nothing is lost.
+
+## FAQ
+
+**The AI behaves the same after upgrading OpenLogos?** Run `openlogos sync` in each project root, then start a new AI session.
+
+**Do I have to backfill historical documents for an existing project?** No. After `adopt` you can open your first change proposal right away.
+
+**One repository has several subsystems?** Register them with `openlogos module add <name>`; each tracks its own phases and lifecycle.
+
+**Can the whole workflow run fully automatically?** Fully automatic mode, `openlogos next --auto`, is driven by an orchestrator such as RunLogos; see [`openlogos next`](/cli/next). In a normal conversation, use the semi-automatic flow on this page.
+
+**Do small changes need a proposal too?** After launch, every code change goes through a proposal (non-methodology files such as README are exempt). Small proposals are light: a few lines of plan, and a no-delta merge when there is no spec delta.

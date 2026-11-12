@@ -39,6 +39,7 @@ export default defineConfig({
             { label: 'Quick Start', translations: { 'zh-CN': '快速上手' }, slug: 'getting-started/quick-start' },
             { label: 'Adopt Existing Project', translations: { 'zh-CN': '接入已有项目' }, slug: 'getting-started/adopt-existing-project' },
             { label: 'First AI Collaboration', translations: { 'zh-CN': '首次 AI 协作' }, slug: 'getting-started/first-collaboration' },
+            { label: 'Prompt Cheat Sheet', translations: { 'zh-CN': '提示词速查' }, slug: 'getting-started/prompt-cheatsheet' },
             { label: 'Upgrade from 0.13.x', translations: { 'zh-CN': '从 0.13.x 升级' }, slug: 'getting-started/upgrade-from-0-13' },
           ],
         },

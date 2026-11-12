@@ -1,0 +1,242 @@
+---
+title: 提示词速查
+description: OpenLogos 常用提示词一页速查——从新需求建系统、读懂已有项目开发新功能，每一步该对 AI 说什么、谁来执行。
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+这一页是「随手查」用的：每一步给出可以直接复制的提示词，并标明这一步由谁来做。想看完整走一遍的过程，请读[快速开始](/zh/getting-started/quick-start)、[首次 AI 协作](/zh/getting-started/first-collaboration)和[接入已有项目](/zh/getting-started/adopt-existing-project)。
+
+本页基于 OpenLogos **0.16.7** 编写（`openlogos --version` 查看你的版本）。
+
+## 先建立三个认识
+
+**1. 文档先于代码。** OpenLogos 按 Why → What → How 推进：先写需求，再做产品设计，最后才是架构、场景时序图、API / DB、测试用例和代码。每一步的产出都是下一步 AI 的上下文，所以**文档质量直接决定代码质量**。
+
+**2. AI 负责写，人负责确认。** AI 按 Skill 产出文档和代码，人在关键节点审核、拍板（见下文「人类确认点」）。
+
+**3. 写入门禁决定「谁来执行」。** 项目进入 launched 状态后，没有活跃变更提案就不能改代码。不同 AI 工具的门禁强度不同，有些工具里 AI 不能代为执行 `openlogos merge` 等命令，必须由你在终端执行。差异见下文「各 AI 工具的差异」。
+
+<Aside type="caution">
+所有 `openlogos` 命令都必须在项目根目录（`logos/logos.config.json` 所在目录）执行，否则会报 `logos.config.json not found`。
+</Aside>
+
+## 人类确认点
+
+下面这些动作，AI 不会在你没有明确授权时自己执行：
+
+| 确认点 | 含义 |
+|---|---|
+| 批准方案 | 变更提案（`proposal.md` + `tasks.md`）写完后，你确认了才进入 delta |
+| `openlogos merge` | 把变更的规格 delta 合并进主文档 |
+| `openlogos verify` | 运行测试并生成验收报告 |
+| 部署与 `openlogos smoke` | 提案需要部署时才有 |
+| `openlogos archive` | 归档变更提案 |
+| `git push` | 推送代码 |
+
+## 万能提示词
+
+| 你想做什么 | 对 AI 说 |
+|---|---|
+| 不知道下一步做什么 | `我现在该做什么？请运行 openlogos next，告诉我下一步和可以直接用的提示词` |
+| 看整体进度 | `请运行 openlogos status，总结当前阶段、活跃提案和下一个确认点` |
+| 操作被门禁拒绝 | `刚才的操作被 OpenLogos 门禁拒绝了，请解释原因，并告诉我接下来该做什么` |
+| 发现 bug | `我发现一个问题：<现象>。请只做分析和修复方案，不要改代码` |
+| 代码审查 | `请用 code-reviewer Skill 审查 <文件或模块> 的代码` |
+
+`openlogos next` 本身就会给出「对 AI 说：……」的现成提示词。**不确定时先 next**，是最省心的用法。
+
+## 场景 A：从新需求建一个系统
+
+新项目（`openlogos init`）处于 initial 状态，按阶段顺序推进。一次只推进一个阶段，每个阶段产出后**先审再进下一步**。
+
+### 各阶段提示词
+
+| 阶段 | 对 AI 说 | 产出位置 | 你要重点审什么 |
+|---|---|---|---|
+| Phase 1 需求 | `帮我写需求文档。产品背景：<一句话：做什么、给谁用、解决什么问题>` | `logos/resources/prd/1-product-requirements/` | 场景划分（S01、S02…）是否完整；验收标准是否可测；「不做清单」是否明确 |
+| Phase 2 产品设计 | `基于需求文档做产品设计` | `logos/resources/prd/2-product-design/` | 交互流程与异常路径；GUI 产品在浏览器里点一遍 HTML 原型 |
+| Phase 3-0 技术架构 | `基于需求和产品设计做技术架构设计。技术约束：<语言、框架、数据库、部署环境、团队规范>` | `prd/3-technical-plan/1-architecture/` | 技术选型是否符合团队规范；模块划分 |
+| Phase 3-1 场景建模 | `为全部场景编写场景实现文档和时序图`（场景多时：`先做 S01 和 S02 的场景建模`） | `prd/3-technical-plan/2-scenario-implementation/` | 时序图步骤与异常分支 |
+| Phase 3-2 API 与 DB | `基于场景时序图设计 API 和数据库` | `logos/resources/api/`、`logos/resources/database/` | 每个接口都能追溯到时序图；表结构、索引、约束 |
+| Phase 3-3 部署方案 | `设计部署方案和 smoke 验证策略` | `prd/3-technical-plan/3-deployment/` | 环境、回滚、smoke 命令 |
+| Phase 3-4 测试用例 | `为全部场景设计单元测试和场景测试用例`；API 项目再加 `设计 API 编排测试` | `logos/resources/test/`、`logos/resources/scenario/` | 用例 ID（如 `UT-S01-01`）是否覆盖正常与异常路径 |
+| Phase 3-5 代码实现 | 见下方「分批实现」 | 业务代码 + 测试代码 + reporter | 每批的用例 ID 是否与测试文档对齐 |
+| Phase 3-6 验收 | 运行 `openlogos verify` | `logos/resources/verify/acceptance-report.md` | 结果为 PASS；失败用例交回 AI 修复 |
+
+### 需求输入模板
+
+Phase 1 回答得越具体，后面所有产出越好。可以一次发给 AI：
+
+```text
+帮我写需求文档。
+- 产品是什么：<一句话>
+- 目标用户：<具体到角色>
+- 要解决的问题：<现在怎么做、痛在哪里>
+- 核心目标与衡量方式：<例如「审核时长从 2 天降到 4 小时」>
+- 必须有的功能：<列 3～6 条>
+- 明确不做的：<列出来，避免范围膨胀>
+- 约束：<合规、要集成的现有系统、上线时间等>
+```
+
+### 分批实现
+
+项目较大时，Phase 3-5 按场景或子模块分批，每批都要闭环：
+
+```text
+请按 Phase 3 Step 5 执行本次实现，本批只做 <S01 或某个子模块>。
+每批必须同时交付：（1）业务代码；（2）对应的 UT/ST 测试代码；（3）写入
+logos/resources/verify/test-results.jsonl 的 OpenLogos reporter。
+输出代码前请先列出本批覆盖的 UT/ST 用例 ID，并与 logos/resources/test/ 下的用例对齐。
+```
+
+不要把测试推到最后一批统一补。
+
+### 首轮建设完成后
+
+`openlogos launch` 会检查模块是否满足上线条件：验收通过；**需要部署的模块还要有部署报告，且 smoke 通过**。所以 Phase 3-6 验收通过后：
+
+1. **需要部署的项目**（默认情况）：
+   - 对 AI 说 `按部署方案执行部署`（`deployment-executor` Skill，部署是人类确认点），部署完成后会写出 `logos/resources/verify/deployment-report.md`；
+   - 运行 `openlogos smoke`，直到 smoke 通过（`logos/resources/verify/smoke-report.md` 为 PASS）。
+2. **明确不需要部署的项目**：在 `logos/logos-project.yaml` 中给该模块声明 `deployment_required: false`（或在 `skip_phases` 中加入 `deployment`），launch 就不再要求部署与 smoke。
+3. 运行 `openlogos launch`，项目进入 launched 状态。
+
+之后的每一次改动都走下文「变更提案流程」，与场景 B 相同。命令细节见 [`openlogos smoke`](/zh/cli/smoke) 与 [`openlogos launch`](/zh/cli/launch)。
+
+## 场景 B：读懂已有项目，开发新功能
+
+### 接入
+
+1. 在项目根目录运行 `openlogos adopt`。项目直接进入 launched 状态，**不要求先补齐历史文档**。
+2. 在 `logos/logos-project.yaml` 填写 `tech_stack`；没有 HTTP API 或数据库的项目声明适用的 `skip_phases`。
+3. 确认 `logos/logos.config.json` 的 `verify.pre_run_command` 是你的测试命令。
+4. 给测试框架接上 OpenLogos reporter，测试名带上用例 ID。
+
+细节见[接入已有项目](/zh/getting-started/adopt-existing-project)。
+
+### 先让 AI 读懂代码
+
+读文件不受写入门禁限制，所以「分析代码」随时可以做。**建议每个新功能开工前都做一次**。
+
+全局摸底：
+
+```text
+请通读本项目代码，只分析、不修改任何文件。输出：
+1. 模块划分与目录职责
+2. 核心业务流程（按用户场景描述，标出入口：路由、页面、命令、定时任务）
+3. 数据模型与主要表
+4. 对外依赖（其他系统、中间件、第三方服务）
+5. 测试现状（框架、覆盖情况、如何运行）
+6. 你认为的技术债和风险点
+```
+
+针对新功能做影响分析：
+
+```text
+我要开发新功能：<功能描述>。请只分析、不修改：
+1. 需要改动或新增哪些模块、文件、接口、表
+2. 现有哪些行为必须保持不变
+3. 涉及哪些已有业务场景
+4. 建议的实现思路，以及需要我确认的问题
+```
+
+<Aside type="tip">
+想一次性把全库现状登记为现状基线（系统地图 + 场景候选），可以对 AI 说 `请用 brownfield-adopter 为 core 模块建立现状基线`。这是可选加速器，跳过它不影响开发。见 [brownfield-adopter](/zh/skills/brownfield-adopter)。
+</Aside>
+
+### 开发第一个新功能
+
+直接走下文「变更提案流程」。填写提案时，把影响分析结果交给 AI：
+
+```text
+帮我填写变更提案 <slug>。需求：<功能描述>。
+请以刚才的影响分析为依据，对本次触达但还没有规格文档的场景，按现状补齐规格。
+```
+
+不需要先补齐历史文档：每次变更触达哪些场景，就顺带补上哪些场景的规格，`logos/resources/` 随提案逐步长出来。
+
+## 变更提案流程
+
+适用于场景 A 执行 `launch` 之后和场景 B 的日常开发。「谁来执行」一列中的「你 / AI」随 AI 工具而定，见下一节。
+
+| # | 步骤 | 命令或提示词 | 谁来执行 |
+|---|---|---|---|
+| 1 | 创建提案 | `openlogos change <slug>`（slug 用小写短横线，如 `add-export-excel`） | 你 / AI |
+| 2 | 填写方案 | 对 AI 说：`帮我填写变更提案 <slug>。需求：<描述>` | AI |
+| 3 | 方案自检 | `openlogos change-lint`，必须 exit 0 | 你 / AI |
+| 4 | **批准方案** | 审 `proposal.md` 与 `tasks.md`，满意后说：`方案确认，请按 tasks.md 逐项产出 delta` | 你 |
+| 5 | delta 自检 | `openlogos change-lint` | 你 / AI |
+| 6 | **合并规格** | 审完 delta 后运行 `openlogos merge <slug>` | 你授权 |
+| 7 | 规划切片 | 对 AI 说：`规格已合并，请用 slice-planner 规划代码切片`；切片写入由 `openlogos slice plan --file <文件>` 完成 | AI + 你 / AI |
+| 8 | **批准切片** | 审切片划分，满意后说：`切片确认，开始实现` | 你 |
+| 9 | 实现 | AI 写代码与测试；测试失败时把输出原样贴回：`测试结果如下，请修复：<输出>` | AI |
+| 10 | **验收** | `openlogos verify` | 你授权 |
+| 11 | 部署与 smoke | 仅当提案含 `[deploy]` 任务时 | 你授权 |
+| 12 | **归档** | `openlogos archive <slug>` | 你授权 |
+| 13 | **推送** | `git push` | 你授权 |
+
+同一时间只能有一个活跃提案，上一个归档后才能开下一个。
+
+### 不同改动的提示词
+
+| 改动类型 | 创建提案后对 AI 说 |
+|---|---|
+| 新功能 | `帮我填写变更提案 <slug>。需求：<描述>` |
+| 需求调整 | `帮我填写变更提案 <slug>。原需求 <X> 改为 <Y>，原因：<…>` |
+| 接口调整 | `帮我填写变更提案 <slug>。接口 <路径> 需要 <调整>，设计不变` |
+| Bug 修复 | `帮我填写变更提案 <slug>。Bug 现象：<…>；复现步骤：<…>；期望：<…>` |
+
+只改代码、没有规格 delta 的提案，同样要运行 `openlogos merge <slug>` 完成「无 delta 合并」，再规划切片。
+
+## 各 AI 工具的差异
+
+提示词在各工具里都一样，差别在于命令怎么触发、AI 能否代为执行 CLI 命令。
+
+<Tabs>
+<TabItem label="Claude Code">
+- **触发命令**：斜杠命令 `/openlogos:status`、`/openlogos:next`、`/openlogos:change` 等；Skill 按对话内容自动加载。
+- **门禁**：完整强度。文件编辑事前阻断，shell 命令事前轻判并在执行后比对。
+- **谁来执行**：AI 可以代为执行 `openlogos` 命令。人类确认点（merge、verify、部署、smoke、archive、`git push`）仍需你在对话中明确授权，例如 `请执行 openlogos merge <slug>`。
+</TabItem>
+<TabItem label="Codex / OpenCode">
+- **触发命令**：OpenCode 用斜杠命令 `/openlogos:status`、`/openlogos:change` 等；Codex 用 `$openlogos:<skill>` 调用 Skill，例如 `$openlogos:change-writer`。
+- **门禁**：只在会话开始时注入阶段上下文，**没有写入拦截**。流程约束靠 `AGENTS.md` 中的规则和你的把关。
+- **谁来执行**：AI 可以代为执行命令；人类确认点同样需要你明确授权。没有门禁兜底，审核要更仔细。
+</TabItem>
+<TabItem label="Cursor">
+- **触发命令**：显式命令 Skill `/openlogos-<命令>`，例如 `/openlogos-status`。
+- **门禁**：部分强度。shell 命令有事前轻判和执行后检查；文件编辑只在事后报告，不会事前阻断。
+- **谁来执行**：AI 可以代为执行命令；人类确认点需要你明确授权。留意事后报告的越界编辑提示。
+</TabItem>
+<TabItem label="ZCode / Qoder / WorkBuddy">
+- **触发命令**：从宿主的命令列表中选择 OpenLogos 插件命令（status、next、change 等），Skill 由插件提供。`init`、`adopt`、`sync`、`launch` 之后要**新建 session** 才会加载插件。
+- **门禁**：保守的 PreToolUse 硬拦。launched 项目中，AI 只能执行 `pwd`、`ls`、`cat`、`sed`、`rg`、只读 `git` 子命令和 `openlogos status` / `next` / `flow` 这类单条只读命令（不能带 `;`、`|`、`>` 等符号）；文件写入按提案当前步骤收窄。
+- **谁来执行**：launched 项目中，`openlogos change`、`openlogos change-lint`、`openlogos merge`、`openlogos slice plan`、`openlogos verify`、`openlogos archive`、跑测试、构建和 `git commit` 都要**你在终端执行**。AI 会告诉你该执行什么命令，你复制到终端运行，再把结果贴回给 AI。被门禁拒绝是正常保护，不是故障。initial 状态（场景 A 首轮建设）不启用这道硬门禁。
+- 宿主原生记忆不作为授权依据，不要把 OpenLogos 规则写进原生记忆。
+</TabItem>
+</Tabs>
+
+更多细节见 [PreToolUse Guard](/zh/specs/pretooluse-guard) 与各工具的插件规格页。
+
+## 让产出更稳定的技巧
+
+1. **一次只推进一个阶段或一个场景**：`先做 S01` 比 `把所有场景都做完` 产出质量高得多。
+2. **点名文件**：`请基于 logos/resources/prd/1-product-requirements/<文件> 第 3 节……` 比 `基于需求` 更准。
+3. **先问后写**：`开始写之前，先列出你需要我确认的问题`，尤其适合 Phase 1、Phase 3-0 和变更提案。
+4. **分析请求加上「只分析、不修改」**，避免 AI 直接动手。
+5. **把团队约束写进提示词**：技术栈、编码规范、安全合规要求，在 Phase 3-0 和变更提案里明确告诉 AI，它们会进入文档、被后续阶段继承。
+6. **报错原样贴回**：终端输出和测试失败信息直接粘贴，不要转述。
+7. **长对话及时换 session**：一个阶段或一个切片完成后新建 session，上下文都在文档里，不会丢。
+
+## 常见问题
+
+**升级 OpenLogos 后 AI 的行为没变？** 在每个项目根目录运行 `openlogos sync`，然后新建 AI 会话。
+
+**存量项目必须先补齐历史文档吗？** 不需要。`adopt` 之后可以直接开第一个变更提案。
+
+**一个仓库有多个子系统怎么办？** 用 `openlogos module add <名称>` 注册多个模块，各自追踪阶段和生命周期。
+
+**可以全自动跑完整个流程吗？** 全自动模式 `openlogos next --auto` 需要由 RunLogos 等编排器驱动，见 [`openlogos next`](/zh/cli/next)。日常对话中按本页的半自动方式操作。
+
+**小改动也要走提案吗？** launched 之后改代码都要走提案（README 这类非方法论文件除外）。小改动的提案也很轻：方案几句话，没有 delta 时直接做「无 delta 合并」。

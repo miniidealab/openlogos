@@ -31,16 +31,24 @@ const WEBSITE_SMOKE_IDS = new Set([
 // scripts/smoke-website-docs-0-16-0.js 按生产站点执行并以各自 ID 记账。此时本脚本仍按本地构建做断言，
 // 但不为这四个 ID 写结果、也不删除生产 runner 已写的记录，保证正式账本每个 ID 只有一条来自生产的结果。
 // 窗口：活跃提案为 website-docs-0-16-0，或 OPENLOGOS_WEBSITE_DOCS_SMOKE=1（logos/ 不入库，CI 永不在窗口内）。
-const PRODUCTION_DEFERRED_IDS = new Set(['SMOKE-core-07', 'SMOKE-core-08', 'SMOKE-core-21', 'SMOKE-core-23']);
-function productionDocsWindow() {
-  if (process.env.OPENLOGOS_WEBSITE_DOCS_SMOKE === '1') return true;
+// docs-prompt-cheatsheet（delta 评审 r1 F2）：同理，本案窗口内 SMOKE-core-21 / 23 由
+// scripts/smoke-website-prompt-cheatsheet.js 按生产站点记账；窗口为活跃提案 docs-prompt-cheatsheet 或 OPENLOGOS_PCS_SMOKE=1。
+// 两个窗口的让出集合取并集；窗口外行为不变。
+const PRODUCTION_DEFERRAL_WINDOWS = [
+  { slug: 'website-docs-0-16-0', env: 'OPENLOGOS_WEBSITE_DOCS_SMOKE', ids: ['SMOKE-core-07', 'SMOKE-core-08', 'SMOKE-core-21', 'SMOKE-core-23'] },
+  { slug: 'docs-prompt-cheatsheet', env: 'OPENLOGOS_PCS_SMOKE', ids: ['SMOKE-core-21', 'SMOKE-core-23'] },
+];
+function activeChange() {
   try {
-    return JSON.parse(readFileSync(resolve(ROOT, '../logos/.openlogos-guard'), 'utf-8')).activeChange === 'website-docs-0-16-0';
+    return JSON.parse(readFileSync(resolve(ROOT, '../logos/.openlogos-guard'), 'utf-8')).activeChange ?? null;
   } catch {
-    return false;
+    return null;
   }
 }
-const DEFERRED_IDS = productionDocsWindow() ? PRODUCTION_DEFERRED_IDS : new Set();
+const ACTIVE_CHANGE = activeChange();
+const DEFERRED_IDS = new Set(PRODUCTION_DEFERRAL_WINDOWS
+  .filter((w) => process.env[w.env] === '1' || ACTIVE_CHANGE === w.slug)
+  .flatMap((w) => w.ids));
 
 function removePreviousWebsiteResults() {
   mkdirSync(dirname(RESULT_PATH), { recursive: true });
@@ -64,7 +72,7 @@ function removePreviousWebsiteResults() {
 
 function report(id, status, scenario, error) {
   if (DEFERRED_IDS.has(id)) {
-    console.log(`${id}: 本地构建判定 ${status}（不记账：本案窗口内由 scripts/smoke-website-docs-0-16-0.js 按生产站点记录）`);
+    console.log(`${id}: 本地构建判定 ${status}（不记账：当前验收窗口内由生产站点 runner 记录）`);
     return;
   }
   mkdirSync(dirname(RESULT_PATH), { recursive: true });

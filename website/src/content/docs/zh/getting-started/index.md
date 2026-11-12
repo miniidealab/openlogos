@@ -169,4 +169,5 @@ OpenLogos 与工具无关。内置对以下平台的集成支持：
 - **[快速开始](/zh/getting-started/quick-start)** —— 10 分钟内安装并创建你的第一个项目
 - **[从 0.13.x 升级](/zh/getting-started/upgrade-from-0-13)** —— 已在用 0.13.x？按升级指南迁移到 0.16.0
 - **[首次 AI 协作](/zh/getting-started/first-collaboration)** —— 完整走一遍开发流程
+- **[提示词速查](/zh/getting-started/prompt-cheatsheet)** —— 从新需求建系统、读懂已有项目开发新功能，每一步该对 AI 说什么
 - **[导览](/zh/tour)** —— 看看 OpenLogos 在真实项目中的应用（FlowTask + Money-Log）

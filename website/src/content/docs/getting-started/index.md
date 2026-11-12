@@ -169,4 +169,5 @@ How each host's write guard behaves is described in [PreToolUse Guard](/specs/pr
 - **[Quick Start](/getting-started/quick-start)** — Install and create your first project in under 10 minutes
 - **[Upgrading from 0.13.x](/getting-started/upgrade-from-0-13)** — Already using OpenLogos 0.13.x? Follow the upgrade guide to move to 0.16.0
 - **[First AI Collaboration](/getting-started/first-collaboration)** — Walk through a complete development session
+- **[Prompt Cheat Sheet](/getting-started/prompt-cheatsheet)** — What to say to the AI at each step, for new systems and for features in existing codebases
 - **[Tour](/tour)** — See OpenLogos applied to real projects (FlowTask + Money-Log)
