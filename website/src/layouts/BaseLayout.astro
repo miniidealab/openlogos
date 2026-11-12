@@ -42,6 +42,8 @@ const t = {
   about: isZh ? '关于' : 'About',
   conceptsNav: isZh ? '核心概念' : 'Concepts',
   license: isZh ? '基于 Apache 2.0 许可' : 'Licensed under Apache 2.0',
+  friendLinks: isZh ? '友情链接' : 'Friends',
+  markdown6Label: isZh ? 'Markdown6（新标签页打开）' : 'Markdown6 (opens in a new tab)',
 };
 ---
 
@@ -183,6 +185,11 @@ const t = {
             </div>
           </div>
         </div>
+      </div>
+      <div class="footer-friends">
+        <span class="footer-friends-label">{t.friendLinks}</span>
+        <span class="footer-friends-label" aria-hidden="true">·</span>
+        <a class="footer-friend-link" href="https://markdown6.com/" target="_blank" rel="noopener noreferrer" aria-label={t.markdown6Label}>Markdown6 <span aria-hidden="true">↗</span></a>
       </div>
     </footer>
 
@@ -568,6 +575,30 @@ const t = {
     color: var(--color-text);
   }
 
+  .footer-friends {
+    max-width: var(--max-width);
+    margin: 0.75rem auto 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+  }
+
+  .footer-friends-label {
+    color: var(--color-text-muted);
+    opacity: 0.6;
+  }
+
+  .footer-friend-link {
+    color: var(--color-text-muted);
+    white-space: nowrap;
+  }
+
+  .footer-friend-link:hover {
+    color: var(--color-text);
+  }
+
   /* Language Switcher - in footer */
   .lang-switcher {
     position: relative;
@@ -722,6 +753,10 @@ const t = {
       flex-wrap: wrap;
       justify-content: center;
       gap: 1rem;
+    }
+
+    .footer-friends {
+      justify-content: center;
     }
   }
 </style>

@@ -138,7 +138,7 @@ export function parseAiTools(helpText) {
  * 解析部署记录：三行齐全且 change 行等于本 slug 才算本次部署记录。
  * 返回 { values, missing }；缺文件时 text 为 null。
  */
-export function parseDeployRecord(text) {
+export function parseDeployRecord(text, slug = SLUG) {
   if (text === null) return { values: {}, missing: ['logos/resources/verify/deployment-report.md'] };
   // 部署报告是按提案追加的多份报告（以一级标题分隔），旧报告可能含同名键（如 0.16.0 官网部署的 url / id）。
   // 先定位本 slug 的 change 行，再只在它所属的那份报告（到下一个一级标题为止）里读 url / id。
@@ -146,13 +146,13 @@ export function parseDeployRecord(text) {
   const valueOf = (line, key) => new RegExp(`^\\s*[-*]?\\s*\`?${key}\`?:\\s*\`?([^\\s\`]+)`).exec(line)?.[1] ?? null;
   const changeKey = DEPLOY_RECORD_KEYS[0];
   const changes = lines.map((line, i) => ({ i, v: valueOf(line, changeKey) })).filter(c => c.v !== null);
-  const own = changes.filter(c => c.v === SLUG).pop();
+  const own = changes.filter(c => c.v === slug).pop();
   if (!own) {
     const other = changes.pop();
     return {
       values: {},
       missing: [other
-        ? `deployment-report:${changeKey}=${SLUG}（当前为 ${other.v}，属旧部署记录）`
+        ? `deployment-report:${changeKey}=${slug}（当前为 ${other.v}，属旧部署记录）`
         : `deployment-report:${changeKey}`],
     };
   }
@@ -160,7 +160,7 @@ export function parseDeployRecord(text) {
   while (start > 0 && !/^# /.test(lines[start])) start -= 1;
   let end = own.i + 1;
   while (end < lines.length && !/^# /.test(lines[end])) end += 1;
-  const values = { [changeKey]: SLUG };
+  const values = { [changeKey]: slug };
   const missing = [];
   for (const key of DEPLOY_RECORD_KEYS.slice(1)) {
     const v = lines.slice(start, end).map(line => valueOf(line, key)).filter(Boolean).pop();
