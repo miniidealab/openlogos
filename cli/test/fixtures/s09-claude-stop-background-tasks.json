@@ -1,0 +1,77 @@
+{
+  "_comment": "Claude Code 真实 hook 输入采集（fix-guard-background-record-never-closed 切片1 的规范核实）。采集方式：在一次性临时目录以独立 Claude Code 会话执行一次 run_in_background 的 `sleep 25`，项目级 hook 把 stdin 原样落盘。除把主目录用户名替换为 <user> 外未做任何改动。",
+  "claude_code_version": "2.1.322",
+  "captured_at": "2026-11-13",
+  "post_tool_use_background": {
+    "session_id": "6cec5a4f-b9cd-4592-992f-72a426e4fdf9",
+    "transcript_path": "/Users/<user>/.claude/projects/-private-tmp-fgbr-capture-proj/6cec5a4f-b9cd-4592-992f-72a426e4fdf9.jsonl",
+    "cwd": "/private/tmp/fgbr-capture/proj",
+    "prompt_id": "e6662e25-4903-46a1-b196-0aedb8835d85",
+    "permission_mode": "default",
+    "effort": {
+      "level": "medium"
+    },
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "sleep 25",
+      "description": "后台等待 25 秒",
+      "run_in_background": true
+    },
+    "tool_response": {
+      "stdout": "",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false,
+      "noOutputExpected": false,
+      "backgroundTaskId": "bdweksbfg"
+    },
+    "tool_use_id": "toolu_01GsgEQRDeQFFVDBt6avYw5H",
+    "duration_ms": 92
+  },
+  "stop_with_task_in_flight": {
+    "session_id": "6cec5a4f-b9cd-4592-992f-72a426e4fdf9",
+    "transcript_path": "/Users/<user>/.claude/projects/-private-tmp-fgbr-capture-proj/6cec5a4f-b9cd-4592-992f-72a426e4fdf9.jsonl",
+    "cwd": "/private/tmp/fgbr-capture/proj",
+    "prompt_id": "e6662e25-4903-46a1-b196-0aedb8835d85",
+    "permission_mode": "default",
+    "effort": {
+      "level": "medium"
+    },
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "started",
+    "background_tasks": [
+      {
+        "id": "bdweksbfg",
+        "type": "shell",
+        "status": "running",
+        "description": "后台等待 25 秒",
+        "command": "sleep 25"
+      }
+    ],
+    "session_crons": []
+  },
+  "stop_after_task_ended": {
+    "session_id": "6cec5a4f-b9cd-4592-992f-72a426e4fdf9",
+    "transcript_path": "/Users/<user>/.claude/projects/-private-tmp-fgbr-capture-proj/6cec5a4f-b9cd-4592-992f-72a426e4fdf9.jsonl",
+    "cwd": "/private/tmp/fgbr-capture/proj",
+    "prompt_id": "c5e1a8cb-c943-4fdd-9c3e-dbbec3d3aaad",
+    "permission_mode": "default",
+    "effort": {
+      "level": "medium"
+    },
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "后台命令 `sleep 25` 已正常结束（退出码 0）。",
+    "background_tasks": [],
+    "session_crons": []
+  },
+  "session_start": {
+    "session_id": "6cec5a4f-b9cd-4592-992f-72a426e4fdf9",
+    "transcript_path": "/Users/<user>/.claude/projects/-private-tmp-fgbr-capture-proj/6cec5a4f-b9cd-4592-992f-72a426e4fdf9.jsonl",
+    "cwd": "/private/tmp/fgbr-capture/proj",
+    "hook_event_name": "SessionStart",
+    "source": "startup"
+  }
+}

@@ -974,19 +974,32 @@ git 元数据**不采集**（git 自身或引擎写入、变化频繁）：`obje
 ### 执行记录生命周期（C12）
 
 - **建立**：PreToolUse（Cursor 为 `beforeShellExecution`）放行一次需要快照的调用前建立，记录持久化，不随会话结束清理。
-- **关闭条件**（只以宿主给出的执行结束证据为准，关闭前都做一次最终对比）：
+- **关闭条件**（除条件 5 外只以宿主给出的执行结束证据为准，关闭前都做一次最终对比）：
   1. 收到同一 `record_id` 的 PostToolUse / PostToolUseFailure（Cursor 为 `afterShellExecution`），且该调用不是后台调用；
   2. 后台调用的 PostToolUse 返回了后台任务标识，之后宿主的工具结果确认该任务已结束：查询类工具（`BashOutput` / `TaskOutput`）输出显示已完成、失败或被终止，或终止类工具（`KillShell` / `TaskStop`）成功。工具名与 tool_response 中后台任务标识、结束状态字段以实施时 Claude Code 真实 hook 输入核实。
-  3. **前台记录在 Stop 时关闭**：Stop 表明本回合的前台工具调用已全部结束（含被用户在权限确认中拒绝、被其他 hook 拦下、执行出错的调用）。Stop 时对全部**非后台**记录（`background:false`，含匿名的非后台记录）做最终对比后关闭；后台记录不受影响。用户中断（宿主不触发 Stop）时，前台记录保留到下一次 Stop 再关闭，被中断的前台进程已由宿主终止。
-- **不算结束证据**：SessionEnd、补查时暂未发现变化、会话结束（含 `/clear`、切换会话）；Stop 对后台记录不算结束证据。不注册 SessionEnd；会话结束时记录保留，下一会话由 SessionStart 接管并继续对比，SessionStart 不关闭记录。
-- **未关闭记录持续对比**：之后每个 PreToolUse、PostToolUse、PostToolUseFailure、Stop、SessionStart 都对全部未关闭记录做对比，发现变化即进入反馈，记录仍保持打开。
+  3. **前台记录在 Stop 时关闭**：Stop 表明本回合的前台工具调用已全部结束（含被用户在权限确认中拒绝、被其他 hook 拦下、执行出错的调用）。Stop 时对全部**非后台**记录（`background:false`，含匿名的非后台记录）做最终对比后关闭；后台记录只按条件 4 处理。用户中断（宿主不触发 Stop）时，前台记录保留到下一次 Stop 再关闭，被中断的前台进程已由宿主终止。
+  4. **后台记录在 Stop 时按宿主的后台任务现状关闭**（fix-guard-background-record-never-closed）：Claude Code 的后台任务结束后由宿主直接通知模型，不产生查询或终止类工具调用，条件 2 因此基本不触发。Stop 输入中的 `background_tasks` 是宿主给出的、仍在进行中的任务清单（每个条目带任务 `id`）。现状有效时，对同时满足以下三项的记录逐条判定：`background:true`；记录的 `session_id` 等于本次 Stop 输入的 `session_id`；已回填 `background_task_id`。该标识不等于清单中任何条目的 `id` → 做最终对比后关闭；标识仍在清单中 → 保留。
+     - **只看成员关系**：不读取条目的 `status` 来决定关闭，也不沿用条件 2 的状态词表（那套词表针对工具结果）。条目状态为运行中、其他值、未知值或缺失，记录都保留。
+     - **现状有效**：字段存在且是数组，且每个条目都是带非空字符串 `id` 的对象；空数组有效，表示没有进行中的任务。字段缺失（宿主只在任务登记表可达时提供）、不是数组、或任一条目形态不符时，整个现状视为无效，本条件不关闭任何记录。
+     - **不适用的记录**：Stop 输入缺少 `session_id`、其他会话的记录、未回填 `background_task_id` 的记录、匿名记录。另一个会话的现状里本来就没有这些任务，缺席不构成结束证据。
+     - 只有 Stop 事件适用本条件；其他事件的输入即使带同名字段也不据此关闭。
+     - 字段名、条目形态，以及条目 `id` 与后台调用 PostToolUse 返回的后台任务标识是否同值，以实施时采集的 Claude Code 真实 Stop 输入核实并入库为夹具；核实不成立时不得实现本条件。
+  5. **超期关闭**（fix-guard-background-record-never-closed）：记录的 `created_at` 距当前时间**超过** 7 天（168 小时；恰好 7 天不算），且不属于当前会话（记录的 `session_id` 与本次 hook 输入的 `session_id` 不同，或记录没有 `session_id`），在任一持锁检查点（PreToolUse 补查、PostToolUse、PostToolUseFailure、Stop、SessionStart）做最终对比后关闭。它不是结束证据，而是对「没有任何后续事件的残留记录」（会话退出或崩溃时任务仍在运行）的回收策略。
+     - 适用于全部未关闭记录，含未回填标识的后台记录与匿名记录；rebase-only 记录不在此列（它在所属调用的结束事件中删除）。
+     - **SessionStart 的会话标识**：SessionStart 检查由 phase launcher 调用引擎完成，launcher 必须把宿主交给它的 SessionStart 输入原样经 stdin 转交引擎（见「Claude Code hook 注册与引擎分发」），引擎从中取 `session_id`。
+     - hook 输入缺少 `session_id` 时无法判断归属，本次检查点不做超期关闭；CLI 调用的 `boundary-start` / `boundary-end` 不做超期关闭。
+     - 阈值是引擎内常量，不进 `logos/logos.config.json`；当前时间取引擎的可注入时钟。
+     - **当前会话豁免**：属于当前会话的记录不被超期关闭，即使已超过 7 天。因此当前会话中拿不到可信结束证据的后台记录（现状一直无效，或未回填标识）不保证在 7 天内关闭，换到另一个会话后才适用本条件。
+  - 条件 4、5 的关闭动作与条件 1～3 相同：持锁、最终对比、新发现按该检查点的既有渠道当场送达或写入待报告项、写墓碑后删除记录；有活跃提案时照常关闭，但不报告新变化。
+- **不算结束证据**：SessionEnd、补查时暂未发现变化、会话结束（含 `/clear`、切换会话）；Stop 本身对后台记录不算结束证据，只有条件 4 所述的后台任务现状才算。不注册 SessionEnd；会话结束时记录保留，下一会话由 SessionStart 接管并继续对比；除符合条件 5（超期关闭）的记录外，SessionStart 不关闭记录。
+- **未关闭记录持续对比**：之后每个 PreToolUse、PostToolUse、PostToolUseFailure、Stop、SessionStart 都对全部未关闭记录做对比，发现变化即进入反馈；不满足任何关闭条件的记录仍保持打开。
 - **基线**：只要存在未关闭记录，判断某处改动是否「执行前已有」时，以最早一个未关闭记录为基线；之后建立的新记录不得把期间出现的受保护变化吸收为既有改动。基线只在两种情况下更新：独立 git / openlogos 调用（只更新它改动的路径）与提案边界（见「提案边界」）。
 - **归因**：
   - 变化相对本次调用自身的快照出现，且没有其他未关闭记录 → 归因本次调用；
   - 其余情况（存在其他未关闭的后台或匿名记录、变化早于本次调用快照、结束事件缺少标识）→ 无法唯一归因，反馈标明「可能来自未结束的后台调用或用户手动修改，需向用户确认」，列出相关未关闭记录的命令；AI 不得自行回滚这类变化。
 - **去重**：去重键为 `(path, raw_digest, 事件签名)`。事件签名取变化被观测时文件的 `(ino, ctime_ns)`；文件已删除时取 `"absent"` 加观测序号。同一事件只报一次，反复检查同一未变化状态不重复报告；结束事件迟到时照常做最终对比后关闭，已报过的不再重复。
 - **去重条目清除**：以下情况清除该路径的去重条目，使同一内容再次出现时能重新报告：检查点观测到该路径回到基线（已恢复）；该路径基线被合法更新（独立 git / openlogos 调用的基线更新、提案边界）；该路径出现新的事件签名（再次被写入，即使内容相同，ctime 也会变）。例如「修改为 X → 报告 → 恢复 → 再次修改为 X」会再次报告，「修改为 X → 不恢复 → 多次检查」只报一次。
-- **匿名记录**：缺少调用标识时不按「最近一次」猜测关联。匿名记录无法被任何结束事件关闭，长期保留；没有标识的结束事件只触发对比，不关闭任何记录。
+- **匿名记录**：缺少调用标识时不按「最近一次」猜测关联。匿名记录无法被任何结束事件关闭（非后台的匿名记录按条件 3 在 Stop 时关闭），其余只能由条件 5 的超期关闭收掉；没有标识的结束事件只触发对比，不关闭任何记录。
 - **删除**：记录在按上述条件关闭并完成最终对比后删除。已写入对象库的内容不随记录删除，按 git 自身的对象回收规则过期。
 
 ### 提案边界（C12）
@@ -1114,6 +1127,10 @@ git 元数据**不采集**（git 自身或引擎写入、变化频繁）：`obje
 - `PreToolUse` 既有条目不变：guard-check 内部对 Bash / PowerShell 调用 `snapshot`，对命中 matcher 的任意工具调用做补查。
 - `PostToolUse` 收到后台任务查询 / 终止类工具时只处理后台记录的关闭判定。matcher 中写入宿主当前不存在的工具名无副作用。
 - SessionStart：既有 phase launcher 调用 `check --session-start`，把待报告项并入注入上下文。
+  - **会话输入转发**（fix-guard-background-record-never-closed）：`plugin/bin/openlogos-phase` 在 hook（JSON）模式下，在启动任何子进程之前读取一次自身 stdin 并保存；调用引擎 `check --session-start` 时把保存的内容原样写入引擎 stdin。修改前该调用固定传入空输入，引擎拿不到 `session_id`，无法判断记录是否属于当前会话。
+  - stdin 是终端、为空、读取失败或不是 JSON 对象时，照常调用引擎并传入空输入：接管、对比与待报告项注入不受影响，本次不做超期关闭（关闭条件 5），由之后第一个带 `session_id` 的检查点回收。launcher 的退出码与输出不因此改变。
+  - `--plain` 模式不读取 stdin、不调用引擎，行为不变。Windows 下 `openlogos-phase-launcher.cjs` 自行渲染阶段信息、不调用引擎（既有行为），超期关闭同样落到之后的检查点；非 Windows 下它以继承的 stdin 启动 `openlogos-phase`，不需要改动。
+  - launcher 不解析、不改写、不落盘该输入；引擎在 `--session-start` 下只使用其中的 `session_id`，事件类型仍由 `--session-start` 决定，不由输入中的 `hook_event_name` 决定。
 - 不注册 SessionEnd。
 - 引擎缺失或 node 不可执行时，PreToolUse 按「非 git 回落」判定；Post / Stop hook 自身无法运行属宿主非阻断错误，不构成放行依据（事前已回落）。
 
@@ -1125,7 +1142,7 @@ git 元数据**不采集**（git 自身或引擎写入、变化频繁）：`obje
 
 ### 已知覆盖限制
 
-1. 宿主始终不报告结束的后台任务（脱离会话的守护进程、缺少调用标识的调用），其记录长期保留，期间的受保护变化以「需向用户确认」形式各报告一次，不会静默放过。
+1. 宿主始终不报告结束的后台任务（脱离会话的守护进程、缺少调用标识的调用），其记录若不属于当前会话，在建立超过 7 天后的下一个检查点关闭（「执行记录生命周期」关闭条件 5），期间的受保护变化以「需向用户确认」形式各报告一次，不会静默放过。超期关闭后，该进程之后的写入不再归到任何记录，只会在下一次调用建立快照时被当作执行前已有内容。属于当前会话、又拿不到可信结束证据的记录（Stop 输入没有有效的后台任务现状，或记录未回填后台任务标识）不保证在 7 天内关闭：只要该会话仍在使用或被恢复，它就一直保留，换到另一个会话后才适用超期关闭；不为这类记录另设关闭依据。
 2. 事后检查发生在写入之后：受保护内容已被改动，依赖反馈与恢复合同回滚；超过 5 MiB 或无法读取的条目不可自动恢复；恢复命令在 git 对象回收前有效。
 3. 独立 git / openlogos 调用的残余风险见「独立 git / openlogos 调用豁免」。
 4. Bash 经无法事前确定目标的写法（如 `node -e`）写入 `logos/.openlogos-runtime/` 时，该目录被忽略且不在快照范围内，事后检查无法发现；运行时目录的保护以 Edit / Write 事前阻断与可确定目标的 Bash 事前阻断为限。
@@ -1160,7 +1177,7 @@ git 元数据**不采集**（git 自身或引擎写入、变化频繁）：`obje
 
 - 分发源 `plugin/bin/guard-check`：受保护判定（不可豁免项先于白名单与 exempt）、`guard.exempt` 读取（缺省 / 损坏区分）（移除 R-REF / R-STAGING 硬编码与 `.gitignore` 白名单项）、Bash / PowerShell 事前轻判、补查、独立调用识别、受限命令按 `permission_mode` 返回 `ask` 或 exit 2、非 git 回落。
 - 新增分发源 `plugin/bin/guard-post-check.cjs`：`snapshot` / `check` / `restore` / `boundary-start` / `boundary-end`，以及原始字节基线缓存、状态锁与原子落盘；快照含 git 元数据，留存与比较使用 `--no-filters` 原始字节。
-- `plugin/bin/openlogos-phase`：SessionStart 调用 `check --session-start` 并注入待报告项。
+- `plugin/bin/openlogos-phase`：SessionStart 调用 `check --session-start` 并注入待报告项；hook 模式下把宿主的 SessionStart 输入原样经 stdin 转交引擎（fix-guard-background-record-never-closed）。
 - `cli/src/commands/init.ts` 与 sync 链路：PostToolUse / PostToolUseFailure / Stop hook 幂等注册、引擎资产分发与 asset-manifest 登记；`cli/src/commands/change.ts` / `archive.ts`：`boundary-start` / `boundary-end`。
 - `plugin-cursor/hooks/runtime.cjs`、`plugin-cursor/hooks/hooks.json`、`cli/src/lib/cursor-adapter.ts`：见 `spec/cursor-plugin.md`。
 - 托管副本经 sync 分发，不手改。

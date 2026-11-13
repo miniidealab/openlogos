@@ -11,6 +11,15 @@
 
 set -euo pipefail
 
+# fix-guard-background-record-never-closed：hook（JSON）模式下，在启动任何子进程之前读取一次宿主交来的 SessionStart 输入
+# 并保存，之后原样转交事后检查引擎（引擎从中取 session_id，用于超期关闭的当前会话判断）。本脚本不解析、不改写、不落盘
+# 该输入。--plain 模式不读取；stdin 是终端、为空或读取失败时保存为空，引擎按空输入处理（本次不做超期关闭）。
+# 读取设 2 秒上限：宿主未关闭 stdin 时不让会话启动卡住，超时按空输入处理。
+OPENLOGOS_HOOK_INPUT=""
+if [ "${1:-}" != "--plain" ] && [ ! -t 0 ]; then
+  IFS= read -r -d '' -t 2 OPENLOGOS_HOOK_INPUT || true
+fi
+
 has_files() {
   local dir="$1"
   [ -d "$dir" ] && find "$dir" -type f ! -name '.gitkeep' -maxdepth 3 2>/dev/null | head -1 | grep -q .
@@ -573,7 +582,7 @@ GUARD_PENDING=""
 if [ "$MODE" = "json" ] && [ "$NODE_OK" -eq 1 ]; then
   _GUARD_ENGINE="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/guard-post-check.cjs"
   if [ -f "$_GUARD_ENGINE" ]; then
-    GUARD_PENDING="$(node "$_GUARD_ENGINE" check --session-start </dev/null 2>/dev/null || true)"
+    GUARD_PENDING="$(printf '%s' "$OPENLOGOS_HOOK_INPUT" | node "$_GUARD_ENGINE" check --session-start 2>/dev/null || true)"
   fi
 fi
 

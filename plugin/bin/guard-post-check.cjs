@@ -2132,6 +2132,57 @@ function backgroundEndOf(tool, event, input) {
   return { ids, ended: BG_ENDED.test(st), status: st };
 }
 
+/**
+ * Stop 输入的后台任务现状（spec「执行记录生命周期」关闭条件 4）：宿主给出的、仍在进行中的任务清单。
+ * 现状有效（字段是数组，且每个条目都是带非空字符串 id 的对象；空数组有效）时返回进行中任务标识的 Set，
+ * 否则返回 null（字段缺失、不是数组、任一条目形态不符）——字段缺失不等于空数组。不读取条目的 status。
+ */
+function backgroundTasksOf(input) {
+  const list = input && typeof input === 'object' ? input.background_tasks : undefined;
+  if (!Array.isArray(list)) return null;
+  const ids = new Set();
+  for (const it of list) {
+    if (!it || typeof it !== 'object' || Array.isArray(it) || typeof it.id !== 'string' || !it.id.trim()) return null;
+    ids.add(it.id);
+  }
+  return ids;
+}
+
+/**
+ * 记录是否按 Stop 的后台任务现状关闭：只处理本会话、已回填后台任务标识的后台记录；标识不在现状中才关闭。
+ * 现状无效、输入缺少 session_id、其他会话记录、未回填标识记录、匿名记录、rebase-only 记录一律不适用。
+ */
+function closableByBackgroundTasks(rec, input, inflight) {
+  if (!inflight || !rec || rec.background !== true || rec.anonymous || rec.rebase_only) return false;
+  const sid = input && typeof input.session_id === 'string' ? input.session_id : '';
+  if (!sid || rec.session_id !== sid) return false;
+  const tid = rec.background_task_id;
+  if (typeof tid !== 'string' && typeof tid !== 'number') return false;
+  if (!String(tid).trim()) return false;
+  return !inflight.has(String(tid));
+}
+
+/** 超期关闭阈值（spec「执行记录生命周期」关闭条件 5）：7 天，引擎内常量，不进 logos.config.json。 */
+const RECORD_EXPIRE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * 记录是否超期（关闭条件 5）：created_at 距当前时间超过 7 天（恰好 7 天不算），且不属于当前会话
+ * （记录的 session_id 与本次 hook 输入不同，或记录没有 session_id）。输入缺少 session_id 时无法判断归属，一律不算超期；
+ * rebase-only 记录不在此列；created_at 无法解析时不算超期。nowMs 取引擎的可注入时钟。
+ */
+function recordExpired(rec, input, nowMs) {
+  const sid = input && typeof input === 'object' && typeof input.session_id === 'string' ? input.session_id : '';
+  if (!sid || !rec || rec.rebase_only) return false;
+  if (typeof rec.session_id === 'string' && rec.session_id === sid) return false;
+  const created = Date.parse(rec.created_at);
+  if (!Number.isFinite(created)) return false;
+  return nowMs - created > RECORD_EXPIRE_MS;
+}
+
+function nowMs() {
+  return Number(nowNs() / 1000000n);
+}
+
 function readInput() {
   let raw = '';
   try { raw = fs.readFileSync(0, 'utf-8'); } catch { return {}; }
@@ -2189,7 +2240,7 @@ function cmdSnapshot(argv, input) {
       command: typeof ti.command === 'string' ? ti.command : '',
       background: ti.run_in_background === true,
       background_task_id: null,
-      created_at: new Date().toISOString(),
+      created_at: new Date(nowMs()).toISOString(),
       seq: Number(process.hrtime.bigint() % 1000000000000000n),
       head: head ? head.trim() : '',
       index_tree: indexTree(root),
@@ -2242,6 +2293,8 @@ function dirNonEmpty(d) {
 }
 
 function cmdCheck(argv, input) {
+  // SessionStart 入口原样转交宿主输入：不是 JSON 对象时按空输入处理（照常接管、对比与注入，只是不做超期关闭）
+  if (argv.includes('--session-start') && (input === null || Array.isArray(input))) input = {};
   if (input === null) return 0;
   const ev = checkEvent(argv, input);
   if (!ev) return 0;
@@ -2295,8 +2348,9 @@ function spillCheck(gctx, ev, input) {
  * - Bash / PowerShell 的 PostToolUse / PostToolUseFailure：同标识非后台记录最终对比后关闭；后台记录回填 background_task_id、不关闭；
  *   无标识或标识已关闭（迟到）只做对比；rebase-only 记录按独立调用豁免局部更新基线后删除。
  * - BashOutput / TaskOutput / KillShell / TaskStop：后台任务确认结束时关闭对应后台记录，新发现写入待报告项。
- * - Stop：全部非后台记录最终对比后关闭；后台记录不受影响。
- * - SessionStart：清理墓碑，对比并把待报告项并入注入上下文（不移除，之后的 Bash 结束事件或 Stop 照常送达）；不关闭记录。
+ * - Stop：全部非后台记录最终对比后关闭；后台记录只在输入的后台任务现状有效、且本会话已回填标识的记录不在其中时关闭。
+ * - SessionStart：清理墓碑，对比并把待报告项并入注入上下文（不移除，之后的 Bash 结束事件或 Stop 照常送达）；除超期关闭外不关闭记录。
+ * - 任一检查点：建立超过 7 天且不属于当前会话的记录最终对比后关闭（超期关闭）；输入缺少 session_id 时不做。
  * - PreToolUse 补查：新发现写入待报告项。
  * 有活跃提案时只维护记录（最终对比、关闭、去重），不报告新变化；已有待报告项照常送达。
  */
@@ -2337,7 +2391,16 @@ function checkLocked(gctx, ev, input, host) {
     }
   } else if (event === 'Stop') {
     for (const r of recs) if (!r.background) toClose.push(r.id);
+    // 关闭条件 4：后台任务自行结束后宿主只通知模型、不产生工具调用；以 Stop 输入的后台任务现状（成员关系）为结束证据
+    const inflight = backgroundTasksOf(input);
+    const byTasks = recs.filter(r => closableByBackgroundTasks(r, input, inflight)).map(r => r.id);
+    trace({ op: 'stop-background-tasks', valid: !!inflight, inflight: inflight ? inflight.size : null, closed: byTasks });
+    toClose.push(...byTasks);
   }
+  // 关闭条件 5（超期关闭）：任一持锁检查点回收建立超过 7 天且不属于当前会话的记录；与其他关闭一样先做最终对比
+  const expired = recs.filter(r => !toClose.includes(r.id) && recordExpired(r, input, nowMs())).map(r => r.id);
+  if (expired.length) trace({ op: 'expired-close', event, closed: expired });
+  toClose.push(...expired);
 
   if (rebaseRec) {
     rebaseFrom(gctx, rebaseRec, recs.filter(r => !r.rebase_only), scan(), reported);
@@ -2610,7 +2673,7 @@ module.exports = {
   renderFeedback, restoreCommand, findNew, rebaseFrom, applyRebase, loadCache, main,
   acquireLock, lockStale, lockIdentity, housekeep, writeAtomic, writeJsonl, readJsonl, writeSpill, readSpills, mergeSpills,
   saveRecord, updateRecord, closeRecord, loadRecord, loadOpenRecords, isClosed, loadReported,
-  backgroundTaskIdOf, backgroundEndOf, taskStatusOf,
+  backgroundTaskIdOf, backgroundEndOf, taskStatusOf, backgroundTasksOf, closableByBackgroundTasks, recordExpired, RECORD_EXPIRE_MS,
   mlgContext, mlgInitialOwned, mlgLoadModel, mlgOwnership, mlgParseProject,
 };
 

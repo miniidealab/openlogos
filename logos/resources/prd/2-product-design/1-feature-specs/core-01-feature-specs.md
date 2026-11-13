@@ -4360,16 +4360,24 @@ guard 不自动执行恢复。
 | PostToolUse / PostToolUseFailure（同一标识、非后台调用） | 最终对比 → 送达 → 关闭记录 |
 | PostToolUse（后台调用，返回后台任务标识） | 对比 → 送达；记录 `background_task_id`，保持打开 |
 | 宿主工具结果确认后台任务已结束（查询输出显示已完成、失败或被终止，或终止工具成功） | 最终对比 → 送达 → 关闭记录 |
-| Stop | 对所有未关闭记录对比并送达待报告项；**非后台记录**（含被拒绝、被其他 hook 拦下、出错的前台调用留下的记录）做最终对比后**关闭**；后台记录保持打开 |
-| SessionStart | 接管所有未关闭记录继续对比，待报告项注入会话上下文；**不关闭记录** |
+| Stop | 对所有未关闭记录对比并送达待报告项；**非后台记录**（含被拒绝、被其他 hook 拦下、出错的前台调用留下的记录）做最终对比后**关闭**；后台记录按下一行处理 |
+| Stop，输入含有效的后台任务现状 `background_tasks`（fix-guard-background-record-never-closed） | 对**本会话**（记录的 `session_id` 等于本次输入的 `session_id`）、已回填 `background_task_id` 的后台记录：标识不在现状数组中 → 最终对比 → 送达 → 关闭记录；标识仍在数组中 → 保持打开，不读取条目的 `status` |
+| 任一持锁检查点（PreToolUse 补查、PostToolUse、PostToolUseFailure、Stop、SessionStart），记录建立超过 7 天且不属于当前会话 | 最终对比 → 按该检查点的既有渠道送达或写入待报告项 → 关闭记录（超期关闭） |
+| SessionStart | 接管所有未关闭记录继续对比，待报告项注入会话上下文；除上一行的超期关闭外**不关闭记录** |
 | 会话结束（含 `/clear`、切换会话） | 不做任何清理（不注册 SessionEnd） |
 | 无调用标识的结束事件 | 只触发对比，不关闭任何记录 |
 
 规则：
 
-- **关闭只凭宿主给出的执行结束证据**。补查时暂未发现变化、Stop、会话结束都不是结束证据。
+- **关闭只凭宿主给出的执行结束证据**，唯一例外是超期关闭（见下）。补查时暂未发现变化、会话结束都不是结束证据；Stop 本身对后台记录不是结束证据，只有它携带的后台任务现状才是。
+- **Stop 的后台任务现状**（fix-guard-background-record-never-closed）：`background_tasks` 是宿主在 Stop 输入中给出的、仍在进行中的任务清单，每个条目带任务 `id`。判定只看成员关系：现状有效且记录的 `background_task_id` 不等于其中任何条目的 `id`，才视为该任务已结束。不读取条目的 `status`，也不沿用查询类工具结果的状态词表。
+  - **现状有效**：字段存在且是数组，且每个条目都是带非空字符串 `id` 的对象（空数组有效，表示没有进行中的任务）。字段缺失、不是数组、或任一条目不合上述形态时，整个现状视为无效，本规则不关闭任何记录。
+  - **只处理本会话**：Stop 输入缺少 `session_id`、记录的 `session_id` 与之不同、记录未回填 `background_task_id`、记录是匿名记录，均不适用本规则。
+  - 字段名、条目形态，以及条目 `id` 与后台调用 PostToolUse 返回的后台任务标识是否同值，以实施时采集的 Claude Code 真实 Stop 输入核实；核实不成立时不得实现本规则，回到提案重新决定。
+- **超期关闭**（fix-guard-background-record-never-closed）：记录的 `created_at` 距当前时间**超过** 7 天（恰好 7 天不算），且不属于当前会话（记录的 `session_id` 与本次 hook 输入的 `session_id` 不同，或记录没有 `session_id`），在任一持锁检查点做最终对比后关闭。适用于全部未关闭记录，含未回填标识的后台记录与匿名记录。hook 输入缺少 `session_id` 时无法判断归属，本次检查点不做超期关闭（SessionStart 的 `session_id` 由 phase launcher 转发，见 §2.87.10）；CLI 的 `boundary-start` / `boundary-end` 不做超期关闭。阈值为引擎内常量，不进 `logos.config.json`；时间取引擎的可注入时钟。
+- 两条新规则的关闭动作与既有关闭一致：持锁、最终对比、新发现按事件渠道当场送达或写入待报告项、写墓碑后删除记录。
 - **迟到的结束事件**：照常做最终对比后关闭，已报告的变化不重复报。
-- **匿名记录**不按「最近一次」猜测关联，无法被任何结束事件关闭，长期保留并持续参与对比。
+- **匿名记录**不按「最近一次」猜测关联，无法被任何结束事件关闭，持续参与对比；非后台的匿名记录在 Stop 时关闭，其余只能由超期关闭收掉。
 - **基线只在两种情况下更新**：独立 git / openlogos 调用（只更新它改动的路径，§2.87.5）；提案结束边界（§2.87.9）。
 - 关闭记录时写入墓碑 `guard-records/<id>.closed` 并删除记录（§2.87.10a）；被它独占引用的对象库条目由 git 自身的 gc 回收，不另建清理。
 - 有活跃提案时，各检查点只维护记录（关闭、去重），不报告变化。
@@ -4403,7 +4411,7 @@ hook 注册（`.claude/settings.json`，`"$CLAUDE_PROJECT_DIR"` 形态，幂等�
 | PostToolUse | `Bash|PowerShell|BashOutput|TaskOutput|KillShell|TaskStop` | `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check` |
 | PostToolUseFailure | `Bash|PowerShell` | 同上 `check` |
 | Stop | — | 同上 `check --stop` |
-| SessionStart | 既有 phase launcher | 内部调用 `check --session-start` 并把待报告项并入注入上下文 |
+| SessionStart | 既有 phase launcher | 内部调用 `check --session-start` 并把待报告项并入注入上下文；launcher 把宿主交给它的 SessionStart 输入（stdin JSON）原样经 stdin 转交引擎，引擎从中取 `session_id` 用于超期关闭的当前会话判断（fix-guard-background-record-never-closed） |
 
 后台任务相关的工具名与 tool_response 中后台任务标识、结束状态字段以实施时 Claude Code 真实 hook 输入核实；matcher 中写入不存在的工具名无副作用。
 
@@ -4420,6 +4428,8 @@ hook 注册（`.claude/settings.json`，`"$CLAUDE_PROJECT_DIR"` 形态，幂等�
 | `untrack-<时间戳>.lst` | `ignore add` 生成的待移出文件清单（§2.88.5） |
 
 该目录由 `.gitignore` 托管区块固定忽略（§2.88.3），且属于不可豁免项（§2.87.2 第 2 步）。
+
+**SessionStart 的会话标识转发**（fix-guard-background-record-never-closed）：`plugin/bin/openlogos-phase` 在 hook（JSON）模式下，在启动任何子进程之前读取一次自身 stdin 并保存，调用引擎 `check --session-start` 时把保存的内容原样写入引擎 stdin（修改前固定传入空输入，引擎拿不到 `session_id`）。stdin 是终端、为空、读取失败或不是 JSON 对象时照常调用引擎并传入空输入：SessionStart 的接管、对比与待报告项注入不受影响，只是本次不做超期关闭，由之后第一个带 `session_id` 的检查点回收。`--plain` 模式不读取 stdin、不调用引擎，行为不变。Windows 下 launcher 自行渲染阶段信息、不调用引擎（既有行为），超期关闭同样落到之后的检查点。launcher 不解析、不改写、不记录该输入的其他字段。
 
 ### 2.87.10a 共享状态的并发与中断合同
 
@@ -4470,7 +4480,8 @@ hook 注册（`.claude/settings.json`，`"$CLAUDE_PROJECT_DIR"` 形态，幂等�
 
 | 限制 | 表现 | 处理 |
 |---|---|---|
-| 宿主始终不报告结束的后台任务（脱离会话的守护进程、缺少调用标识的调用） | 记录长期保留 | 期间的受保护变化以「需向用户确认」各报告一次，不静默放过 |
+| 宿主始终不报告结束的后台任务（脱离会话的守护进程、缺少调用标识的调用），记录不属于当前会话 | 记录保留到建立超过 7 天后的下一个检查点，随后超期关闭 | 期间的受保护变化以「需向用户确认」各报告一次，不静默放过；超期关闭后，该进程之后的写入不再归到任何记录，只会在下一次调用建立快照时被当作执行前已有内容 |
+| 属于当前会话、又拿不到可信结束证据的后台记录（Stop 输入没有有效的后台任务现状，或记录未回填后台任务标识） | 不保证 7 天内关闭：该会话仍在使用或被恢复期间一直保留 | 换到另一个会话后适用超期关闭；不为这类记录另设关闭依据 |
 | git 自身触发的钩子（如 pre-commit 改写文件） | 改动归属该 git 调用 | 作为残余风险写入规范，不报告 |
 | 独立 git / openlogos 调用执行期间，后台对同一路径的并发写入 | 随基线更新一起被吸收 | 作为残余风险写入规范 |
 | 事后检查发现的是已发生的写入 | 写入已落盘 | 内容级快照保证可恢复；超限或不可读条目标明不可自动恢复 |

@@ -895,7 +895,7 @@ sequenceDiagram
     H->>P: Step 27: PostToolUse → check --rebase-only：只把 checkout 改动的路径在所有未关闭记录中的基线更新为调用后内容
     Note over AI,CLI: 后台进程随后改写 src/a.js（含 checkout 改过的路径）
     U->>AI: Step 28: /clear（会话结束；不注册 SessionEnd，R1 保留）
-    H->>P: Step 29: 新会话 SessionStart → check --session-start（接管 R1，不关闭）
+    H->>P: Step 29: 新会话 SessionStart → check --session-start（launcher 转交会话输入；接管 R1，R1 未超期，不关闭）
     P->>RT: 发现 src/a.js 变化，唯一归因 R1 → 待报告项
     P-->>AI: Step 30: 待报告项注入会话上下文（归因「未结束的后台调用 npm run dev」）
     Note over AI,CLI: 后台再改 src/b.js，尚未经任何检查
@@ -911,18 +911,23 @@ sequenceDiagram
     AI->>H: Step 39: BashOutput / TaskOutput 显示 R1 已完成 / 失败 / 被终止，或 KillShell / TaskStop 成功
     H->>P: Step 40: PostToolUse（后台任务工具）→ 最终对比后关闭并删除 R1
     Note over AI,CLI: 之后用户手动修改不再归到 R1
+    Note over AI,CLI: 另一条后台调用 R2（已回填标识）的任务自行结束，宿主只通知模型，不产生任何工具调用
+    AI->>H: Step 63: 回合结束
+    H->>P: Step 64: Stop（输入含有效 background_tasks，其中没有 R2 的标识）→ 最终对比后关闭并删除 R2；标识仍在数组中的本会话后台记录保留
+    Note over AI,CLI: 更早的会话留下后台记录 R0，建立已超过 7 天，该会话不再出现
+    H->>P: Step 65: 任一持锁检查点 → R0 超期且不属于当前会话 → 最终对比后关闭并删除 R0
 ```
 
 ### 时序图二步骤说明
 
 22. **AI** 以后台方式启动 `npm run dev`；guard-check 照常拍快照得到执行记录 R1。
 23. **宿主**的 PostToolUse 返回后台任务标识；引擎把 R1 标为 `background: true` 并记录 `background_task_id`，此时**不关闭** R1。后台任务工具名与 tool_response 中的标识、结束状态字段以 Claude Code 真实 hook 输入为准。
-24. **任意后续工具调用**的 PreToolUse 都触发补查；R1 暂未写入时补查无变化，R1 仍保持打开——补查时暂未发现变化、Stop、会话结束都不算执行结束证据。只要存在未关闭记录，判断某处改动是否「执行前已有」以**最早一个未关闭记录**为基线，之后出现的受保护变化不会被新快照吸收为既有改动。
+24. **任意后续工具调用**的 PreToolUse 都触发补查；R1 暂未写入时补查无变化，R1 仍保持打开——补查时暂未发现变化、会话结束都不算执行结束证据；Stop 本身对后台记录也不算，只有它携带的后台任务现状才算（Step 64）。只要存在未关闭记录，判断某处改动是否「执行前已有」以**最早一个未关闭记录**为基线，之后出现的受保护变化不会被新快照吸收为既有改动。
 25. **AI** 执行可识别的独立 git 调用：在引号外按 `&&` `||` `;` 切段，每段首词只能是 `git`、`openlogos` 或 `cd`，且 `cd` 之外至少一段为 git / openlogos；任一处出现引号外的 `|`、`>`、`<`、`$(`、反引号、`(`、`)`、单独 `&`、`<<` 即不是独立调用。独立 git 调用（含 `checkout`、`merge`、`rebase`、`stash pop`、`reset --hard`、`pull`）一律放行，不报告变化（C05、C10）。
 26. **guard-check** 无未关闭记录时不拍快照；存在未关闭记录时调用 `snapshot --rebase-only`，在 git 调用前取一次状态。
 27. **引擎**在调用后 `check --rebase-only`：求出本次 git 调用改动的路径，只把这些路径在**所有**未关闭记录中的基线更新为调用后内容，其余路径基线不动。后台随后再改这些路径时，内容与新基线不同，照样被发现。
 28. **用户** `/clear` 或切换会话；会话结束不清理执行记录，R1 留在运行时目录。
-29. **新会话**的 SessionStart 由 phase launcher 调用 `check --session-start`，接管已有记录并继续对比，**不关闭**任何记录。
+29. **新会话**的 SessionStart 由 phase launcher 调用 `check --session-start`，并把宿主交给它的 SessionStart 输入原样经 stdin 转交引擎（引擎从中取 `session_id`）。引擎接管已有记录并继续对比；除符合 Step 65 超期关闭条件的记录外，**不关闭**任何记录——R1 建立未超过 7 天，保持打开。
 30. **引擎**发现 `src/a.js` 变化：能唯一归因到 R1 时标明「未结束的后台调用」及其命令；待报告项并入 SessionStart 注入上下文，并在下一次 Bash 结束事件或 Stop 时以 exit 2 送达。
 31. **用户**执行 `openlogos change <slug>`（S09-A）。
 32. **CLI** 在写入 guard 文件**之前**调用引擎 `boundary-start`：对所有未关闭记录做一次对比，把尚未报告的变化存为待报告项，提案期间也不丢弃——提案开始前的后台写入不会混进提案期。引擎不存在（非 Claude / Cursor 项目或未部署）时跳过，不阻断 change。
@@ -934,6 +939,9 @@ sequenceDiagram
 38. **归档后首个检查点**只对比、不更新基线；归档后、首次检查前发生的后台写入照样被发现。
 39. **AI** 查询或终止后台任务；宿主工具结果确认任务已结束（完成、失败、被终止，或终止工具成功）。
 40. **引擎**在该工具的 PostToolUse 中做最终对比，送达新变化后关闭并删除 R1；之后的手动修改不再被归到 R1。结束事件迟到（晚于补查）时照常最终对比后关闭，同一变化事件已报过的不再重复。
+63. **后台任务自行结束**（fix-guard-background-record-never-closed）：Claude Code 的后台任务结束后由宿主直接通知模型，模型不需要再调用查询或终止类工具，因此不会出现 Step 39→40 的 PostToolUse。AI 的回合照常结束。
+64. **引擎**在 Stop 中除关闭全部非后台记录外，读取输入的 `background_tasks`（宿主给出的仍在进行中的任务清单）。现状有效时，对本会话、已回填 `background_task_id` 的后台记录逐条判定：标识不在清单中 → 做最终对比，送达新变化后关闭并删除该记录；标识仍在清单中 → 保留，不读取条目的 `status`。现状无效（字段缺失、不是数组、条目形态不符）时不按本步关闭任何记录。其他会话的记录、未回填标识的记录、匿名记录不受本步影响。
+65. **引擎**在每个持锁检查点（PreToolUse 补查、PostToolUse、PostToolUseFailure、Stop、SessionStart）加载未关闭记录后，把建立超过 7 天且不属于当前会话的记录做最终对比后关闭并删除（超期关闭）。它用于收掉会话退出或崩溃后没有任何后续事件的残留记录，适用于后台记录、未回填标识的记录与匿名记录；hook 输入缺少 `session_id` 时本次检查点不做超期关闭。SessionStart 的 `session_id` 来自 phase launcher 转交的宿主输入（Step 29）；launcher 拿不到有效输入时照常调用引擎但传入空输入，本次 SessionStart 不做超期关闭，由之后第一个带 `session_id` 的检查点回收。最终对比的新发现按该检查点的既有渠道当场送达或写入待报告项。
 
 ### 时序图三：保护范围变更的宿主原生审批（C14）
 
@@ -1022,7 +1030,7 @@ sequenceDiagram
 | EX-9F.1 | 项目根不在 git 工作树内，或 git 不可用（非 git 回落） | 沿用修改前的判定要素（安全白名单、写入模式、路径提取与逐路径管辖判定、解析不出即阻断）与 Edit / Write 白名单判定，但 Bash 改为**逐段判定**（verify-smoke-guard-fixes-0-15-20，决策 C04）：先剥离单 / 双引号字面量，再按顶层 `&&` `||` `;` `|` `&` 与换行拆段；只有每一段都命中安全白名单才凭白名单放行；任一段命中写入模式即对该段做路径提取与逐路径管辖判定，任一段不放行则整条阻断；命令含 `$( )`、反引号、`<( )`、heredoc 且任意位置出现写入模式时按解析不出阻断。写入段的相对目标按**有效工作目录**解析（初值为 guard cwd；字面量参数的 `cd` / `pushd` 推进有效目录，但只在从该段起以 `&&` 连续相连的条件链内有效；非字面量目录切换，或该条件链被 `;`、换行、`||`、`|`、`&` 结束后，有效目录不确定，此后写入段一律阻断）。单条命令的判定结果逐字不变。另有四处保守修改：① `.gitignore` 不在白名单内；② 不可豁免项（guard 自有状态、保护范围来源、git 元数据）受保护；③ exempt 读配置（字段缺省用内置默认，配置损坏视为 `[]`）；④ C14 受限命令按 Step 43～44 处理 | 不拍快照、不做事后检查；逐段规则见根规范 `spec/pretooluse-guard.md`「Bash 非 git 回落的复合命令逐段判定（规范性）」 |
 | EX-9F.2 | 复合 git / openlogos 调用：`git status && node modify-source.js`、`openlogos sync && node modify-source.js`、`git diff > "$T"` | 不享受豁免，按普通 Bash 拍快照并事后对比；发现变化时 exit 2，反馈提示把 git / openlogos 操作拆成单独调用后重试 | git 段造成的变化与其他段无法分开，一并报告 |
 | EX-9F.3 | 重定向目标可提取的复合 git 调用：`git diff > src/a.ts` | 事前轻判提取到受保护目标 → PreToolUse exit 2，命令不执行 | 不享受豁免；目标经变量给出时走 EX-9F.2 |
-| EX-9F.4 | 输入缺少调用标识（`tool_use_id` 或 Cursor 可靠标识） | 建立 `anon-<时间戳>-<随机>` 匿名记录；没有标识的结束事件只触发对比，不关闭任何记录 | 匿名记录无法被任何结束事件关闭，长期保留；期间变化以「需向用户确认」各报一次 |
+| EX-9F.4 | 输入缺少调用标识（`tool_use_id` 或 Cursor 可靠标识） | 建立 `anon-<时间戳>-<随机>` 匿名记录；没有标识的结束事件只触发对比，不关闭任何记录 | 匿名记录无法被任何结束事件关闭；非后台的匿名记录在 Stop 时关闭，其余保留到满足 Step 65 的超期关闭条件（建立超过 7 天且不属于当前会话），属于当前会话的不被超期关闭；期间变化以「需向用户确认」各报一次 |
 | EX-9F.5 | 中断：PreToolUse 后没有结束事件 | 下一次 PreToolUse 补查或 Stop 时发现变化；PreToolUse 补查写入待报告项，不阻断当前调用 | 记录保持打开 |
 | EX-9F.6 | 结束事件迟到（晚于补查到达） | 照常做最终对比后关闭；同一变化事件已报过的不重复 | 同一路径出现新的事件签名（再次被写入）时再次报告；墓碑使关闭后的迟到写入被丢弃 |
 | EX-9F.7 | guard 文件不经 CLI 被删除或创建（如手动删除） | 不补做基线更新，按原基线对比；提案期间的改动以「需向用户确认」各报告一次 | 宁可多报，不静默吸收 |
@@ -1035,7 +1043,7 @@ sequenceDiagram
 | EX-9F.14 | 修改 git 元数据：`node -e` 追加 `.git/config`、写 `.git/hooks/pre-commit`、追加 `.git/info/exclude`；`core.hooksPath` 指向项目根内未跟踪目录下的钩子 | 事后发现并报告 | 独立 git 调用（如 `git config user.name x`）造成的元数据变化只更新基线（C10）；`objects/`、`refs/`、`logs/`、`index`、`HEAD`、`*.lock` 等不采集 |
 | EX-9F.15 | 写 guard 自有状态 `logos/.openlogos-runtime/`（Edit / Write，或 `rm` / 重定向等可确定目标的 Bash） | 恒 exit 2 | 运行时文件只由引擎与 CLI 写入 |
 | EX-9F.16 | `logos.config.json` 无法解析，或 `guard` / `guard.exempt` 类型不符 | exempt 视为 `[]`，不豁免任何路径，stderr 警告；单个非法条目跳过并警告 | 字段缺省（不存在）才用内置默认；显式 `[]` 后配置损坏，reference 仍受保护 |
-| EX-9F.17 | 宿主始终不报告结束的后台任务（脱离会话的守护进程等） | 记录长期保留，期间受保护变化以「需向用户确认」形式各报告一次 | 已知覆盖限制，不静默放过 |
+| EX-9F.17 | 宿主始终不报告结束的后台任务（脱离会话的守护进程等） | 记录不属于当前会话时保留到建立超过 7 天后的下一个检查点，随后按 Step 65 超期关闭；属于当前会话且拿不到可信结束证据时一直保留（EX-9F.42）。期间受保护变化以「需向用户确认」形式各报告一次 | 已知覆盖限制，不静默放过；超期关闭后的写入见 EX-9F.44 |
 | EX-9F.18 | git 自身触发的钩子改写文件；独立 git 调用执行期间后台对同一路径并发写入 | 钩子写入归属该 git 调用；并发写入随基线更新一起被吸收 | 已知残余风险，写入根规范 |
 | EX-9F.19 | change / archive 时事后检查引擎不存在 | 跳过 `boundary-start` / `boundary-end`，不阻断 change / archive | 非 Claude / Cursor 项目或未部署 |
 | EX-9F.20 | `--auto` 无人值守下执行受限命令 | 通常处于 `bypassPermissions` / `auto` / 非交互模式 → exit 2 | 宿主 driver 不得替用户批准 |
@@ -1057,11 +1065,19 @@ sequenceDiagram
 | EX-9F.36 | 非 git 回落下目录切换不可确定后的写入：`cd src; rm ../src/a.ts`、`cd "$D" && rm a.ts`、`cd - && rm a.ts`、`cd a \|\| cd b && rm x`、`popd && rm x` | 有效目录不确定，其后任一写入段按解析不出处理 → exit 2 | 绝不以 guard 原 cwd 的解析结果作为项目外放行依据 |
 | EX-9F.37 | 非 git 回落下 `cd` 后的只读段与绝对目标写入：`cd src && cat a.ts`；`cd src && rm /项目外/x` | 只读段放行；绝对目标按其本身判定（项目外交宿主权限系统，放行） | 有效目录只影响相对目标的解析 |
 | EX-9F.38 | 非 git 回落下字面量 `cd` 的条件链被结束后的写入：`cd /dev/null && true; rm src/a.ts`、同一命令以换行代替 `;`、`cd src && true \|\| rm ../src/a.ts` | 条件链结束后有效目录不确定，`rm` 段按解析不出处理 → exit 2 | `cd` 失败时链内段被跳过、链外段仍在原目录执行；按假定新目录解析会把 `<项目根>/src/a.ts` 误算为项目外而放行（delta r1 F2） |
+| EX-9F.39 | Stop 输入没有 `background_tasks` 字段，或字段不是数组，或数组中有条目不是带非空字符串 `id` 的对象（fix-guard-background-record-never-closed） | 现状视为无效，Step 64 不关闭任何后台记录；非后台记录照常关闭 | 字段缺失不等于空数组：宿主只在任务登记表可达时提供该字段；空数组是有效现状，表示没有进行中的任务 |
+| EX-9F.40 | 本会话后台记录的标识仍在 `background_tasks` 中，但条目 `status` 不是运行中（其他值、未知值或缺失） | 记录保留，不按 Step 64 关闭 | 只看成员关系；清单本身已表达任务是否仍在进行，不由引擎按状态名重新推断 |
+| EX-9F.41 | 后台记录未回填 `background_task_id`，或是匿名记录，或属于其他会话；Stop 的现状有效且不含其标识 | 不按 Step 64 关闭 | 另一个会话的现状里本来就没有这些任务，缺席不构成结束证据；这些记录只适用 Step 65 |
+| EX-9F.42 | 当前会话的后台记录拿不到可信结束证据（现状一直无效，或记录未回填标识），建立已超过 7 天 | 不关闭，继续参与对比 | 当前会话豁免超期关闭；该会话仍在使用或被恢复期间记录一直保留，换到另一个会话后才适用 Step 65。不保证 7 天内收敛，不为此另设关闭依据 |
+| EX-9F.43 | 其他会话的记录建立不足 7 天或恰好 7 天 | 不做超期关闭 | 满 7 天之后的检查点再关闭 |
+| EX-9F.44 | 记录被超期关闭后，对应的脱离会话进程仍在运行并再次写入受保护内容 | 该写入不再归到任何记录；无其他未关闭记录时，在下一次调用建立快照时被当作执行前已有内容，不报告 | 超期关闭的代价，写入已知覆盖限制；关闭前的最终对比仍会把此前未报告的变化报告一次 |
+| EX-9F.45 | 有活跃提案期间触发 Step 64 或 Step 65 | 照常做最终对比并关闭记录，不报告新变化 | 与提案期间「只维护记录」的既有口径一致；`boundary-start` 存下的待报告项照常送达 |
+| EX-9F.46 | SessionStart 时 phase launcher 拿不到有效的宿主输入：stdin 是终端、为空、读取失败、不是 JSON 对象，或其中没有 `session_id`；或 Windows 下 launcher 不调用引擎 | launcher 照常完成并输出合法的 SessionStart 结果；调用引擎时传入空输入，引擎照常接管、对比并注入待报告项，但本次不做超期关闭 | 无法判断记录是否属于当前会话时不回收；超期记录由之后第一个带 `session_id` 的检查点（PreToolUse 补查、PostToolUse、PostToolUseFailure、Stop）关闭 |
 
 ### 不变量
 
 - 有活跃提案时：proposal_step 收窄、plan 阶段原型 allowlist、既有放行语义不变；各检查点只维护执行记录（关闭、去重），不报告新变化，boundary-start 存下的待报告项照常送达。不可豁免项与 C14 在有提案时同样生效。
-- 执行记录只凭宿主给出的执行结束证据关闭：非后台调用同一标识的 PostToolUse / PostToolUseFailure；后台调用的任务结束确认；Stop 时关闭全部非后台记录（Stop 表明本回合前台调用已全部结束，含被拒绝或被其他 hook 拦下的调用）。SessionEnd、补查无变化都不关闭记录，Stop 不关闭后台记录。
+- 执行记录只凭宿主给出的执行结束证据关闭：非后台调用同一标识的 PostToolUse / PostToolUseFailure；后台调用的任务结束确认；Stop 时关闭全部非后台记录（Stop 表明本回合前台调用已全部结束，含被拒绝或被其他 hook 拦下的调用）。SessionEnd、补查无变化都不关闭记录。Stop 本身不关闭后台记录；只有它携带的后台任务现状有效、且本会话已回填标识的后台记录不在其中时才关闭该记录，判定只看成员关系、不看条目状态。唯一不凭结束证据的关闭是超期关闭：记录建立超过 7 天且不属于当前会话，可发生在包括 SessionStart 在内的任一持锁检查点；除此之外 SessionStart 只接管并继续对比。
 - 基线只在两种情况下更新：独立 git / openlogos 调用（只更新其改动的路径）、`openlogos archive` 删除 guard 文件之前（boundary-end）。归档后的检查只对比、不更新基线。
 - 每个变化事件按 `(path, raw_digest, 事件签名)` 只报一次；恢复、合法基线更新或再次写入会清除该路径的去重条目。guard 不自动执行恢复。
 - 所有状态变更在 `state.lock` 内进行并原子落盘；多文件更新中途中断只会让部分记录仍是旧基线，方向是多报而不是漏报。
@@ -1078,12 +1094,12 @@ sequenceDiagram
 
 ### 追溯
 
-- 需求：`core-01-requirements.md`「guard 以版本控制内容为保护对象需求」AC-GUARD-VCS-01～19；「版本管理范围配置（ignore / exempt 与 init 建议忽略）需求」AC-GUARD-SCOPE-08、AC-GUARD-SCOPE-09。
+- 需求：`core-01-requirements.md`「guard 以版本控制内容为保护对象需求」AC-GUARD-VCS-01～19、AC-GUARD-VCS-29；「版本管理范围配置（ignore / exempt 与 init 建议忽略）需求」AC-GUARD-SCOPE-08、AC-GUARD-SCOPE-09。
 - 功能规格：`core-01-feature-specs.md`「guard 以版本控制内容为保护对象」。
 - 根规范：`spec/pretooluse-guard.md`（受保护内容判据、Bash 事前轻判与事后检查合同、执行记录生命周期、保护范围变更的宿主原生审批、已知覆盖限制与威胁模型）；`spec/cursor-plugin.md`（`afterShellExecution` 接线与分层能力声明）。
 - 决策：C01、C05、C06、C07、C09、C10、C11、C12、C13、C14；defaults（非 git 回落、`guard.exempt` 内置默认、执行记录运行时目录、已知覆盖限制）。
 - 相关场景：S09-A（change 写入 guard 前 boundary-start）、S09-C（archive 删除 guard 前 boundary-end）、S40（ignore / exempt 子命令与托管区块）、S08（hook 注册与引擎分发）。
-- 测试：`core-S09-test-cases.md`「S09 guard 按版本控制内容判定测试」UT-S09-385～UT-S09-420、ST-S09-152～ST-S09-192；「S09 guard 资料目录与基线 staging 默认豁免测试」UT-S09-372（MODIFIED）。
+- 测试：`core-S09-test-cases.md`「S09 guard 按版本控制内容判定测试」UT-S09-385～UT-S09-420、UT-S09-481～UT-S09-485、ST-S09-152～ST-S09-192、ST-S09-210～ST-S09-216；「S09 guard 资料目录与基线 staging 默认豁免测试」UT-S09-372（MODIFIED）。
 
 ## S09-G GUI 原型任务勾选与 plan-exit 批准门派生时序
 

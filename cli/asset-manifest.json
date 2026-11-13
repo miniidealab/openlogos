@@ -79,11 +79,11 @@
     },
     {
       "path": "claude-plugin-template/bin/guard-post-check.cjs",
-      "sha256": "330543830b8423d9af4f0f2a9f5c807a06eded339d466bc84f00dddafdc4da24"
+      "sha256": "0b42c65a88c2da2c992e7af0ae9f0f685ca6500fd370800f8dfbbd27646081fa"
     },
     {
       "path": "claude-plugin-template/bin/openlogos-phase",
-      "sha256": "5886b8984fa9eb7b47dd9c4c9b0800321583c9fc534670dfe4bcf22504779b22"
+      "sha256": "0685e6c516394318ce58ddd8780881d5e2921c295e453e3bd3000bcdf6280a43"
     },
     {
       "path": "claude-plugin-template/skills/change-writer/SKILL.md",
@@ -114,5 +114,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "1885e59ec9ff945a21fb32eadcee459d8ed3a903e33b8f8a57e9faf46f132925"
+  "payloadHash": "2ab0c74035b5c955a4687d5c99244294221fc3b3d4174066b1febf041645edbb"
 }

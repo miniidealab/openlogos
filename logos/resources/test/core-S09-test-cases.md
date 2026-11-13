@@ -1235,6 +1235,13 @@
 | UT-S09-418 | 记录代际与墓碑 | 记录 R（`generation`=3） | ① 以 `generation`=2 的更新写入 R；② 关闭 R；③ 对 R 的迟到写入（基线更新、关闭、追加条目）；④ 下一会话 SessionStart | ① 丢弃；② 记录文件删除且写入 `guard-records/<id>.closed`；③ 看到墓碑即丢弃，R 不复活；④ 墓碑被清理 |
 | UT-S09-419 | 拿不到锁时的降级 | 另一进程持锁且未过期 | ① PreToolUse 拍快照；② PostToolUse 有 2 条待报告项；③ Stop 有 1 条；④ 锁释放后任意检查点持锁 | ① 本次调用按非 git 回落判定，不写执行记录；②③ 各以 `O_EXCL` 写入 `pending-spill/<pid>-<时间戳>.json`；④ spill 合并进 `pending-reports.jsonl` 后删除，合并后无重复 |
 | UT-S09-420 | 多文件更新中断只会多报 | 3 条未关闭记录 R1～R3 | 对三条记录做 rebase，在更新 R2 之后注入进程终止；之后检查 | R1、R2 为新基线，R3 仍为旧基线；之后检查对 R3 涉及的路径报告（需向用户确认），不出现漏报 |
+| UT-S09-481 | Stop 后台任务现状的成员关系判定 | 会话 s1 的后台记录 R1（`background_task_id`=t1）、R2（t2），均已回填；`background_tasks` 形态取自实施时采集的真实 Stop 输入 | 以 s1 发送 Stop：① `background_tasks` 含 t1、t2；② 只含 t2，且 t2 条目的 `status` 依次为 `running`、`completed`、`failed`、未知值 `weird`、缺失；③ 空数组 | ① R1、R2 均保留；② 每一轮 R1 做最终对比后关闭（记录文件删除并写墓碑），R2 均保留——标识在数组中时不因任何状态值关闭；③ R2 做最终对比后关闭 |
+| UT-S09-482 | Stop 后台任务现状的字段可用性 | 会话 s1 的已回填后台记录 R1（t1），另有非后台记录 F1 | 以 s1 发送 Stop，`background_tasks` 依次为：字段缺失；`null`；对象；字符串；数组中含非对象条目；数组中含缺少 `id` 或 `id` 为空串的条目（其余条目均不含 t1） | 六种情形现状均视为无效，R1 保留；F1 每次都按既有规则关闭 |
+| UT-S09-483 | Stop 后台任务现状的身份对应 | 会话 s1：未回填标识的后台记录 R3、匿名后台记录 R4；会话 s2：已回填后台记录 R5（t5） | ① 以 s1 发送 Stop，`background_tasks` 为空数组；② 以缺少 `session_id` 的输入发送 Stop，`background_tasks` 为空数组；③ 以 s2 发送 PreToolUse、PostToolUse、SessionStart，输入中附带 `background_tasks` 空数组 | ① R3、R4、R5 均保留（未回填、匿名、其他会话不适用）；② 不关闭任何后台记录；③ 非 Stop 事件不按该字段关闭，R5 保留 |
+| UT-S09-484 | 超期关闭的判定边界 | 可注入时钟；当前会话 s2；s1 的后台记录年龄分别为 6 天 23 小时、恰好 7 天、7 天零 1 秒；s1 的匿名后台记录与未回填标识的后台记录各一条，年龄 8 天；无 `session_id` 的记录一条，年龄 8 天；s2 的未回填标识后台记录一条，年龄 30 天 | ① 以 s2 分别发送 PreToolUse 补查、PostToolUse、PostToolUseFailure、Stop、SessionStart（每轮重建夹具）；② 以缺少 `session_id` 的输入发送检查点；③ 调用 `boundary-start`、`boundary-end` | ① 五种检查点结论相同：7 天零 1 秒、两条 8 天的 s1 记录、无 `session_id` 的记录被关闭；6 天 23 小时与恰好 7 天的保留；s2 的 30 天记录保留（当前会话豁免）；② 不做超期关闭；③ 不做超期关闭 |
+| UT-S09-485 | 两条新规则沿用既有关闭流程 | 已回填的本会话后台记录 R1 与超期的其他会话记录 R0，各自对应一处尚未报告的受保护变化 | ① Stop（现状不含 R1 的标识）；② PreToolUse 补查时 R0 超期；③ 关闭后对 R1、R0 的迟到写入；④ 存在 `logos/.openlogos-guard` 时重复 ①② | ① 关闭前做最终对比，变化当场以 exit 2 送达，随后写墓碑并删除记录；② 变化写入 `pending-reports.jsonl`，记录关闭，不阻断当前工具调用；③ 看到墓碑即丢弃，记录不复活；④ 记录照常关闭，不报告新变化 |
+
+> UT-S09-481 之前的用例与 ST-S09-210 之前的用例中，Stop 输入默认不含 `background_tasks` 字段（等价于宿主任务登记表不可达），后台记录在 Stop 时的行为与修改前一致；UT-S09-481～485、ST-S09-210～216 显式给出该字段或以可注入时钟构造记录年龄。
 
 ### 场景测试
 
@@ -1281,6 +1288,13 @@
 | ST-S09-190 | 锁超时时报告进入 spill 并在之后合并送达 | S09-F Step 18；EX-9F.27、EX-9F.28 | G-repo | ① 夹具进程持有未过期锁；② 已拍快照的 Bash 改 `src/a.js` 后发送 PostToolUse；③ 同时发送 PreToolUse（Bash `node -e` 改 `src/b.js`）；④ 释放锁后执行 Bash `ls` 完整链 | ② 等待 5 秒后写入 `pending-spill/` 一个文件；③ 本次调用按非 git 回落判定（`node -e` 在回落下的结论与修改前基准一致），不写执行记录；④ PostToolUse exit 2 送达 `src/a.js`，spill 文件被删除，之后不重复送达 |
 | ST-S09-191 | 独立调用形态的 restore 不被误报 | S09-F Step 59 | G-repo；后台记录 R1 未关闭 | ① Bash `node -e` 改写未跟踪文件 `src/new.js`（执行前已存在）→ PostToolUse 报告；② 经完整 hook 链执行 `cd <根> && node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" restore <record_id> -- src/new.js`；③ Bash `ls` 完整链与 Stop；④ 以非托管路径的引擎副本执行同一 restore | ② PreToolUse 与 PostToolUse 均 exit 0、不报告；`src/new.js` 还原为执行前字节；R1 中仅 `src/new.js` 的基线改回执行前状态、其去重条目被清除，其他路径基线不变；③ 不报告；④ 不享受豁免，按普通 Bash 拍快照并对比 |
 | ST-S09-192 | 复合形态的 restore 不享受豁免 | S09-F Step 59；EX-9F.31 | G-repo | ① Bash `node -e` 改写 `src/a.js` → 报告；② 经完整 hook 链执行 `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" restore <record_id> -- src/a.js && echo x > src/other.js` | ② PreToolUse 对可提取的受保护目标 `src/other.js` exit 2 且命令未执行；改为 `T=src/other.js; … && echo x > $T` 重跑时 PreToolUse exit 0、PostToolUse exit 2 报告 `src/other.js`（`src/a.js` 已回到基线，不报告） |
+| ST-S09-210 | 后台任务自行结束后在 Stop 关闭记录 | S09-F Step 63→64；EX-9F.40 | G-repo；会话 s1 | ① 两条后台调用 R1、R2：PreToolUse → PostToolUse（tool_response 含后台任务标识 t1、t2）；② s1 Stop，`background_tasks` 含 t1、t2；③ s1 Stop，`background_tasks` 只含 t2，t2 条目 `status` 为非运行值；④ s1 Stop，`background_tasks` 为空数组；⑤ 在 hook 之外手动改 `src/a.js`，再执行 Bash `ls` 完整链 | ② R1、R2 记录文件均在；③ R1 最终对比后被删除并写墓碑，R2 仍在；④ R2 被删除；全程没有任何查询或终止类工具的 PostToolUse；⑤ 不报告（无未关闭记录时手动修改按执行前已有改动处理），反馈不出现 R1、R2 |
+| ST-S09-211 | Stop 关闭前的最终对比仍发现变化 | S09-F Step 64 | G-repo；会话 s1 | ① 后台调用 R1（标识 t1），夹具脚本按信号文件改 `src/a.js` 后退出，期间不经任何检查；② s1 Stop，`background_tasks` 为空数组；③ 再次 s1 Stop | ② exit 2 报告 `src/a.js`，归因 R1 的命令；R1 关闭；③ 不重复报告，反馈不再列出 R1 |
+| ST-S09-212 | 其他会话、未回填标识与现状无效时不被 Stop 误关 | S09-F Step 64；EX-9F.39、EX-9F.41 | G-repo | ① 会话 s1 后台调用 R1（标识 t1），夹具脚本等待信号文件；② s1 另一条后台调用 R3，其 PostToolUse 不含后台任务标识；③ 会话 s2 Stop，`background_tasks` 为空数组；④ s1 Stop，输入不含 `background_tasks`；⑤ s1 Stop，`background_tasks` 含 t1；⑥ 触发信号文件使 R1 的进程改 `src/a.js`；⑦ s1 Bash `ls` 完整链 | ③④⑤ 之后 R1、R3 记录文件均在；⑦ PostToolUse exit 2 报告 `src/a.js`，相关未关闭调用中列出 R1 的命令 |
+| ST-S09-213 | 超期关闭前的最终对比与关闭后不再列出 | S09-F Step 65；EX-9F.44 | G-repo；可注入时钟 | ① 会话 s1 后台调用 R0；② 后台改 `src/a.js`，不经任何检查；③ 时钟推进 7 天零 1 秒，会话 s2 执行 Bash `ls` 完整链；④ 在 hook 之外手动改 `src/b.js`，s2 再执行 Bash `ls` 完整链 | ③ PreToolUse 补查时 R0 做最终对比、`src/a.js` 写入待报告项、R0 被删除并写墓碑，当前调用不被阻断；PostToolUse exit 2 送达 `src/a.js`；④ 不报告 `src/b.js`，反馈不出现 R0 |
+| ST-S09-214 | 存量后台记录在新会话的 SessionStart 内收敛（经真实注册入口） | S09-F Step 29、Step 65 | G-repo；预置 300 条属于其他会话、年龄 8～40 天的未关闭记录（含已回填、未回填与匿名的后台记录），另有 1 条其他会话 3 天的后台记录 Ra、1 条会话 s2 年龄 10 天且未回填标识的后台记录 Rb；可注入时钟 | ① 以 hook 模式运行真实注册的 SessionStart 入口 `plugin/bin/openlogos-phase`，向它的 stdin 写入按真实宿主输入构造的 SessionStart JSON（`session_id`=s2）；不得直接调用引擎；② s2 Bash `node -e` 改 `src/a.js` 完整链 | ① 入口 exit 0，stdout 为合法的 SessionStart JSON；300 条记录全部被删除并各有墓碑，Ra（未满 7 天）、Rb（当前会话）仍在；② PostToolUse exit 2 报告 `src/a.js`，相关未关闭调用只列出 Ra、Rb 的命令 |
+| ST-S09-215 | 两个不收敛的反例 | S09-F Step 64→65；EX-9F.42、EX-9F.43 | G-repo；可注入时钟 | ① 会话 s1 的未回填标识后台记录 Rb，年龄 10 天；s1 连续发送 Stop（`background_tasks` 为空数组）、PreToolUse 补查、SessionStart；② 改由会话 s2 发送任一检查点；③ 另一轮：其他会话的后台记录 Rc 年龄 6 天，当前会话发送检查点；④ 时钟推进到 Rc 年龄恰好 7 天，再发送检查点；⑤ 推进到 7 天零 1 秒，再发送检查点 | ① Rb 始终保留（当前会话豁免超期关闭，且未回填标识不适用 Stop 现状）；② Rb 被超期关闭；③④ Rc 保留；⑤ Rc 被关闭 |
+| ST-S09-216 | SessionStart 入口拿不到会话标识时不回收，由之后的检查点回收 | S09-F Step 29、Step 65；EX-9F.46 | G-repo；预置 5 条属于其他会话、年龄 8 天的后台记录；可注入时钟 | 每轮重建夹具，以 hook 模式运行 `plugin/bin/openlogos-phase`，stdin 依次为：① 空；② 非 JSON 文本；③ JSON 数组；④ 不含 `session_id` 的 SessionStart JSON；随后 ⑤ 会话 s2 发送任意工具的 PreToolUse 补查；另 ⑥ 以 `--plain` 运行入口并向 stdin 写入含 `session_id` 的 JSON | ①～④ 入口均 exit 0 且 stdout 为合法的 SessionStart JSON，5 条记录全部保留，待报告项注入行为与修改前一致；⑤ 5 条记录被超期关闭；⑥ 不调用引擎，5 条记录保留 |
 
 ### 追溯与覆盖
 
@@ -1291,7 +1305,8 @@
 - 写入后失败（AC-GUARD-VCS-05）：ST-S09-157。
 - 未闭合与补查后写入（AC-GUARD-VCS-06）：ST-S09-158、ST-S09-159、UT-S09-397、UT-S09-400。
 - 迟到结束事件与无标识（AC-GUARD-VCS-07）：ST-S09-160、UT-S09-395、UT-S09-396、UT-S09-398。
-- 跨会话与后台结束确认（AC-GUARD-VCS-08）：ST-S09-162、ST-S09-163、UT-S09-395。
+- 跨会话与后台结束确认（AC-GUARD-VCS-08）：ST-S09-162、ST-S09-163、UT-S09-395；后台任务自行结束后经 Stop 的后台任务现状关闭（fix-guard-background-record-never-closed）：ST-S09-210、ST-S09-211、ST-S09-212、UT-S09-481、UT-S09-482、UT-S09-483、UT-S09-485。
+- 后台记录数收敛（AC-GUARD-VCS-29）：ST-S09-213、ST-S09-214、ST-S09-215、ST-S09-216、UT-S09-484、UT-S09-485。
 - 后台期间 git 操作（AC-GUARD-VCS-09）：ST-S09-161、UT-S09-397。
 - 提案边界（AC-GUARD-VCS-10）：ST-S09-164、ST-S09-165、ST-S09-166、ST-S09-167、UT-S09-401。
 - 无法归因（AC-GUARD-VCS-11）：ST-S09-168、UT-S09-399。
@@ -1319,6 +1334,7 @@
 - 后台调用用夹具脚本以「信号文件」控制写入时机，不依赖 sleep 竞态；ST 中「后台任务结束」以按真实 hook 输入采集的 tool_response 夹具驱动。
 - 「与修改前实测基准逐条相同」类断言（UT-S09-389、UT-S09-407、ST-S09-173）的基准由修改前分发源对同一输入集实测生成并入库为夹具，不在测试代码中手写期望。
 - 运行时目录断言以磁盘事实取证（`guard-records/` 与墓碑、`pending-reports.jsonl`、`pending-spill/`、`reported.jsonl`、`raw-baseline.json`、`state.lock` 的文件与内容），不以日志文本代替。
+- Stop 输入中的 `background_tasks`（字段名、条目形态、条目 `id` 与后台调用 PostToolUse 返回标识的对应关系）以实施时采集的 Claude Code 真实 Stop 输入入库为夹具（UT-S09-481～483、ST-S09-210～212）；采集结果与规范不符时判 FAIL，不得改用手写形态绕过。超期用例（UT-S09-484、ST-S09-213～216）的记录年龄一律由可注入时钟构造，不依赖 sleep 或改写文件时间。ST-S09-214、ST-S09-216 必须从真实注册的 SessionStart 入口 `plugin/bin/openlogos-phase` 送入 stdin，验证会话标识经 launcher 到达引擎，不得以直接向引擎构造带标识的输入代替。
 
 ## S09 原型任务勾选不越过 plan 批准门测试
 
