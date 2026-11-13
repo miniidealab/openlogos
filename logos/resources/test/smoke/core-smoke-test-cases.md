@@ -2820,3 +2820,39 @@ SMOKE-core-21 / 23 的既有认领者是 `website/scripts/smoke-releases.mjs`（
 - 适用性判定不得依赖自动流程不会设置的环境变量。只有部署记录确实缺失，或候选版本早于 0.16.14 时，才写显式 `skip` 并携带缺失项。有 skip 时不得写 `SMOKE_PASS`。
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-309～SMOKE-core-311 均被 runner 覆盖。
+
+## OpenLogos 0.16.15 guard 后台记录收敛与 merge 基线写入安装态 smoke（SMOKE-core-312～314）
+
+> 这组用例验证两项修复在本机全局安装态中以 0.16.15 的身份可用：guard 后台执行记录的关闭（来源提案 fix-guard-background-record-never-closed，场景 S09-F，规范 `spec/pretooluse-guard.md`「执行记录生命周期（C12）」关闭条件 4、5），以及 `openlogos merge` 的合并基线写入不再经标准输入（来源提案 fix-merge-hang-on-baseline-blob-stdin，场景 S09 EX-9.46）。完整行为已由仓库内 UT-S09-481～UT-S09-488、ST-S09-210～ST-S09-217 覆盖；安装态只取证三件事：装上的是本次候选、全局 CLI 的 merge 基线写入正确、随包分发的 guard 引擎与 SessionStart 入口按新规则关闭记录。
+>
+> 用例在 `mktemp -d` 一次性 git 项目内执行：经全局 `openlogos init` 建立项目（由它把随包的 guard 与事后检查引擎部署到该项目的 `.claude/openlogos/bin/`），再写入夹具并提交。runner 以子进程调用全局 CLI 与该一次性项目内的托管脚本，对全局安装态**只读**，不做安装或卸载；不触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态目录（含本仓的 `guard-records/`）与用户其他仓库（包括 runlogos）。版本以部署记录与 `cli/src/lib/local-release-candidate.ts` 的候选版本为准，断言写成关系式，不硬编码 `0.16.15`。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-312 | 安装态版本与制品身份 | 本机全局已安装本次候选；部署记录中有候选版本 | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 读取全局包内 `dist/lib/merge-baseline.js`、`claude-plugin-template/bin/guard-post-check.cjs` 与 `claude-plugin-template/bin/openlogos-phase`；④ 以 `require` 加载包内 `guard-post-check.cjs` 并读取其导出 | ① `--version` 等于部署记录候选版本，入口无 workspace link；② `payloadHash` 自洽；③ `merge-baseline.js` 的 `hash-object` 调用带 `--no-filters`、不带 `--stdin`；`openlogos-phase` 在调用引擎 `check --session-start` 时把保存的宿主输入写入引擎标准输入，不再固定传入空输入；④ 导出中有 `backgroundTasksOf`、`closableByBackgroundTasks`、`recordExpired`，`RECORD_EXPIRE_MS` 等于 7 天的毫秒数 | 保留读取结果；任一不符 → 停止后续流程，按部署方案以 `openlogos deploy --env test --rollback` 回退 |
+| SMOKE-core-313 | 安装态 merge 的合并基线写入 | 本机全局已安装本次候选；一次性项目：`git config core.autocrlf true`，活跃提案含首次 MODIFY 的需求、功能规格、场景与测试规格目标，其中功能规格目标在工作区中为 CRLF 换行并已提交；runner 为 merge 子进程把 `TMPDIR` 指向一个事先为空的独占目录 | ① 记录功能规格目标合并前的工作区字节；② 全局 CLI `merge <slug> --format json`；③ 读取 `SPEC_MERGED` 的 `merge_baseline`，取该目标的 `before.git_blob`，执行 `git cat-file blob`；④ 列出受控 `TMPDIR` 的内容；⑤ `git add -A && git commit` 后修改该目标的 delta，再次执行全局 CLI `merge <slug> --format json` | ② 退出码 0，`result=merged`，在 runner 设定的时限内返回；③ `git_blob` 非 null，读回字节与 ① 逐字节相同（仍为 CRLF），其 SHA-256 等于 `before.sha256`；④ 没有以 `openlogos-merge-baseline-` 开头的残留；⑤ 退出码 0，`result=amended`，受控 `TMPDIR` 仍无上述残留 | 同上；任一不成立表示 merge 修复未完整进入安装态 |
+| SMOKE-core-314 | 安装包内 guard 引擎的后台记录关闭 | 本机全局已安装本次候选；一次性项目经全局 `openlogos init` 部署 `.claude/openlogos/bin/guard-check`、`guard-post-check.cjs` 与 `openlogos-phase`，模块为 `launched`，无活跃提案；runner 先断言这三个托管文件与全局包内 `claude-plugin-template/bin/` 下的同名文件逐字节一致；hook 输入按 Claude Code 真实字段构造；记录年龄由引擎的可注入时钟构造，不 sleep、不改写文件时间 | ① 会话 s1 两条后台调用 R1、R2：托管 `guard-check` 的 PreToolUse（`run_in_background: true`）→ 托管引擎 `check` 的 PostToolUse（`tool_response.backgroundTaskId` 分别为 t1、t2）；② s1 Stop，`background_tasks` 只含 t2；③ s1 Stop，`background_tasks` 为空数组；④ 会话 s0 在时刻 T 建立后台记录 R0，会话 s2 在同一时刻建立未回填标识的后台记录 Rb；时钟推进到 T 加 7 天零 1 秒，以 hook 模式运行托管 `openlogos-phase`，向其标准输入写入 `session_id` 为 s2 的 SessionStart JSON；⑤ 重建 R0，以空标准输入运行同一入口 | ① 两条记录文件存在，`background: true` 且已回填标识；② R1 被删除并有墓碑，R2 仍在；③ R2 被删除；④ 入口退出码 0，标准输出为合法的 SessionStart JSON；R0 被删除并有墓碑，Rb（当前会话）仍在；⑤ 入口退出码 0，R0 仍在（缺少会话标识时不做超期关闭） | 同上；任一不成立表示 guard 修复未完整进入安装态 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目与受控临时目录内进行，结束即删除；`git` 操作只作用于这些一次性项目，不配置远端、不联网。
+- **不得**触碰本仓活跃提案、本仓 `logos/resources/`、本仓运行态目录（含 `logos/.openlogos-runtime/guard-records/`）、本仓 `.claude/` 下的托管副本、本仓的 git 分支与工作区、用户其他仓库（包括 runlogos）或本机全局 prefix。
+- SMOKE-core-314 驱动的是一次性项目内由全局 CLI 部署的托管脚本，不调用本仓 `plugin/bin/` 下的分发源，也不调用本仓 `.claude/openlogos/bin/` 下的副本。
+- 结果写入本仓 `logos/resources/verify/smoke-results.jsonl`；实际执行的结果行带 `target_environment="test"`，窗口之外的 skip 行不声明 `target_environment`。
+
+### 三、追溯与覆盖
+
+- 场景：S09-F Step 63→64（SMOKE-core-314 ①～③）、Step 29 与 Step 65、EX-9F.46（SMOKE-core-314 ④⑤）；S09「S09 已合并提案的增量修正时序」Step 1～4、EX-9.46（SMOKE-core-313）。需求：`core-01-requirements.md`「guard 以版本控制内容为保护对象需求」AC-GUARD-VCS-08、AC-GUARD-VCS-29。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.15 本机测试环境发布（release-0-16-15）」。
+- 仓库内对应用例：UT-S09-488（对应 SMOKE-core-312 的 merge 写法检查）；ST-S09-217（对应 SMOKE-core-313）；ST-S09-210、ST-S09-214、ST-S09-216（对应 SMOKE-core-314）。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-release-0-16-15.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-312～SMOKE-core-314，不得依靠通配发现后无条件 PASS。
+- 适用窗口：活跃变更为 `release-0-16-15`，或 `OPENLOGOS_R01615_SMOKE=1`；窗口之外按既有留痕机制为全部 owned ID 写 skip，skip 行不声明 `target_environment`。环境变量一律使用 `OPENLOGOS_R01615_` 前缀。
+- 适用性判定不得依赖自动流程不会设置的环境变量。只有部署记录确实缺失，或候选版本早于 0.16.15 时，才写显式 `skip` 并携带缺失项。有 skip 时不得写 `SMOKE_PASS`。
+- SMOKE-core-313 的 merge 子进程由 runner 设时限（不超过 120 秒）；超时判 fail 并在证据中写明，不得重试后写 pass。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-312～SMOKE-core-314 均被 runner 覆盖。

@@ -5636,3 +5636,83 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 - 测试：UT-S44-01～UT-S44-28、ST-S44-01～ST-S44-05；安装态 smoke：SMOKE-core-309～SMOKE-core-311，以及通用的 SMOKE-core-268～SMOKE-core-271。
 - 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
 - 来源提案：branch-sync-generated-files；本提案：release-0-16-14（决策 C01、C02）。
+
+## OpenLogos 0.16.15 本机测试环境发布（release-0-16-15）
+
+> 本节引用「本机测试环境脚本部署（scripts/deploy-local.mjs）」通用方案，只写本次的差异：版本号、CHANGELOG、源码回归范围、本仓 `openlogos sync` 与安装态 smoke。冻结、回滚制品、构建候选、试装、全局安装、复核与回执一律按通用方案第三～七节执行，不在本节复写。
+
+### 部署目标与授权边界
+
+把两项已经验收并归档、但尚未进入本机全局安装态的修复装上。两个来源提案立案时都声明「无需部署、随常规版本发布」，所以归档后全局安装态仍是 0.16.14（deploy `fb83df50`，提交 `ac3ddea`）：
+
+- `fix-guard-background-record-never-closed`（归档提交 `b8b8f8c`，场景 S09-F）：guard 的后台执行记录在 Stop 时按宿主给出的后台任务现状关闭；建立超过 7 天且不属于当前会话的记录在任一检查点超期关闭；SessionStart 入口把宿主输入转交事后检查引擎。
+- `fix-merge-hang-on-baseline-blob-stdin`（归档提交 `50672c0`，场景 S09）：`openlogos merge` 写合并基线时不再经标准输入向 git 传内容，消除偶发卡死到调用方超时的问题。
+
+本次把版本号升到 0.16.15 后重新部署，不改任何 CLI 与 guard 行为代码。
+
+- **目标环境**：`test`（登记表 `proposal_default_env: test`，来源提案决策 C02，`source: policy`）。登记表中 `test.deploy` 为 `mode: script`、`script: scripts/deploy-local.mjs`。
+- **入口**：提案通道 `openlogos deploy --env test`，部署请求 HEAD；由 CLI 追加部署报告、写 `DEPLOY_DONE` 并勾选 `[deploy]`。提案通道已完成受控落标，部署成功后**不再**另行执行 `openlogos deploy-done`，否则会生成新的 deploy_id 和不带 ref 的账本记录，覆盖本次部署身份。
+- **授权**：升版与部署由用户 2026-11-13 明确要求（决策 C01）。`openlogos merge`、`verify`、部署执行、`smoke`、`archive` 仍各自是人类确认点；`next --auto` 模式下以对应门的 `gate_auto_passed=true` 为执行依据。`test` 未配置 `promote_from` / `require_approval`。本方案不含 `git push`。
+- **版本号边界**：0.16.15 只作本机全局版本，不进入 npm registry。本方案**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`；公开发布另立 release 提案。不改写其他仓库（包括 runlogos），不在其项目根运行任何命令。
+- **本仓行为**：0.16.15 相对当前全局安装态（提交 `ac3ddea`）多出上述两项修复，以及版本号、CHANGELOG 与安装态 smoke runner 的差异；本仓 verify / 部署 / smoke 的判定不变。
+
+### 部署前置与版本
+
+1. 本提案 delta 已 merge，`[code]` 切片实现并提交，`openlogos verify` PASS；`openlogos env check` 无 error，`openlogos deploy --env test --dry-run` 通过（通用方案第三节）。
+2. **请求提交已提交**：`openlogos deploy` 部署的是 HEAD。部署前确认 merge 后的规格、切片代码与验收报告都已提交、工作区干净；未提交时按「规格合并 → 代码 → 验收报告」的顺序补提交后再部署。
+3. **版本事实复核**：读取 `cli/package.json` 当前版本，计划时为 `0.16.14`（未发布到 npm）。候选为下一 patch `0.16.15`，执行 `npm view @miniidealab/openlogos@0.16.15 version` 应返回 E404（计划时 registry 最高为 `0.16.7`）。若实施前已有其他提案升版，或 registry 已存在候选版本号，候选改为「当时版本与 registry 最高版本中较大者的下一 patch」，并在部署记录写明实际值。
+4. **升版**：在实现中执行 `node cli/scripts/bump-version.mjs 0.16.15`，由脚本一次更新全部版本载体，并调用既有生成器重算 `cli/asset-manifest.json`，**禁止手改** manifest。脚本会把 `cli/src/lib/local-release-candidate.ts` 的回滚版本设为升版前版本，应为 `0.16.14`；不符时改为 `0.16.14`，并在部署记录说明。
+5. **CHANGELOG**：在 `## [Unreleased]` 之后新增 `## [0.16.15]` 条目，注明「本机全局发布（未发布到 npm）」，不改既有条目：
+   - **Fixed**：guard 的后台执行记录不再只增不减。后台任务自行结束后，本会话下一次 Stop 按宿主给出的进行中任务清单关闭对应记录（只看任务标识是否仍在清单中）；建立超过 7 天且不属于当前会话的记录在任一检查点关闭；SessionStart 入口把宿主输入转交引擎，使新会话开始时就能回收历史记录。
+   - **Fixed**：`openlogos merge` 偶发卡死到调用方超时。合并基线改为先写入系统临时目录下的独占文件，再以 `git hash-object -w --no-filters` 入库，不再经标准输入传内容；同样的字节得到同样的 blob 标识，已合并提案的基线不受影响。
+   - **升级提示**：guard 修复位于各项目 `.claude/openlogos/bin/` 下的托管副本，升级 CLI 后需在各项目执行一次 `openlogos sync` 才生效。已堆积的后台执行记录不会立刻全部消失：属于当前会话且已取得任务标识的，在下一次 Stop 关闭；其他会话留下的，在建立满 7 天后的检查点关闭；超期关闭后，仍在运行的脱离会话进程之后的写入不再归到任何记录。
+
+### 源码回归范围
+
+部署前的 verify 负责源码回归，脚本不跑测试（通用方案第八节）。升版后复跑以下检查，必须全绿：
+
+- `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`、`npm run build`。
+- 范围包括两个来源提案的 UT-S09-481～UT-S09-488、ST-S09-210～ST-S09-217，既有 S09 guard 执行记录生命周期（UT-S09-395～UT-S09-401、ST-S09-158～ST-S09-168）与增量修正（UT-S09-429～UT-S09-447、ST-S09-196～ST-S09-201）全部用例，S42 / S43 部署全部用例，以及 UT-S19-46（版本身份）、UT-S19-49（asset-manifest 自洽）。
+
+### 部署、sync 与部署后检查
+
+1. 执行 `openlogos deploy --env test`（提案通道）。按通用方案第七节第 1、2 条读回回执与账本：
+   - 全局 `--version` 为 `0.16.15`；
+   - 入口 realpath 等于回执 `entry_realpath`，全局 `dist/index.js` 的 SHA-256 等于 `candidate_entry_sha256`；
+   - 记录候选 tarball 与回滚制品的路径与 SHA-256；回滚制品由脚本第 ③ 步从当前全局安装打包，计划时应为提交 `ac3ddea` 的 0.16.14 安装态；
+   - 部署前账本 `test.current_ref` 为 `ac3ddea4a80f554b15bf28d810985bc5f624adc6`（0.16.14，deploy `fb83df50`），部署成功后它成为 `previous_ref`。
+2. **本仓 sync**：guard 修复改动了分发源 `plugin/bin/guard-post-check.cjs` 与 `plugin/bin/openlogos-phase`，并修改了根规范 `spec/pretooluse-guard.md`；本仓 `.claude/openlogos/bin/` 与 `logos/spec/` 下的托管副本尚未刷新。在主工作树执行一次 `openlogos sync` 并读回：
+   - `.claude/openlogos/bin/guard-post-check.cjs`、`.claude/openlogos/bin/openlogos-phase` 与全局安装包内 `claude-plugin-template/bin/` 下的同名文件逐字节一致；
+   - `logos/spec/pretooluse-guard.md` 与包内 `spec/pretooluse-guard.md` 逐字节一致；
+   - 本仓 AGENTS.md / CLAUDE.md 的变化只来自托管内容与版本戳，不出现与本次发布无关的改写；
+   - sync 产生的托管文件变化随部署记录一起由流程提交，不 push；
+   - 若 sync 再次向 `.claude/settings.json` 追加重复的 SessionStart 条目（已知缺陷），按前几版部署记录同样还原并记录。
+3. 经授权执行 `openlogos smoke --env test`：
+   - 本次行为用例：「OpenLogos 0.16.15 guard 后台记录收敛与 merge 基线写入安装态 smoke（SMOKE-core-312～314）」；
+   - 通用安装态用例：「本机测试环境脚本部署安装态 smoke（SMOKE-core-268～SMOKE-core-271）」。
+4. **本仓存量记录的预期**：sync 之后，本仓 `logos/.openlogos-runtime/guard-records/` 下已堆积的后台执行记录不会立刻清空。属于当前会话且已取得任务标识的，在该会话下一次 Stop 关闭；其他会话留下的（计划时这批建于 2026-11-12），在建立满 7 天后的检查点关闭。部署记录如实写明 sync 前后的未关闭记录数，不手工删除记录。
+
+### 失败处置与回滚
+
+回滚目标是**提交 `ac3ddea` 的 0.16.14 安装态**（不含两项修复），处置按通用方案第五节，本次差异如下：
+
+- **部署前置或 dry-run 失败**：不执行部署，修正后重试，或回流实现。
+- **脚本失败（部署未成功）**：脚本自动回装第 ③ 步的回滚制品，复核 `--version` 为 `0.16.14`；账本记 `result=failed`，不推进。
+- **成功部署后要回退**：执行 `openlogos deploy --env test --rollback`。账本 `previous_ref` 为 `ac3ddea…`，该提交含 `scripts/deploy-local.mjs`。回退后用回退到的版本在本仓执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件；回退不恢复已被新引擎关闭的执行记录（它们对应的任务已结束或已超期）。
+- **成功落账后 smoke 失败**：按通用方案第五节「(c)」处置：停止后续完成流程，保留失败证据，回流修复后以 `openlogos deploy --env test` 部署修复提交并重跑 smoke。不得手工回装旧包。
+- 本次无数据迁移：配置字段、文件格式、执行记录格式与既有命令的输出均不变。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`，不部署官网。
+- 不改写其他仓库（包括 runlogos），不在其项目根运行任何命令；其他项目的 guard 引擎由用户在各项目执行 `openlogos sync` 刷新。
+- 不改任何 CLI 与 guard 行为代码：两项修复已在来源提案验收并归档。
+- 不手工清理本仓的后台执行记录。
+
+### 追溯
+
+- 场景：S09「S09-F launched 无提案时 guard 按版本控制内容判定时序」Step 29、Step 63～65；S09「S09 已合并提案的增量修正时序」EX-9.46。
+- 需求：`core-01-requirements.md`「guard 以版本控制内容为保护对象需求」AC-GUARD-VCS-08、AC-GUARD-VCS-29。
+- 测试：UT-S09-481～UT-S09-488、ST-S09-210～ST-S09-217；安装态 smoke：SMOKE-core-312～SMOKE-core-314，以及通用的 SMOKE-core-268～SMOKE-core-271。
+- 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
+- 来源提案：fix-guard-background-record-never-closed、fix-merge-hang-on-baseline-blob-stdin；本提案：release-0-16-15（决策 C01、C02）。
