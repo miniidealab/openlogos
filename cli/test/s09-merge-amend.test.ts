@@ -15,7 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cleanupFixtureRoots, cli, fixtureRoots, frontierFixture, invoke, put } from './frontier-fixture.js';
-import { computeDeltaDigest, readSpecMergedRecord } from '../src/lib/merge-baseline.js';
+import { computeDeltaDigest, gitReadBlob, gitWriteBlob, readSpecMergedRecord } from '../src/lib/merge-baseline.js';
 import { checkMergedProposal, executeAmend } from '../src/lib/merge-amend.js';
 import { MergeDirectError, mergeDirect, readMergeFailureStage } from '../src/lib/merge-direct.js';
 import { applyBaselineClosureBatch } from '../src/lib/baseline-apply.js';
@@ -933,5 +933,210 @@ describe('S09 已合并提案的增量修正 — 场景测试', () => {
     const archived = invoke(['archive', f.slug], f.root);
     expect(archived.status).not.toBe(0);
     expect(existsSync(f.proposalDir)).toBe(true);
+  });
+});
+
+/**
+ * fix-merge-hang-on-baseline-blob-stdin：合并基线 blob 写入不再经标准输入（提案决策 C02）。
+ * UT 在函数层直接调用真实的 gitWriteBlob / gitReadBlob；期望标识由 git 对同样字节独立计算（--no-filters），不在测试中手写。
+ */
+describe('S09 已合并提案的增量修正 — 合并基线 blob 写入（fix-merge-hang-on-baseline-blob-stdin）', () => {
+  const HEX = /^[0-9a-f]{40}$|^[0-9a-f]{64}$/;
+
+  function scratch(prefix: string): string {
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    fixtureRoots.push(dir);
+    return dir;
+  }
+
+  function plainRepo(): string {
+    const root = scratch('openlogos-blob-repo-');
+    git(root, ['init', '-q']);
+    git(root, ['config', 'user.email', 'fixture@example.com']);
+    git(root, ['config', 'user.name', 'fixture']);
+    return root;
+  }
+
+  /** git 对同样字节独立计算的 blob 标识：文件放在仓库之外，按原始字节（不应用任何过滤）。 */
+  function expectedBlobId(root: string, bytes: Buffer): string {
+    const file = join(scratch('openlogos-blob-expect-'), 'bytes');
+    writeFileSync(file, bytes);
+    return git(root, ['hash-object', '--no-filters', file]).trim();
+  }
+
+  it('UT-S09-486: 合并基线 blob 写入保留原始字节，不受换行转换与 clean filter 影响', () => {
+    const text = Buffer.from('first line\r\nsecond line\nThird Line with lower case\r\n\r\ntail without newline', 'utf8');
+    const binary = Buffer.concat([Buffer.from([0x00, 0xff, 0xfe, 0x0d, 0x0a, 0x80, 0x00]), Buffer.from('abc\r\n'), Buffer.from([0xc3, 0x28, 0x00])]);
+    const arms: Array<[string, (root: string) => void]> = [
+      ['① 默认配置', () => { /* 不改配置 */ }],
+      ['② core.autocrlf=true', root => { git(root, ['config', 'core.autocrlf', 'true']); }],
+      ['③ core.autocrlf=true + clean filter', root => {
+        git(root, ['config', 'core.autocrlf', 'true']);
+        git(root, ['config', 'filter.upper.clean', 'tr a-z A-Z']);
+        writeFileSync(join(root, '.gitattributes'), '* filter=upper\n');
+      }],
+    ];
+    const ids: Record<string, string[]> = { text: [], binary: [] };
+    for (const [label, setup] of arms) {
+      const root = plainRepo();
+      setup(root);
+      for (const [name, bytes] of [['text', text], ['binary', binary]] as const) {
+        const id = gitWriteBlob(root, bytes);
+        expect(id, `${label} ${name}：返回合法标识`).toMatch(HEX);
+        const back = gitReadBlob(root, id!);
+        expect(back, `${label} ${name}：可读回`).not.toBeNull();
+        expect(back!.length, `${label} ${name}：长度`).toBe(bytes.length);
+        expect(sha(back!), `${label} ${name}：SHA-256`).toBe(sha(bytes));
+        expect(Buffer.compare(back!, bytes), `${label} ${name}：逐字节相同`).toBe(0);
+        expect(id, `${label} ${name}：等于独立计算的标识`).toBe(expectedBlobId(root, bytes));
+        ids[name].push(id!);
+      }
+    }
+    // 三臂对同一份内容返回同一标识
+    expect(new Set(ids.text).size).toBe(1);
+    expect(new Set(ids.binary).size).toBe(1);
+  });
+
+  it('UT-S09-487: 一次 await 之后连续写入大块内容全部成功', async () => {
+    const root = plainRepo();
+    const base = Buffer.alloc(620 * 1024, 'a');
+    const written: Array<{ id: string; bytes: Buffer }> = [];
+    await new Promise(r => setImmediate(r));
+    for (let i = 0; i < 50; i++) {
+      const bytes = Buffer.concat([base, Buffer.from(`#${i}\n`)]);
+      const id = gitWriteBlob(root, bytes);
+      expect(id, `第 ${i} 次写入返回合法标识`).toMatch(HEX);
+      written.push({ id: id!, bytes });
+      await new Promise(r => setImmediate(r));
+    }
+    expect(new Set(written.map(w => w.id)).size, '各次标识互不相同').toBe(50);
+    for (const [i, w] of written.entries()) {
+      const back = gitReadBlob(root, w.id);
+      expect(back !== null && Buffer.compare(back, w.bytes) === 0, `第 ${i} 次读回逐字节相同`).toBe(true);
+    }
+  });
+
+  it('UT-S09-488: 写入不经标准输入、不留临时文件，失败口径不变', () => {
+    const realGit = spawnSync('bash', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+    expect(realGit, '能定位真实 git').not.toBe('');
+    // git 记录桩：对 hash-object 记录「标准输入是否有数据」与逐个参数，再转交真实 git（故障臂除外）
+    const stubDir = scratch('openlogos-blob-stub-');
+    const log = join(stubDir, 'calls.log');
+    writeFileSync(join(stubDir, 'git'), `#!/bin/bash
+if [ "$1" = "hash-object" ]; then
+  if [ -t 0 ]; then stdin=tty
+  elif [ "$(head -c 1 | wc -c | tr -d ' ')" = "0" ]; then stdin=empty
+  else stdin=data; fi
+  { printf 'CALL\\tstdin=%s\\n' "$stdin"; for a in "$@"; do printf 'ARG\\t%s\\n' "$a"; done; } >> "$OPENLOGOS_TEST_GIT_LOG"
+  case "$OPENLOGOS_TEST_GIT_MODE" in
+    fail) exit 3 ;;
+    garbage) echo "this-is-not-a-blob-id"; exit 0 ;;
+  esac
+fi
+exec "$OPENLOGOS_TEST_REAL_GIT" "$@"
+`, { mode: 0o755 });
+    const repo = plainRepo();
+    writeFileSync(join(repo, 'tracked.txt'), 'x\n');
+    commitAll(repo, 'init');
+    const notRepo = scratch('openlogos-blob-norepo-');
+    const tmp = scratch('openlogos-blob-tmpdir-');
+    const bytes = Buffer.from('baseline bytes\r\nwith crlf\n', 'utf8');
+    const saved = { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR };
+    const calls = () => {
+      if (!existsSync(log)) return [] as Array<{ stdin: string; args: string[] }>;
+      const out: Array<{ stdin: string; args: string[] }> = [];
+      for (const line of readFileSync(log, 'utf8').split('\n').filter(Boolean)) {
+        const [kind, value] = line.split('\t');
+        if (kind === 'CALL') out.push({ stdin: value.replace('stdin=', ''), args: [] });
+        else out[out.length - 1].args.push(value);
+      }
+      return out;
+    };
+    const run = (root: string, mode: string) => {
+      rmSync(log, { force: true });
+      process.env.PATH = `${stubDir}:${saved.PATH}`;
+      process.env.TMPDIR = tmp;
+      process.env.OPENLOGOS_TEST_GIT_LOG = log;
+      process.env.OPENLOGOS_TEST_GIT_MODE = mode;
+      process.env.OPENLOGOS_TEST_REAL_GIT = realGit;
+      try {
+        return gitWriteBlob(root, bytes);
+      } finally {
+        process.env.PATH = saved.PATH;
+        if (saved.TMPDIR === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = saved.TMPDIR;
+        delete process.env.OPENLOGOS_TEST_GIT_LOG;
+        delete process.env.OPENLOGOS_TEST_GIT_MODE;
+        delete process.env.OPENLOGOS_TEST_REAL_GIT;
+      }
+    };
+    // 臂 ①：git 仓库内正常写入
+    const id = run(repo, 'pass');
+    expect(id, '① 返回合法标识').toMatch(HEX);
+    expect(id).toBe(expectedBlobId(repo, bytes));
+    const first = calls();
+    expect(first, '① 恰好一次 hash-object 调用').toHaveLength(1);
+    expect(first[0].args[0]).toBe('hash-object');
+    expect(first[0].args).toContain('-w');
+    expect(first[0].args).toContain('--no-filters');
+    expect(first[0].args, '① 不经标准输入').not.toContain('--stdin');
+    expect(first[0].stdin, '① 标准输入没有数据').toBe('empty');
+    const passed = first[0].args[first[0].args.length - 1];
+    expect(passed.startsWith(`${tmp}/`), `① 文件位于受控 TMPDIR 之下：${passed}`).toBe(true);
+    expect(passed.startsWith(`${repo}/`), '① 文件不在仓库之内').toBe(false);
+    expect(readdirSync(tmp), '① 调用后受控 TMPDIR 为空').toEqual([]);
+    expect(git(repo, ['status', '--porcelain']), '① 工作区无新增文件').toBe('');
+    // 臂 ②③④：失败口径不变（返回 null、不抛异常），同样清理临时文件
+    const failing: Array<[string, string, string]> = [
+      ['② root 不是 git 仓库', notRepo, 'pass'],
+      ['③ hash-object 非零退出', repo, 'fail'],
+      ['④ hash-object 输出非法标识', repo, 'garbage'],
+    ];
+    for (const [label, root, mode] of failing) {
+      let result: string | null = 'unset';
+      expect(() => { result = run(root, mode); }, `${label}：不抛异常`).not.toThrow();
+      expect(result, `${label}：返回 null`).toBeNull();
+      const c = calls();
+      expect(c, `${label}：仍只调用一次 hash-object`).toHaveLength(1);
+      expect(c[0].args, label).not.toContain('--stdin');
+      expect(c[0].stdin, label).toBe('empty');
+      expect(readdirSync(tmp), `${label}：调用后受控 TMPDIR 为空`).toEqual([]);
+    }
+    expect(git(repo, ['status', '--porcelain']), '工作区无新增文件').toBe('');
+    expect(readdirSync(notRepo)).toEqual([]);
+  });
+
+  it('ST-S09-217: 首次合并含 CRLF 的目标时合并基线可逐字节读回', () => {
+    const f = gitFixture();
+    git(f.root, ['config', 'core.autocrlf', 'true']);
+    // 功能规格目标在工作区中为 CRLF 换行并已提交（autocrlf 下仓库内为 LF，工作区保持 CRLF）
+    const crlf = Buffer.from(read(f, FEATURE).toString('utf8').replace(/\r?\n/g, '\r\n'), 'utf8');
+    writeFileSync(join(f.root, ...FEATURE.split('/')), crlf);
+    commitAll(f.root, 'crlf feature spec');
+    // ① 合并前的工作区字节
+    const before = read(f, FEATURE);
+    expect(Buffer.compare(before, crlf)).toBe(0);
+    expect(before.includes(Buffer.from('\r\n')), '① 工作区字节为 CRLF').toBe(true);
+    const tmp = scratch('openlogos-blob-merge-tmp-');
+    const leftovers = () => readdirSync(tmp).filter(n => n.startsWith('openlogos-merge-baseline-'));
+    // ② 真实 openlogos merge
+    const first = mergeCli(f, { TMPDIR: tmp });
+    expect(first.status, first.stderr).toBe(0);
+    expect(first.data.result).toBe('merged');
+    // ③ 合并基线读回
+    const entry = marker(f).merge_baseline.targets.find((t: any) => t.path === FEATURE);
+    expect(entry.before.git_blob, '③ git_blob 非 null').toMatch(HEX);
+    const blob = spawnSync('git', ['cat-file', 'blob', entry.before.git_blob], { cwd: f.root }).stdout as Buffer;
+    expect(Buffer.compare(blob, before), '③ 读回字节与合并前工作区字节逐字节相同').toBe(0);
+    expect(blob.includes(Buffer.from('\r\n')), '③ 仍为 CRLF').toBe(true);
+    expect(sha(blob)).toBe(entry.before.sha256);
+    expect(leftovers(), '首次合并后不留基线临时文件').toEqual([]);
+    // ④ 提交后修改 delta 再次合并：增量修正不因基线读回不一致被拒绝
+    commitAll(f.root, 'merge specs');
+    writeDelta(f, FEATURE, '## MODIFIED — 一、判据\n\n再次修正的正文。\n');
+    const second = mergeCli(f, { TMPDIR: tmp });
+    expect(second.status, second.stderr).toBe(0);
+    expect(second.data.result).toBe('amended');
+    expect(read(f, FEATURE).toString('utf8')).toContain('再次修正的正文。');
+    expect(leftovers(), '增量修正后不留基线临时文件').toEqual([]);
   });
 });

@@ -11,7 +11,8 @@
  */
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, readFileSync, readlinkSync } from 'node:fs';
+import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hasSpecCompleteMarker, SPEC_MERGED_MARKER, VERIFY_PASS_MARKER } from './proposal-markers.js';
 import { classifyProposalDeltas, DeltaScanUnreadableError } from './delta-classify.js';
@@ -206,15 +207,30 @@ export function readSpecMergedRecord(proposalDir: string): SpecMergedRecord {
 /**
  * 把合并前实际字节写入 git 对象库（内容寻址，不改工作区、索引与引用）。
  * 非 git 仓库或写入失败返回 null——首次合并照常成功，只是日后无法增量修正（EX-9.46）。
+ *
+ * 内容不经标准输入传给 git（fix-merge-hang-on-baseline-blob-stdin）：同步子进程经标准输入接收大块内容时，
+ * 父进程偶发既不写完也不关闭写端，git 停在 read(0)，merge 一直挂到调用方超时。改为先把字节写入系统临时目录下
+ * 独占子目录中的文件（仓库之外，不进工作区），再按路径交给 git。必须带 `--no-filters`：按路径取内容时 git 默认
+ * 应用 `core.autocrlf` 与 clean filter，会让入库字节偏离合并前实际字节；带上后与经标准输入时得到同一个 blob 标识。
+ * 不论成功失败都清理临时文件与子目录，清理失败不影响返回值。
  */
 export function gitWriteBlob(root: string, bytes: Buffer): string | null {
+  let dir: string | null = null;
+  let file: string | null = null;
   try {
-    const r = spawnSync('git', ['hash-object', '-w', '--stdin'], { cwd: root, input: bytes, encoding: 'buffer' });
+    dir = mkdtempSync(join(tmpdir(), 'openlogos-merge-baseline-'));
+    file = join(dir, 'blob');
+    writeFileSync(file, bytes);
+    const r = spawnSync('git', ['hash-object', '-w', '--no-filters', file], { cwd: root, encoding: 'buffer', stdio: ['ignore', 'pipe', 'pipe'] });
     if (r.status !== 0 || !r.stdout) return null;
     const id = r.stdout.toString('utf8').trim();
     return isHex(id, [40, 64]) ? id : null;
   } catch {
     return null;
+  } finally {
+    // 子目录内只有本函数写入的一个文件：逐项删除，不做递归清理；清理失败不影响返回值
+    if (file !== null) { try { unlinkSync(file); } catch { /* 未写出或已不存在 */ } }
+    if (dir !== null) { try { rmdirSync(dir); } catch { /* 清理失败不影响返回值 */ } }
   }
 }
 
