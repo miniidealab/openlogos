@@ -1413,6 +1413,9 @@
 | UT-S09-445 | 增量修正清除验收与交付事实且不重置 [code] | 三臂已合并夹具，均放置 `VERIFY_PASS`、`VERIFY_FAIL`、`DEPLOY_DONE`、`SMOKE_PASS`、`SMOKE_FAIL`，`[code]` 已填切片且部分勾选：① 单切片提案改测试 delta；② 只改功能规格 delta（不涉测试规格）；③ 多切片提案（含 `TEST_SLICE_MANIFEST.json` 与 `SLICES_APPROVED`）改测试 delta | 每臂执行 `merge --format json` | 三臂均 `result=="amended"`，`invalidated_markers` 为五个标记名升序，五个文件均不在场；`tasks.md` 的 `[code]` 段字节不变，`SLICES_APPROVED` 与 manifest 字节不变；`amendments` 末条 `invalidated_markers` 与 JSON 一致 |
 | UT-S09-446 | 已确认旧规格时恢复被清除的事实（档 A / 档 B） | 已合并夹具，放置 `VERIFY_PASS`、`DEPLOY_DONE` 与 `SMOKE_PASS`；修改 delta；三臂：① 以故障注入钩子使原子落盘在第二个目标 rename 时失败且回滚成功（原语返回 `ok:false`、`rolled_back==true`）；② 同臂 ① 但再使标记恢复写入失败；③ 使标记清除阶段在删除第二个标记时失败（尚未调用落盘原语） | 执行 merge 并读取 stderr、各文件 SHA-256 | 臂 ① 非零退出，错误码 `MERGE_APPLY_FAILED`，状态声明为档 B；全部目标与 `SPEC_MERGED` 字节与修正前相同；三个标记字节逐一恢复原状。臂 ② 状态声明为档 B，输出点名未恢复的标记并提示重新 verify，主文档仍为修正前字节。臂 ③ 状态声明为档 A，`logos/resources/` 与 `SPEC_MERGED` 字节零变化，已删除的标记按备份恢复，三个标记全部在场 |
 | UT-S09-447 | 回滚未确认时不恢复旧验收事实（档 C） | 无部署提案的已合并夹具，`[code]` 全勾、`VERIFY_PASS` 在场；另放 `DEPLOY_DONE`、`SMOKE_PASS`；修改测试 delta；三臂：① 全部新字节已提交、journal 置 committed 后使私有材料清理首次失败而恢复清理成功（原语返回 `ok:false`、`rolled_back==false`，恢复判为 `committed`）；② 中途写入失败且使 backup 不可用，回滚未完成（`ok:false`、`rolled_back==false`）；③ 沿用 EX-9.24 形态使错误从原语内部直接逃出。每臂随后执行 `openlogos archive <slug>` | 执行 merge，读取 stderr、标记在场性与各文件 SHA-256；再执行 archive | 三臂 merge 均非零退出，状态声明为档 C：stderr **不含**「保持合并前字节」「已整批回滚」「标记已恢复」类表述，含「主文档可能已是修正后字节」与 `git status` / `git diff logos/resources/` 核对指引；`VERIFY_PASS`、`DEPLOY_DONE`、`SMOKE_PASS` 均**不在场**（不被恢复）；臂 ① 主文档与 `SPEC_MERGED` 为修正后字节；三臂 archive 均以 `ARCHIVE_VERIFY_NOT_PASSED` 拒绝，提案目录未移动。**修正前实现（任意 `ok:false` 即恢复标记）在臂 ①② 必红** |
+| UT-S09-486 | 合并基线 blob 写入保留原始字节，不受换行转换与 clean filter 影响（fix-merge-hang-on-baseline-blob-stdin） | `mktemp -d` 下 `git init` 的仓库；三臂配置：① 默认配置；② `core.autocrlf=true`；③ `core.autocrlf=true`，且 `.gitattributes` 对全部路径指定一个把内容转为大写的 clean filter（`git config filter.<名>.clean` 已配置）。待写入内容含 CRLF、LF 混合换行与小写字母，另备一份含 NUL 与非 UTF-8 字节的二进制内容 | 每臂在函数层调用 `gitWriteBlob(root, bytes)`，再以 `gitReadBlob(root, id)` 读回；另以 `git hash-object --no-filters <含同样字节的文件>` 独立计算期望标识 | 每臂、每份内容：返回值是合法的 blob 标识；读回字节与写入字节逐字节相同（长度、SHA-256 相同）；返回标识等于独立计算的期望标识；三臂对同一份内容返回同一标识 |
+| UT-S09-487 | 一次 `await` 之后连续写入大块内容全部成功 | 同 UT-S09-486 臂 ① 的仓库；内容为 600KB 以上、每次不同的字节（末尾带序号） | 在 `async` 测试体内先 `await` 一次（如 `await new Promise(r => setImmediate(r))`），随后连续调用 `gitWriteBlob` 不少于 50 次，每次调用之间再 `await` 一次；全部结束后逐个 `gitReadBlob` | 每次调用都返回合法标识，无一返回 `null`；各次标识互不相同；逐个读回的字节与当次写入的字节逐字节相同；整个用例在测试超时内结束 |
+| UT-S09-488 | 写入不经标准输入、不留临时文件，失败口径不变 | 受控环境：`TMPDIR` 指向一个事先为空的独占目录；`PATH` 最前放一个 `git` 记录桩，把每次调用的参数与「标准输入是否有数据」追加到日志后转交真实 `git`。四臂：① git 仓库内正常写入；② `root` 不是 git 仓库；③ 记录桩对 `hash-object` 以非零退出；④ 记录桩对 `hash-object` 输出一段不是合法标识的文本并以 0 退出 | 每臂调用 `gitWriteBlob(root, bytes)`，随后读取记录桩日志并列出受控 `TMPDIR` 的内容 | 臂 ① 返回合法标识；日志中 `hash-object` 的参数含 `-w` 与 `--no-filters`、不含 `--stdin`，且该次调用的标准输入没有数据；传给 git 的文件路径位于受控 `TMPDIR` 之下、不在 `root` 之内。臂 ②③④ 返回 `null`，不抛出异常。四臂调用结束后受控 `TMPDIR` 均为空（临时文件与其所在子目录都已删除）；`root` 工作区内没有新增文件 |
 
 ### 场景测试
 
@@ -1424,6 +1427,7 @@
 | ST-S09-199 | 拒绝路径端到端零副作用 | EX-9.38、EX-9.40、EX-9.42 | 三个独立夹具：旧标记且已提交；已合并后手工改动主文档；已合并后删除首次 CREATE 目标的 delta；均放置 `VERIFY_PASS` | 每个夹具：① `status --format json`；② `merge --format json`；③ `git status --porcelain` | ① `blocked_reason` 依次为 `baseline-missing`、`drift`、`create-withdraw`；② 依次以 `MERGE_AMEND_BASELINE_MISSING`、`MERGE_AMEND_DRIFT`、`MERGE_AMEND_CREATE_WITHDRAW` 非零退出；③ 与 ② 之前一致，`VERIFY_PASS` 仍在场 |
 | ST-S09-200 | change-lint 与 merge 在修正待应用时同判 | Step 2～4、Step 11、EX-9.44 | 已合并夹具 | ① 在测试 delta 中引入与既有重复的 ID，依次 `change-lint` 与 `merge`；② 修复为合法修正后依次 `change-lint` 与 `merge` | ① 两者同判拒绝（同一违规码），文件零变化；② 两者同判通过，merge `result=="amended"` |
 | ST-S09-201 | 需要部署的提案修正后须重新部署与 smoke | Step 14～17 | 需部署且需 smoke 的提案：已合并、verify 通过、`DEPLOY_DONE` 与 `SMOKE_PASS` 在场 | ① 修改 delta 后 merge；② `status --format json`；③ `openlogos archive <slug>` | ① `invalidated_markers` 含 `DEPLOY_DONE`、`SMOKE_PASS`、`VERIFY_PASS`；② 前沿回到待 verify 一侧，不再处于交付态；③ 非零退出，提案未归档 |
+| ST-S09-217 | 首次合并含 CRLF 的目标时合并基线可逐字节读回（fix-merge-hang-on-baseline-blob-stdin） | S09 增量修正时序 Step 1～4、EX-9.46 | 一次性隔离 launched 项目，`git config core.autocrlf true`；活跃提案含一个首次 MODIFY 的功能规格目标，该目标在工作区中的现有字节为 CRLF 换行并已提交 | ① 记录该目标合并前的工作区字节；② 真实 `openlogos merge <slug> --format json`；③ 读取 `SPEC_MERGED` 的 `merge_baseline`，取该目标的 `before.git_blob`，执行 `git cat-file blob <git_blob>`；④ `git add -A && git commit`，修改 delta 后再次 `openlogos merge <slug> --format json` | ② `result=="merged"`，退出码 0；③ `git_blob` 非 null，读回字节与 ① 记录的字节逐字节相同（仍为 CRLF，未被转换为 LF），其 SHA-256 等于 `merge_baseline` 中该目标的 `before.sha256`；④ `result=="amended"`，没有因基线读回不一致而被拒绝；系统临时目录下不留本次 merge 创建的基线临时文件 |
 
 ### 追溯与覆盖
 
@@ -1435,12 +1439,15 @@
 - 待应用修正准入与 change-lint 同判（§2.69.4.4、§2.85.3、EX-9.44）：UT-S09-443、UT-S09-444、ST-S09-200。
 - 验收与交付事实失效、[code] 不重置（§2.69.4.5、EX-9.45）：UT-S09-445、UT-S09-446、ST-S09-197、ST-S09-201。
 - 标记恢复仅限已确认旧规格，档 C 不恢复（§2.69.4.3 第 9 步、EX-9.45）：UT-S09-446（档 A / 档 B 恢复）、UT-S09-447（档 C 三臂不恢复且 archive 拒绝）。
+- 合并基线 blob 写入的字节保真、不经标准输入与临时文件清理（§2.69.2、EX-9.46；fix-merge-hang-on-baseline-blob-stdin）：UT-S09-486、UT-S09-487、UT-S09-488、ST-S09-217。
 
 ### 自动化与证据要求
 
 - 全部用例以真实 CLI 子进程在临时 git 项目中执行；UT-S09-446、UT-S09-447 的落盘失败、回滚未完成、提交后清理失败、标记清除与恢复失败均通过仅测试环境生效的故障注入钩子触发（沿用 `applyBaselineClosureBatch` 既有 `afterWrite` 钩子形态与 EX-9.24 / UT-S09-351～UT-S09-354 既有的提交后清理失败注入方式），生产路径零影响；断言以原语结构化返回 `rolled_back` 区分档 B 与档 C。
 - UT-S09-434 与 ST-S09-196 须保留旧实现对照：以「删除 `SPEC_MERGED` 后首次合并路径重合并」复现旧行为，断言其 `changed_test_ids` 逐轮缩小，证明用例对旧实现必红。
 - 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。
+- UT-S09-486～UT-S09-488 在函数层直接调用 `cli/src/lib/merge-baseline.ts` 导出的真实 `gitWriteBlob` / `gitReadBlob`，不另写等价实现；期望标识由 git 对同样字节独立计算，不在测试代码中手写。UT-S09-488 以受控 `TMPDIR` 与 `PATH` 中的 `git` 记录桩取证（参数、标准输入是否有数据、临时目录内容），记录桩除记录外原样转交真实 `git`（臂 ③④ 的故障注入除外）。
+- merge 偶发卡死是约 1/300 量级的偶发现象，用例不以「连续若干次不卡」作为修复证据：UT-S09-487 只验证触发条件下的功能正确，「不再经标准输入传递内容」这一结构事实由 UT-S09-488 断言。
 
 ## S09 guard 非 git 回落的复合命令逐段判定测试
 
