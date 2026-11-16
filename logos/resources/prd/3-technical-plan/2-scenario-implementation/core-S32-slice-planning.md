@@ -385,3 +385,117 @@ sequenceDiagram
 
 - 需求：merge 直接合并与规格结构检查要求。
 - 测试：UT-S32-69～70、ST-S32-23。
+
+## S32 切片规划冻结验收范围时序
+
+### 场景目标
+
+`openlogos slice plan` 落盘时为本次切片划分冻结 checkpoint 验收范围 `verify_scope`（`baseline` / `owned`），写进 `TEST_SLICE_MANIFEST.json`。首次规划、同一划分的幂等重跑、manifest 失效后的自动恢复与真正重划是同一个命令：只有形成新划分时才按当前配置与用例数判定；同一划分的重跑与自动恢复沿用已冻结的值，旧 manifest 缺失时从 checkpoint 账本恢复，保证已确认切片的身份连续。
+
+### 参与者
+
+- **slice-planner（AI）/ 宿主**：产出结构化 `slices.json` 并调用 `openlogos slice plan --file`；恢复时以相同 `slices.json` 重跑。
+- **openlogos slice plan（CLI）**：验收范围的唯一判定者与写入者；读旧 manifest、只读 checkpoint 账本、读 `verify` 配置与已定义用例数。
+- **提案目录**：`tasks.md`、`TEST_SLICE_MANIFEST.json`（本命令写）、`SLICE_CHECKPOINTS.jsonl`（verify 写，本命令只读）。
+- **logos.config.json**：`verify.slice_scope`（`auto` / `baseline` / `owned`，缺省 `auto`）与 `verify.slice_scope_threshold`（缺省 1000）。
+
+### 前置条件
+
+- 活跃提案已 spec-complete，测试 ID 已在已合并规格中真实存在。
+- `slices.json` 通过「S32 切片规划单条受控写入口时序」的输入形状检查。
+
+### 成功后置条件
+
+- `tasks.md` 的 `[code]` 段与含 `verify_scope` 的 manifest 同时落盘且互相一致；输出带 `verify_scope` 与 `verify_scope_source`。
+- 同一划分重跑与自动恢复后，判定实质身份不变，已确认切片继续被采信，前沿停在首个未确认切片。
+- 拒绝路径（`SLICE_PLAN_VERIFY_SCOPE_AMBIGUOUS`、`SLICE_PLAN_VERIFY_SCOPE_CONFIG_INVALID`）下两产物零改写。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant P as slice-planner/宿主
+    participant C as openlogos slice plan
+    participant F as 提案目录
+    participant K as logos.config.json
+    P->>C: Step 1: slice plan --file slices.json
+    C->>C: Step 2: 输入形状检查，构造即将写出的 slices 与指纹
+    C->>F: Step 3: 读在盘旧 manifest
+    alt 旧 manifest 可解析且 verify_scope 合法或缺省
+        alt 新 slices 与旧 slices 逐项相等
+            C->>C: Step 4a: 沿用旧 verify_scope（缺省为 baseline），source=retained
+        else slices 不相等（真正重划）
+            C->>K: Step 4b: 读 slice_scope / slice_scope_threshold，统计已定义非 manual UT/ST 数
+            C->>C: Step 5b: 判定 verify_scope，source=decided
+        end
+    else 旧 manifest 缺失 / 不可解析 / verify_scope 非法
+        C->>F: Step 4c: 只读 SLICE_CHECKPOINTS.jsonl 的 @2 PASS 行
+        C->>C: Step 5c: 按 baseline 与 owned 两个候选身份比对
+        alt 恰好一个命中
+            C->>C: Step 6c: 采用命中值，source=recovered
+        else 两个都命中
+            C-->>P: Step 6d: SLICE_PLAN_VERIFY_SCOPE_AMBIGUOUS，两产物零改写
+        else 都不命中
+            C->>K: Step 6e: 按当前配置与用例数判定，source=decided
+        end
+    end
+    C->>F: Step 7: 写临时 tasks.md 与 manifest（含 verify_scope），读取侧同一判定，全过才原子 rename
+    C-->>P: Step 8: 输出摘要（含 verify_scope / verify_scope_source）
+```
+
+### 步骤说明
+
+1. **slice-planner / 宿主**调用 `openlogos slice plan --file <slices.json>`；初次规划、恢复与重划都是这同一个调用。
+2. **CLI** 完成输入形状检查，构造即将写出的 `slices` 数组与 `task_fingerprint`、`spec_fingerprint`（规则同「S32 切片规划单条受控写入口时序」Step 3～5）。
+3. **CLI** 读取在盘旧 manifest，判断它能否作为冻结值来源：可解析、schema 主版本为 1、`verify_scope` 合法或缺省。
+4. **CLI** 在旧 manifest 可用时比较新旧 `slices`（逐字段、保序，不比较 `generated_at` 与指纹）：相等即同一划分，沿用旧值（缺省写为 `baseline`），`source=retained`；不相等即真正重划，转 Step 5。
+5. **CLI** 在需要判定时读取 `verify.slice_scope` 与 `verify.slice_scope_threshold`：`baseline` / `owned` 直接采用；`auto` 时已定义非 manual UT/ST 用例数（集合 D 的大小，不与模块范围求交）大于等于阈值取 `owned`，否则取 `baseline`；`source=decided`。
+6. **CLI** 在旧 manifest 不可用时只读 checkpoint 账本：以即将写出的判定实质分别按 `baseline`（现行身份公式）与 `owned`（身份输入加入 `verify_scope: "owned"`）计算候选身份，与 `openlogos/slice-checkpoint@2` 的 PASS 行比对；恰好一个命中采用之（`recovered`），两个都命中拒绝（`SLICE_PLAN_VERIFY_SCOPE_AMBIGUOUS`），都不命中按 Step 5 判定（`decided`）。`@1` 行按文件字节绑定，不参与比对。
+7. **CLI** 把含 `verify_scope` 的 manifest 与新 `tasks.md` 按既有 fail-closed 落盘：先写临时文件、以读取侧同一判定校验、全过才原子 rename；不触碰 `SLICE_CHECKPOINTS.jsonl` 与 `SLICES_APPROVED`。
+8. **CLI** 返回摘要：`--format json` 的 `data` 新增 `verify_scope`、`verify_scope_source`，文本摘要新增「验收范围」行；既有五个 `data` 字段不变。
+
+### 异常与边界
+
+#### EX-32.26：配置或阈值变化后的同一划分恢复
+- **触发条件**：manifest 冻结为 `owned`、切片一已通过 checkpoint；项目把阈值调高到按当前用例数应判 `baseline`；随后 manifest 失效（invalid / stale），宿主以相同 `slices.json` 重跑。
+- **期望响应**：沿用 `owned`（`retained`），判定实质身份不变，切片一继续被采信，前沿停在切片二；不重新读配置判定。
+- **副作用**：仅重写 manifest 与 `[code]`（checkbox 按既有规则保留）。
+
+#### EX-32.27：同样配置变化下的真正重划
+- **触发条件**：同 EX-32.26 的配置变化，但 `slices.json` 改变了切片划分。
+- **期望响应**：按当前配置与用例数重新判定为 `baseline`（`decided`），身份变化，旧划分的 PASS checkpoint 不再被采信。
+- **副作用**：重写两产物；账本不改写，旧行保留审计。
+
+#### EX-32.28：旧 manifest 缺 `verify_scope` 字段
+- **触发条件**：升级前规划的提案，manifest 无该字段，以相同 `slices.json` 重跑。
+- **期望响应**：沿用为 `baseline` 并显式写出 `verify_scope: "baseline"`（`retained`）；`baseline` 的身份按现行公式计算，与升级前相同，已确认切片继续被采信。
+- **副作用**：manifest 多出该字段，其余判定实质不变。
+
+#### EX-32.29：manifest 缺失且账本两个候选都命中
+- **触发条件**：manifest 缺失或不可解析，账本中当前划分在 `baseline` 与 `owned` 两个候选身份下都有 PASS 行。
+- **期望响应**：以 `SLICE_PLAN_VERIFY_SCOPE_AMBIGUOUS`（exit 1，错误 envelope 点名两个候选身份与命中的 `slice_id`）拒绝，不按当前配置择一。
+- **副作用**：无；`tasks.md` 与 manifest 字节均不变，需要人工确认后再处置。
+
+#### EX-32.30：manifest 缺失且账本无命中
+- **触发条件**：manifest 缺失或不可解析，账本中没有属于当前划分的 PASS 行（含账本不存在、只有 `@1` 行或只有 FAIL 行）。
+- **期望响应**：当前划分没有任何已确认进度，按当前配置与用例数判定，输出 `verify_scope_source: "decided"`，判定可见、不静默。
+- **副作用**：正常写出两产物。
+
+#### EX-32.31：判定路径上配置非法
+- **触发条件**：需要判定（`decided` 路径）时 `verify.slice_scope` 不是 `auto` / `baseline` / `owned`，或 `verify.slice_scope_threshold` 不是正整数。
+- **期望响应**：以 `SLICE_PLAN_VERIFY_SCOPE_CONFIG_INVALID`（exit 1，点名配置项与取值）拒绝；`retained` / `recovered` 路径不读配置，不受影响，恢复入口保持可达。
+- **副作用**：无；两产物零改写。
+
+#### EX-32.32：在盘 manifest 的 `verify_scope` 取值非法
+- **触发条件**：manifest 被手工写入 `verify_scope: "full"` 等非法值。
+- **期望响应**：读取侧判 `test-slice-manifest-invalid`（path 指向 `verify_scope`），按既有恢复动作输出 `plan-slices`；重跑 `slice plan` 时该旧 manifest 不作为冻结值来源，走 Step 6 账本恢复。
+- **副作用**：恢复态不写 `VERIFY_FAIL`、`LOOP_ITERS` 或 checkpoint。
+
+> 「S32 切片规划单条受控写入口时序」EX-32.25 的「合法输入零行为变化」以本场景为准修订比较基准：manifest 多出 `verify_scope` 字段、成功摘要多出验收范围行与两个 `data` 字段，其余产出逐字节不变。
+
+### 追溯
+
+- 需求：`core-01-requirements.md`「S13/S16/S27/S28/S31/S32 多切片验收边界与自动恢复要求」中验收范围冻结与恢复的验收条件。
+- 功能规格：§2.68、§2.101.2～§2.101.6。
+- 根规范：`spec/test-slice-manifest.md` §2.3、§2.4、§3、§6.1；`spec/cli-json-output.md`「openlogos slice plan 输出合同」「status/next slice_verification_state」。
+- 测试：`core-S32-test-cases.md`「S32 切片规划冻结验收范围测试」——UT-S32-104～UT-S32-117、ST-S32-44、ST-S32-45；修订 UT-S32-103。

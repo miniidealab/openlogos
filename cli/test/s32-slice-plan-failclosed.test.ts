@@ -247,6 +247,18 @@ describe('S32 slice plan 写入侧 fail-closed', () => {
     expect(manifest.task_fingerprint).toBe(result.task_fingerprint);
     expect(tempLeftovers(dir)).toEqual([]);
 
+    // slice-verify-efficient-mode 修订的比较基准：manifest 只多出 verify_scope 一个顶层字段，
+    // data 只多出 verify_scope / verify_scope_source 两个字段，其余键集合不变（新增部分由 UT-S32-116 断言）。
+    expect(Object.keys(manifest).sort()).toEqual([
+      'change', 'generated_at', 'module', 'schema', 'slices', 'spec_fingerprint', 'task_fingerprint', 'verify_scope',
+    ]);
+    expect(manifest.verify_scope).toBe('baseline');           // 4 个用例远低于缺省阈值
+    expect(Object.keys(result).sort()).toEqual([
+      'manifest_path', 'slice_count', 'slice_ids', 'slug', 'spec_fingerprint', 'task_fingerprint',
+      'verify_scope', 'verify_scope_source',
+    ]);
+    expect(result).toMatchObject({ verify_scope: 'baseline', verify_scope_source: 'decided' });
+
     // 合法产出对读取侧同样有效——写入侧收紧未产生新的失败面
     const state = deriveSliceVerificationState(root, dir, { change: SLUG, module: 'core' })!;
     expect(state.manifest_status).toBe('valid');

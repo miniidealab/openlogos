@@ -555,3 +555,48 @@
 - 报告格式与统计：UT-S13-126。
 - 运行级失败归属（共享预跑、命令组、沙箱、账本、未定义 ID）与写入时机：UT-S13-127～UT-S13-130、ST-S13-33、ST-S13-34。
 - 写入白名单：UT-S13-131。
+
+## S13 切片 checkpoint owned 验收范围测试
+
+> 覆盖场景 `core-S13-verify-results.md`「S13 切片 checkpoint 的 owned 验收范围」（Step 1～13、EX-11.1～EX-11.5），功能规格 §2.37.2、§2.37.4、§2.37.8、§2.101，`spec/test-slice-manifest.md` §7，`spec/test-results.md`「切片 checkpoint 的结果集合与 pending 语义」，决策 C01、C03。既有 UT-S13-56～UT-S13-64、ST-S13-15～ST-S13-17（切片 checkpoint 与 final）与 UT-S13-104～UT-S13-131、ST-S13-27～ST-S13-34（模块范围与模块报告）作为回归守护。测试实现必须写入 OpenLogos reporter（`logos/resources/verify/test-results.jsonl`），测试名包含对应 ID，`scenario_id="S13"`。
+>
+> **夹具 SV**：`mktemp -d` 一次性 git 项目，单模块 `core`（launched）。已合并测试规格 `core-S01-test-cases.md` 定义基线用例 UT-S01-01、UT-S01-02、UT-S01-03、ST-S01-01，`core-S90-test-cases.md` 定义本提案变更用例 UT-S90-01、UT-S90-02、UT-S90-03（D 共 7 个非 manual 用例）。活跃提案已 spec-complete，`SPEC_MERGED.test_change_set` 的 C = {UT-S90-01, UT-S90-02, UT-S90-03}；manifest 两片：`slice-a` 拥有 UT-S90-01、UT-S90-02，`slice-b` 拥有 UT-S90-03。变体 **SV-owned**：manifest `verify_scope: "owned"`；**SV-baseline**：`verify_scope: "baseline"`；**SV-legacy**：manifest 无 `verify_scope` 字段。记录型运行器按测试设定写结果、按设定退出码退出，并把收到的 `OPENLOGOS_VERIFY_SLICE_SCOPE` 与 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 记入调用日志。**夹具 SV-MM**：在 SV-owned 基础上登记 `team`（initial，`paths: ["team/**"]`），新增 `team-S60-test-cases.md`（UT-S60-01）。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S13-132 | owned 范围的 eligible / pending 公式 | §2.37.2、§2.101.5 | 夹具 SV-owned；变体 ①：无 checkpoint；②：`slice-a` 已有身份匹配的 PASS checkpoint | 调用 `deriveSliceVerificationState()` | ① `verify_mode=slice-checkpoint`、`attempted_slice_id=slice-a`、eligible = [UT-S90-01, UT-S90-02]、pending = [UT-S90-03]；② attempted 为 `slice-b`、eligible = [UT-S90-01, UT-S90-02, UT-S90-03]、pending = []；两个变体的 eligible 均不含任何 UT-S01-* / ST-S01-* |
+| UT-S13-133 | owned 范围下基线无结果不计 uncovered | §2.37.4、§2.101.5 | 夹具 SV-owned，无 checkpoint；运行器只为 UT-S90-01、UT-S90-02 写 pass | `verify --format json` | checkpoint PASS；`eligible_test_ids` 长度为 2、`uncovered_cases` 为空、覆盖率 100%；`SLICE_CHECKPOINTS.jsonl` 追加一行 `slice-a` PASS；不写 `VERIFY_PASS` |
+| UT-S13-134 | baseline 与旧 manifest 的集合与引入前一致 | §2.37.8、EX-11.2 | 夹具 SV-baseline 与 SV-legacy，均无 checkpoint | 分别调用 `deriveSliceVerificationState()` 并执行 `verify --format json`（运行器写 eligible 全部 pass） | 两个变体 eligible 都等于 B ∪ owned(slice-a)（6 个 ID），pending = [UT-S90-03]；verify JSON 的集合、Gate 与 `acceptance-report.md` 中除「验收范围」行外的内容，与以引入本能力前的实现对 SV-legacy 运行所得逐字节相同 |
+| UT-S13-135 | 注入 `OPENLOGOS_VERIFY_SLICE_SCOPE`，final 不注入 | §2.37.4、Step 4、Step 10 | 夹具 SV-owned / SV-legacy 的 checkpoint；SV-owned 全部切片已确认且 `[code]` 全勾的 final；final 时父进程环境预置 `OPENLOGOS_VERIFY_SLICE_SCOPE=owned` | 依次执行 verify，读取运行器调用日志 | SV-owned checkpoint 收到 `owned`，`OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 恰为 UT-S90-01、UT-S90-02；SV-legacy checkpoint 收到 `baseline`；final 的预跑命令环境中不存在 `OPENLOGOS_VERIFY_SLICE_SCOPE`（父进程预置值不泄漏） |
+| UT-S13-136 | owned 范围下输出基线结果判越界 | EX-11.1、`spec/test-results.md` | 夹具 SV-owned，无 checkpoint；运行器为 UT-S90-01、UT-S90-02 与 UT-S01-01 都写 pass | `verify --format json` | checkpoint FAIL，诊断含 `result_outside_eligible_scope` 并点名 UT-S01-01；写 `VERIFY_FAIL` 与 `LOOP_ITERS{verify_mode:"slice-checkpoint",attempted_slice_id:"slice-a"}`；不追加 PASS checkpoint |
+| UT-S13-137 | owned 范围的 checkpoint 不写、不改模块验收报告 | §2.37.4、EX-11.3 | 夹具 SV-MM；已有一份旧 `team-acceptance-report.md`，记录其字节与修改时间；变体 ①：SV-MM（owned）checkpoint；②：同夹具改为 `verify_scope: "baseline"` 的 checkpoint；③：owned 下全部切片确认后的 final | 执行 verify | ① `team-acceptance-report.md` 字节与修改时间不变、不新建任何 `<m>-acceptance-report.md`，共用报告照常写；② 与 ③ 照旧重写 `team-acceptance-report.md` |
+| UT-S13-138 | 共用验收报告标明验收范围 | §2.101.5、`spec/test-results.md`「checkpoint/final 报告」 | 夹具 SV-owned 与 SV-legacy 的 checkpoint，运行器写 eligible 全部 pass | 执行 verify 后读 `acceptance-report.md` | SV-owned 的 checkpoint 摘要含「验收范围」行 `owned` 与「基线回归由 final 承担」字样；SV-legacy 含「验收范围」行 `baseline`；两者都仍标注「切片检查点通过，非最终验收」 |
+| UT-S13-139 | owned 范围下 final 仍全量 | §2.37.5、§2.101.5、EX-11.5 | 夹具 SV-owned，两片均有 PASS checkpoint，`[code]` 全部勾选；变体 ①：运行器只写 3 个 UT-S90-* 的 pass；②：7 个用例全部 pass；③：7 个全部写出但 UT-S01-02 为 fail | `verify --format json` | 三个变体 `verify_mode=final`、eligible 为 D 的 7 个 ID；① FAIL（`incomplete_coverage`），4 个基线 ID 列入 uncovered、不改列 pending；② PASS 并写 `VERIFY_PASS`；③ FAIL（`failed_cases`），写 final `LOOP_ITERS` |
+| UT-S13-140 | owned 范围与模块范围叠加 | §2.96、§2.101.5、`spec/test-slice-manifest.md` §7.1 | 夹具 SV-MM，模块范围启用且提案只改动 `src/**`（M={core}） | 调用 `deriveSliceVerificationState()` 并执行 `verify --format json` | eligible = [UT-S90-01, UT-S90-02]（不含 B_S，也不含 UT-S60-01）；`scope.mode="module"`；运行器写出的 UT-S60-01 结果按范围外忽略并计入 `scope.out_of_scope_result_count`，不判 `result_outside_eligible_scope` |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S13-35 | owned 范围从首片到 final 的端到端 | Step 1～13 | 真实 CLI；夹具 SV 去掉 manifest，配置 `verify.slice_scope_threshold: 3`；运行器只运行 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 中的用例并写 pass | ① `openlogos slice plan --file slices.json --format json`；② `status --format json`；③ `verify --format json`；④ 勾选 `slice-a` 后 `verify --format json`；⑤ 勾选 `slice-b` 后 `verify --format json` | ① `data.verify_scope="owned"`、`verify_scope_source="decided"`；② `slice_verification_state.verify_scope="owned"`；③ checkpoint PASS，运行器只收到 2 个 ID；④ checkpoint PASS，运行器只收到 3 个 UT-S90-* ID；⑤ `verify_mode=final`，运行器收到全部 7 个 ID 且未收到 `OPENLOGOS_VERIFY_SLICE_SCOPE`，写 `VERIFY_PASS` |
+| ST-S13-36 | 未达阈值时 baseline 零回归 | Step 1～13 | 真实 CLI；夹具 SV 去掉 manifest，配置保持缺省（阈值 1000）；运行器同 ST-S13-35 | 同 ST-S13-35 的 ①～⑤ | ① `verify_scope="baseline"`；③④ 每次 checkpoint 运行器都收到 4 个基线 ID 加对应 owned ID，并收到 `OPENLOGOS_VERIFY_SLICE_SCOPE=baseline`；各步 verify JSON 的集合、Gate、`SLICE_CHECKPOINTS.jsonl` 行数与引入本能力前一致；⑤ final 写 `VERIFY_PASS` |
+| ST-S13-37 | owned 范围下后续切片改坏前序切片被 checkpoint 拦下 | Step 3～8、EX-11.4 | 真实 CLI；夹具 SV-owned，`slice-a` 已有 PASS checkpoint 并已勾选 | ① 运行器令 UT-S90-01 fail、UT-S90-02 与 UT-S90-03 pass，执行 `verify --format json`；② 改为全部 pass 后重跑 | ① attempted 为 `slice-b`，eligible 含 UT-S90-01，checkpoint FAIL，`LOOP_ITERS.attempted_slice_id="slice-b"`，`slice-a` 的 PASS checkpoint 仍被采信；② checkpoint PASS 并追加 `slice-b` 行 |
+
+### 覆盖度校验
+
+- owned 范围的集合公式与基线不计 uncovered：UT-S13-132、UT-S13-133、ST-S13-35。
+- baseline / 旧 manifest 零回归：UT-S13-134、ST-S13-36。
+- 环境变量注入与 final 不注入：UT-S13-135、ST-S13-35 步骤⑤。
+- runner 越界输出：UT-S13-136。
+- 模块验收报告与共用报告：UT-S13-137、UT-S13-138。
+- final 全量硬门不变：UT-S13-139、ST-S13-35 步骤⑤。
+- 与模块范围叠加：UT-S13-140。
+- 前序切片回归在提案内被发现：ST-S13-37。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S13"`；失败不得写 pass。
+- 环境变量与 eligible 的断言必须读取记录型运行器的调用日志，不得以 verify 的 stdout 自述代替。
+- 「零回归」「字节不变」类断言直接读回磁盘字节与修改时间比对；UT-S13-134 的引入前基准由同一夹具在引入前实现上生成并作为 golden 固化。

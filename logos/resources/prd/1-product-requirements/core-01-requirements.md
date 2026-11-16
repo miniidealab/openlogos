@@ -1447,7 +1447,7 @@ OpenLogos 的 `status` / `next` 机器输出是 RunLogos、CI 与各类 AI drive
 
 ### 用户价值
 
-多切片提案必须允许每一片在其真实交付范围内独立验收，同时继续保留最终全量回归硬门。未来切片尚未实现不得被伪装成 pass/skip，也不得被计入当前覆盖率分母。自动化宿主在缺少机器清单时应获得可执行恢复动作，而不是把流程停在无法修复的失败态。
+多切片提案必须允许每一片在其真实交付范围内独立验收，同时继续保留最终全量回归硬门。用例规模达到阈值的项目，切片验收只验收本片及已通过前序切片涉及的用例，基线回归集中到所有切片完成后的 final 一次完成，避免每片反复全量回归同一批既有用例（slice-verify-efficient-mode）。未来切片尚未实现不得被伪装成 pass/skip，也不得被计入当前覆盖率分母。自动化宿主在缺少机器清单时应获得可执行恢复动作，而不是把流程停在无法修复的失败态。
 
 ### 验收条件
 
@@ -1455,7 +1455,7 @@ OpenLogos 的 `status` / `next` 机器输出是 RunLogos、CI 与各类 AI drive
 
 - **GIVEN** 活跃提案已由 `slice-planner` 生成有效 `TEST_SLICE_MANIFEST.json`，且仍有未完成切片
 - **WHEN** 用户执行 `openlogos verify`
-- **THEN** 命令以 `slice-checkpoint` 模式运行；覆盖率分母只包含基线回归、已通过 checkpoint 的切片和本轮 attempted slice 所属测试；后续切片测试列入 `pending_test_ids`，不产生 reporter 结果
+- **THEN** 命令以 `slice-checkpoint` 模式运行；manifest 冻结的验收范围为 `baseline`（含旧 manifest 缺该字段）时，覆盖率分母只包含基线回归、已通过 checkpoint 的切片和本轮 attempted slice 所属测试；为 `owned` 时按下文「高效模式」只包含后两者；后续切片测试列入 `pending_test_ids`，不产生 reporter 结果
 
 #### 正常：checkpoint 通过推进但不伪造最终通过
 
@@ -1468,6 +1468,54 @@ OpenLogos 的 `status` / `next` 机器输出是 RunLogos、CI 与各类 AI drive
 - **GIVEN** manifest 中所有切片均已有通过 checkpoint，且 `[code]` 顶层与子任务全部勾选
 - **WHEN** 用户再次执行 `openlogos verify`
 - **THEN** 命令切换为 `final`，以全部已定义非 manual 测试为覆盖率分母并维持 100% 覆盖和一致性硬门；只有 final 通过才写 `VERIFY_PASS`
+
+#### 正常：用例数达到阈值时切片验收只验收涉及的用例（高效模式）
+
+- **GIVEN** 项目 `verify.slice_scope` 为缺省的 `auto`、`verify.slice_scope_threshold` 为缺省的 1000，`openlogos slice plan` 落盘时已定义的非 manual UT/ST 用例数大于等于 1000，manifest 因此冻结 `verify_scope: "owned"`
+- **WHEN** 用户执行 `openlogos verify` 且仍有未确认切片
+- **THEN** checkpoint 的覆盖率分母只包含已通过 checkpoint 的前序切片与本轮 attempted slice 的 owned 用例，基线回归用例既不进入分母、也不计 uncovered；预跑命令收到 `OPENLOGOS_VERIFY_SLICE_SCOPE=owned` 与收窄后的 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS`；runner 输出基线用例结果仍判 `result_outside_eligible_scope`；`status` / `next` 的 `slice_verification_state.verify_scope` 为 `owned`
+
+#### 正常：未达阈值或显式 baseline 时行为不变
+
+- **GIVEN** `slice plan` 落盘时已定义用例数小于阈值，或项目配置 `verify.slice_scope: "baseline"`
+- **WHEN** 用户执行 `openlogos verify`
+- **THEN** manifest 冻结 `verify_scope: "baseline"`，checkpoint 的集合、注入、报告与 Gate 与引入本能力前一致（仅额外注入 `OPENLOGOS_VERIFY_SLICE_SCOPE=baseline`）；配置 `verify.slice_scope: "owned"` 时不论用例数一律冻结为 `owned`
+
+#### 正常：高效模式下 final 仍跑一次全量
+
+- **GIVEN** manifest 冻结为 `owned`，所有切片均已有通过 checkpoint 且 `[code]` 全部勾选
+- **WHEN** 用户再次执行 `openlogos verify`
+- **THEN** 以 `final` 模式按全部已定义非 manual 测试计算分母，100% 覆盖、一致性与 `VERIFY_PASS` 写入规则与 baseline 范围完全相同；final 不注入 `OPENLOGOS_VERIFY_SLICE_SCOPE`
+
+#### 正常：验收范围在切片规划时冻结
+
+- **GIVEN** manifest 已冻结某一验收范围
+- **WHEN** 提案进行中新增或删除用例使用例数跨过阈值，或项目修改了 `verify.slice_scope` / `verify.slice_scope_threshold`
+- **THEN** 已冻结的范围不变，后续切片与前序切片使用同一验收口径，直至真正重划切片
+
+#### 恢复：同一划分重跑与自动恢复保留冻结范围与已确认切片
+
+- **GIVEN** manifest 已冻结为 `owned` 且切片一已通过 checkpoint；随后项目把阈值调高到按当前用例数应判 `baseline`
+- **WHEN** manifest 失效（invalid / stale）或被要求幂等重跑，宿主以相同 `slices.json` 重跑 `openlogos slice plan`
+- **THEN** 新 manifest 沿用 `verify_scope: "owned"`，判定实质身份不变，切片一继续被采信，前沿停在第二片；`slice plan` 输出 `verify_scope_source: "retained"`。旧 manifest 缺 `verify_scope` 字段时按 `baseline` 沿用并显式写出，身份与升级前相同
+
+#### 恢复：manifest 缺失时从 checkpoint 账本恢复冻结范围
+
+- **GIVEN** `TEST_SLICE_MANIFEST.json` 缺失或不可解析，`SLICE_CHECKPOINTS.jsonl` 中存在属于当前划分的 PASS 行
+- **WHEN** 宿主以相同 `slices.json` 重跑 `openlogos slice plan`
+- **THEN** CLI 只读账本，按 `baseline` 与 `owned` 两个候选身份比对 PASS 行：恰好一个命中即采用该范围（`verify_scope_source: "recovered"`），已确认切片继续被采信；两个都命中则以 `SLICE_PLAN_VERIFY_SCOPE_AMBIGUOUS` 拒绝写入、两产物零改写；都不命中说明无已确认进度，按当前配置判定（`verify_scope_source: "decided"`）。任何情形都不得静默按当前配置覆盖已确认进度所依据的范围
+
+#### 正常：真正重划按当前配置重新判定
+
+- **GIVEN** manifest 已冻结某一验收范围
+- **WHEN** 用户修改 `slices.json` 使切片划分（`slices`）改变后重跑 `openlogos slice plan`
+- **THEN** 按当前配置与当时用例数重新判定范围（`verify_scope_source: "decided"`），身份随之变化，旧划分的 checkpoint 不再被采信
+
+#### 正常：高效模式下 checkpoint 不改写模块验收报告
+
+- **GIVEN** 多模块项目，manifest 冻结为 `owned`
+- **WHEN** checkpoint verify 完成 Gate 裁决
+- **THEN** 共用验收报告照常写出并标明验收范围；各 initial 模块的模块验收报告不写、不改（其按完整用例集统计，只验收 owned 时会误报未覆盖）；final 照常写模块验收报告
 
 #### 异常：真实 eligible 失败锁定同一切片
 
@@ -1489,7 +1537,9 @@ OpenLogos 的 `status` / `next` 机器输出是 RunLogos、CI 与各类 AI drive
 
 ### 非目标
 
-- 不降低 final verify 的全量覆盖要求。
+- 不降低 final verify 的全量覆盖要求；高效模式不改变 final 的集合、覆盖与 `VERIFY_PASS` 规则。
+- 不按全量耗时自动判定验收范围，不按「触达场景的全部既有用例」划定 checkpoint 范围，不消费 manifest 的 `runner_selectors`。
+- 宿主侧 runner 如何把测试 ID 映射到测试文件、派发提示词如何调整，不在本需求内。
 - 不为未来测试写 pass/skip 结果。
 - 不允许宿主解析 `tasks.md` 建立第二套验收算法。
 - 不把本机全局安装授权扩展为 npm publish、Git tag、GitHub Release、官网发布或 push。

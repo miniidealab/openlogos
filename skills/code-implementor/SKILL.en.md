@@ -197,3 +197,24 @@ The following prompts can be copied directly for AI use:
 - `Execute Phase 3 Step 4, batch by scenario`
 - `Implement S01, ensuring consistency with API YAML and DB DDL`
 - `Please execute Phase 3 Step 4 for S01. Deliver business code + test code + OpenLogos reporter in each batch.`
+
+## Step 2 Supplement: Slice Loop and Verify Scope
+
+> Synchronized with the Chinese `SKILL.md` section「Step 2 补充：切片循环驱动模型（change-flow-redesign）」(slice-verify-efficient-mode). Since change-flow-redesign, launched `implement` advances as a **slice loop** (scenario S31): each unchecked line in the `[code]` section of `tasks.md` is one slice, driven slice by slice by the host (e.g. the RunLogos driver).
+
+> 🚦 **Activation precondition (highest priority)**: the "one slice per round" discipline below applies **only when `openlogos next` actually returns `next_node.slice`** (i.e. the host / driver is injecting "do only this slice" context). If you are **not** being injected slice by slice — manual execution, no driver loop, or a CLI that does not support the slice loop (< 0.11) — you **must implement every unchecked slice of the `[code]` section in this run** (each slice still closed-loop: business code + its UT/ST + reporter), then hand over to `verify`. Never treat a single `[code]` line as "the first slice" and stop: the final verify always runs a full regression, so the remaining slices' missing tests would keep it red and the loop would deadlock in `verify-failed`.
+
+Slice-loop discipline (only when the precondition above holds):
+
+1. **One slice per round**: the host injects `next_node.slice` / `slice_state.current` context ("only this slice + its specs/tests").
+2. **Each slice is closed-loop**: business code + the slice's UT/ST tests + OpenLogos reporter are delivered together; test IDs come from the `UT-Sxx-..` / `ST-Sxx-..` annotated on the `[code]` line.
+3. **Checkpoint scope follows the frozen `verify_scope`; final is always a full regression**: read the scope from `slice_verification_state.verify_scope` in `openlogos status` / `next --format json`.
+   - `baseline` (also for manifests planned before this field existed): each slice checkpoint re-runs the baseline cases + confirmed slices + this slice.
+   - `null`: the manifest is not ready or invalid; follow the recovery guidance from `next` and do not assume a scope.
+   - `owned` (projects whose defined case count reached `verify.slice_scope_threshold`): each slice checkpoint verifies only the owned cases of the confirmed slices and this slice (`eligible_test_ids`); baseline regression is carried by the final verify after all slices are done.
+   - In both scopes the owned cases of earlier slices are re-verified at every checkpoint, so a later slice breaking an earlier one still turns red; the final verify runs every defined case once with 100% coverage, ruling out "locally green, globally red".
+4. **Scope your pre-delivery self-test, check the slice only when green**: under `owned`, run only the tests covering this slice's `eligible_test_ids` before delivery and **do not run the full regression yourself** — the final verify does that, and running it again per slice doubles the cost; under `baseline`, keep including the baseline regression. Once the checkpoint's tests pass, the host checks the slice's `[code]` line — OpenLogos only derives, never checks boxes.
+5. **Convergence = all slices checked ∧ final full test green** (`code_slices_green`); reaching `max_iters` (default 30) escalates to `gate:implement:loop-exhausted` (`skippable:false`).
+6. **Which slice to fix is decided by the verify failure output**: `next_node.slice` points at the next **unbuilt** slice, not the slice to repair; when a checkpoint or the final verify turns red, the repair target is judged from the failure details by the host / implementer.
+
+> Non-launched projects (initial single-module / initial multi-module) do not activate the slice loop by default and keep the existing "batch by scenario / sub-module" strategy.

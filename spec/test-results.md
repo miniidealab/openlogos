@@ -524,7 +524,14 @@ pass_rate_pct == 100
 - `pending_test_ids`：属于未来未确认切片，尚不要求结果且不进入分母。
 - `defined_test_ids`：已合并测试规格中全部非 manual ID，满足 `eligible ∪ pending ⊆ defined`。
 
-checkpoint 下 eligible 为基线回归、已确认切片与 attempted slice 的并集；pending 为其余 owned tests。final 下 eligible 等于全部 defined，pending 为空。
+checkpoint 下 eligible 按 manifest 冻结的验收范围 `verify_scope`（`spec/test-slice-manifest.md` §3、§7）分支：
+
+- `baseline`（含旧 manifest 缺该字段）：eligible 为基线回归、已确认切片与 attempted slice 的并集；
+- `owned`：eligible 只为已确认切片与 attempted slice 的 owned tests 并集，基线回归不在 eligible，既不计入分母也不计 uncovered，由 final 统一回归。
+
+两种范围下 pending 都为其余 owned tests。final 下 eligible 等于全部 defined，pending 为空，与范围无关。
+
+checkpoint 执行预跑命令前，verify 除注入 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS`（本轮 eligible）外，再注入 `OPENLOGOS_VERIFY_SLICE_SCOPE=baseline|owned`；final 不注入后者。runner 可据此只运行覆盖 eligible 的测试，测试 ID 到测试文件的映射由各项目 runner 自行决定。**runner 只能输出 eligible 内的结果**这条规则对两种范围相同：`owned` 范围下输出的基线 ID 与 pending ID 一样按 `result_outside_eligible_scope` 处置。
 
 ### reporter 处理
 
@@ -543,11 +550,11 @@ coverage = |covered| / |eligible|
 
 ### 基线回归集合
 
-`baseline_test_ids = defined_test_ids − manifest_owned_test_ids`。它在每个 checkpoint 都属于 eligible，用于阻止当前切片破坏未触达能力。manifest owned 集合必须只包含本提案新增或修改的测试 ID；不得把全项目测试都分配到切片以逃避基线定义。
+`baseline_test_ids = defined_test_ids − manifest_owned_test_ids`。验收范围为 `baseline` 时，它在每个 checkpoint 都属于 eligible，用于阻止当前切片破坏未触达能力；为 `owned` 时，它不属于任何 checkpoint 的 eligible，只在 final 中被验收——用例规模达到阈值的项目以此换取每片验收的提速，回归在 final 一次发现。manifest owned 集合必须只包含本提案新增或修改的测试 ID；不得把全项目测试都分配到切片以逃避基线定义。
 
 ### checkpoint/final 报告
 
-验收报告新增 mode、attempted slice、eligible/pending 数量和 ID 清单、manifest fingerprint、confirmed slices。checkpoint PASS 明确标注“切片检查点通过，非最终验收”，不得产生最终 `VERIFY_PASS`。final 报告继续给出全量覆盖率与 Gate 结论。
+验收报告新增 mode、attempted slice、验收范围（`baseline` / `owned`；`owned` 时注明「基线回归由 final 承担」）、eligible/pending 数量和 ID 清单、manifest fingerprint、confirmed slices。checkpoint PASS 明确标注“切片检查点通过，非最终验收”，不得产生最终 `VERIFY_PASS`。final 报告继续给出全量覆盖率与 Gate 结论。多模块项目中，验收范围为 `owned` 的 checkpoint 不写、不改各 initial 模块的模块验收报告（模块报告按完整用例子集统计，只验收 owned 时会把基线误报为未覆盖，见「多模块项目的模块验收报告与模块冒烟报告」）；`baseline` 范围的 checkpoint 与 final 照旧写。
 
 ### checkpoint 账本
 

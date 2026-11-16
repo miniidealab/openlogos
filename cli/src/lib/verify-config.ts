@@ -230,3 +230,36 @@ export function backfillVerifyPreRunConfig(root: string, config: Record<string, 
   verify.pre_run_command = command;
   return { status: 'added', command, mutated: true };
 }
+
+// ── slice-verify-efficient-mode：checkpoint 验收范围配置（功能规格 §2.101.2）──
+
+export type SliceScopeSetting = 'auto' | 'baseline' | 'owned';
+export const DEFAULT_SLICE_SCOPE: SliceScopeSetting = 'auto';
+export const DEFAULT_SLICE_SCOPE_THRESHOLD = 1000;
+
+export type SliceScopeConfig =
+  | { ok: true; slice_scope: SliceScopeSetting; slice_scope_threshold: number }
+  | { ok: false; key: 'verify.slice_scope' | 'verify.slice_scope_threshold'; value: unknown };
+
+/**
+ * 读取 `verify.slice_scope` / `verify.slice_scope_threshold`。缺省为 `auto` / `1000`；
+ * 取值非法时返回 `ok:false` 点名配置项与取值——是否拒绝由调用方决定：只有 `slice plan`
+ * 需要判定范围时才拒绝，沿用与账本恢复路径不读本配置（根规范 §2.3.2）。
+ */
+export function readSliceScopeConfig(root: string): SliceScopeConfig {
+  const config = asRecord(readJsonFile(join(root, 'logos', 'logos.config.json')));
+  const verify = asRecord(config?.verify) ?? {};
+  const scope = verify.slice_scope;
+  const threshold = verify.slice_scope_threshold;
+  if (scope !== undefined && scope !== 'auto' && scope !== 'baseline' && scope !== 'owned') {
+    return { ok: false, key: 'verify.slice_scope', value: scope };
+  }
+  if (threshold !== undefined && !(typeof threshold === 'number' && Number.isInteger(threshold) && threshold >= 1)) {
+    return { ok: false, key: 'verify.slice_scope_threshold', value: threshold };
+  }
+  return {
+    ok: true,
+    slice_scope: (scope as SliceScopeSetting | undefined) ?? DEFAULT_SLICE_SCOPE,
+    slice_scope_threshold: (threshold as number | undefined) ?? DEFAULT_SLICE_SCOPE_THRESHOLD,
+  };
+}

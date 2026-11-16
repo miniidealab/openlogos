@@ -112,16 +112,20 @@ test-writer 不写代码；code-implementor 不设计用例；code-reviewer 不�
 >
 > **若你并未被逐片注入**——例如手动执行、没有 driver 驱动循环、或所用 `openlogos` CLI 不支持切片循环（< 0.11，`next` 不输出 `next_node.slice` / `slice_state`）——则**必须在本次实现里把整个 `[code]` section 的所有未勾切片一次性全部实现完**（每片仍各自闭环：业务代码 + 该片 UT/ST + reporter），全部完成后再交 `verify`。
 >
-> **严禁**在没有逐片注入的情况下，自行把单个 `[code]` 行当作「第一个切片」、实现完就停下等下一轮。**为什么**：切片只 scope `code` 的上下文注入、**不 scope verify**（verify 永远全量回归）；只做完一片就跑全量 verify 必然飘红（其余切片的测试尚不存在 / 不过），循环无法出环，会直接死锁在 `verify-failed`。
+> **严禁**在没有逐片注入的情况下，自行把单个 `[code]` 行当作「第一个切片」、实现完就停下等下一轮。**为什么**：切片只 scope `code` 的上下文注入；verify 的推进由宿主逐片驱动，最终必须经过**永远全量回归**的 final verify（见下文第 3 条）。没有逐片注入时只做完一片就停下，其余切片的测试尚不存在 / 不过，final 全量必然飘红，循环无法出环，会直接死锁在 `verify-failed`。
 
 切片循环下的实现纪律（**仅在上述激活前提满足、即宿主正逐片注入时适用**）：
 
 1. **每轮只实现一片**：宿主读 `openlogos next` 的 `next_node.slice` / `slice_state.current` 注入"只做这一片 + 该片相关 spec/测试"的上下文。**逐片注入正是为规避"一次塞太多导致 AI 失败"**。
 2. **每片自闭环**：该片的业务代码 + 该片 UT/ST 测试 + reporter 同批交付（与既有 Step 2「闭环要求」一致），切片 ID 来自 `[code]` 行标注的 `UT-Sxx-..`/`ST-Sxx-..`。
-3. **verify 跑全量回归，不只跑本片**：`openlogos verify` 始终全量执行——切片只 scope `code` 的上下文注入，**不 scope verify**；这样后做切片若打断先做切片，全量 verify 会飘红、loop 不出环，从模型层杜绝"局部绿全局红"。
-4. **绿后才勾该片**：该片相关测试（及全量回归）满足后，由宿主把 `tasks.md` `[code]` 该行勾上——OpenLogos 只派生、不代勾。
+3. **checkpoint 的验收范围看 manifest 冻结的 `verify_scope`，final 永远全量回归**：从 `openlogos status` / `next --format json` 的 `slice_verification_state.verify_scope` 读取本提案的范围（slice-verify-efficient-mode）。
+   - `baseline`（升级前规划、manifest 缺该字段的提案同此）：每片 checkpoint 回归基线用例 + 已确认切片 + 本片。
+   - `null`：manifest 尚未就绪或失效，先按 `next` 的恢复指引处理，不自行假定范围。
+   - `owned`（用例数达到 `verify.slice_scope_threshold` 的项目）：每片 checkpoint 只验收已确认切片与本片的 owned 用例（即 `eligible_test_ids`），基线回归由所有切片完成后的 final verify 统一承担。
+   - 两种范围下前序切片的 owned 用例都在每片 checkpoint 中重验，后做切片若打断先做切片仍会飘红、loop 不出环；final 以全部已定义用例跑一次全量并要求 100% 覆盖，从模型层杜绝"局部绿全局红"。
+4. **交付前自测按范围收窄，绿后才勾该片**：`owned` 范围下交付前只运行覆盖本片 `eligible_test_ids` 的测试，**不再自跑全量回归**——全量回归由 final verify 承担，交付前再跑一遍只会让每片付出两次全量成本；`baseline` 范围下照旧包含基线回归。该片 checkpoint 所需测试满足后，由宿主把 `tasks.md` `[code]` 该行勾上——OpenLogos 只派生、不代勾。
 5. **收敛 = 全部切片勾选 ∧ 末轮全量测试绿**（`code_slices_green`）；达 `max_iters`（默认 30）仍未达成升级 `gate:implement:loop-exhausted`（`skippable:false`，默认不放行未完成大功能）。
-6. **修哪片由 verify 失败输出决定**：`next_node.slice` 提示的是"下一个**未建**切片"，不是"该修哪片"；回归飘红时具体修复目标由全量 verify 失败信息判断，归宿主/实现者，引擎不代判。
+6. **修哪片由 verify 失败输出决定**：`next_node.slice` 提示的是"下一个**未建**切片"，不是"该修哪片"；回归飘红（checkpoint 或 final）时具体修复目标由 verify 失败信息判断，归宿主/实现者，引擎不代判。
 
 > 非 launched（initial 单模块默认 / initial 多模块）不默认激活切片循环，沿用既有"按场景/子模块分批"策略。
 

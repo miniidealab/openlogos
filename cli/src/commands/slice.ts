@@ -16,6 +16,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import type { OutputFormat } from '../lib/json-output.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import { extractCodeSectionRaw, replaceCodeSectionBody } from '../lib/proposal-lifecycle.js';
+import { readSliceScopeConfig } from '../lib/verify-config.js';
 import {
   TEST_SLICE_MANIFEST,
   TEST_SLICE_SCHEMA,
@@ -24,7 +25,12 @@ import {
   computeSpecFingerprint,
   computeTaskFingerprint,
   discardStagedFile,
+  extractDefinedVerificationIds,
   readTestChangeSet,
+  recoverVerifyScopeFromLedger,
+  sameSlicePartition,
+  SLICE_VERIFY_SCOPES,
+  type SliceVerifyScope,
   serializeTestSliceManifest,
   shouldUseSliceVerificationForTasks,
   stageFileAtomic,
@@ -38,7 +44,9 @@ export type SlicePlanErrorCode =
   | 'SLICE_PLAN_INPUT_INVALID'
   | 'SLICE_PLAN_DUPLICATE_SLICE_ID'
   | 'SLICE_PLAN_UNKNOWN_TEST_ID'
-  | 'SLICE_PLAN_ARTIFACT_INVALID';
+  | 'SLICE_PLAN_ARTIFACT_INVALID'
+  | 'SLICE_PLAN_VERIFY_SCOPE_AMBIGUOUS'
+  | 'SLICE_PLAN_VERIFY_SCOPE_CONFIG_INVALID';
 
 export class SlicePlanError extends Error {
   /**
@@ -199,6 +207,73 @@ export interface SlicePlanResult {
   task_fingerprint: string;
   spec_fingerprint: string;
   manifest_path: string;
+  /** 本次写入 manifest 的 checkpoint 验收范围（slice-verify-efficient-mode）。 */
+  verify_scope: SliceVerifyScope;
+  /** retained：同一划分沿用旧值；recovered：由 checkpoint 账本恢复；decided：按当前配置判定。 */
+  verify_scope_source: VerifyScopeSource;
+}
+
+export type VerifyScopeSource = 'retained' | 'recovered' | 'decided';
+
+/**
+ * 在盘旧 manifest 能否作为冻结值来源（根规范 §2.3.2）：可严格解析、schema 为 v1、
+ * `verify_scope` 合法或缺省。返回其 slices 与冻结值；不可用返回 null。
+ */
+function readUsableOldManifest(manifestPath: string): { slices: Record<string, unknown>[]; scope: SliceVerifyScope } | null {
+  if (!existsSync(manifestPath)) return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const top = raw as Record<string, unknown>;
+  if (top.schema !== TEST_SLICE_SCHEMA || !Array.isArray(top.slices)) return null;
+  if ('verify_scope' in top && !SLICE_VERIFY_SCOPES.includes(top.verify_scope as SliceVerifyScope)) return null;
+  const slices = top.slices.filter((row): row is Record<string, unknown> =>
+    Boolean(row) && typeof row === 'object' && !Array.isArray(row));
+  if (slices.length !== top.slices.length) return null;
+  return { slices, scope: top.verify_scope === 'owned' ? 'owned' : 'baseline' };
+}
+
+/** 按当前配置与已定义非 manual UT/ST 用例数判定（根规范 §2.4）；配置非法即拒绝、零副作用。 */
+function decideVerifyScope(root: string): SliceVerifyScope {
+  const config = readSliceScopeConfig(root);
+  if (!config.ok) {
+    throw new SlicePlanError('SLICE_PLAN_VERIFY_SCOPE_CONFIG_INVALID',
+      `${config.key} 取值非法：${JSON.stringify(config.value)}（slice_scope 只允许 auto / baseline / owned，`
+      + 'slice_scope_threshold 必须是正整数）；两产物均未落盘');
+  }
+  if (config.slice_scope !== 'auto') return config.slice_scope;
+  return extractDefinedVerificationIds(root).length >= config.slice_scope_threshold ? 'owned' : 'baseline';
+}
+
+/**
+ * 决定本次写入的 `verify_scope`（根规范 §2.3.2 / §2.4，功能规格 §2.101.3），取第一条成立的：
+ * 同一划分沿用旧值 → 旧 manifest 可用但划分改变则重判 → 旧 manifest 不可用则从账本恢复
+ * （单命中采用、双命中拒绝、零命中重判）。全部发生在任何写入之前。
+ */
+function resolveVerifyScope(
+  root: string,
+  proposalDir: string,
+  manifestPath: string,
+  manifest: TestSliceManifestV1,
+): { scope: SliceVerifyScope; source: VerifyScopeSource } {
+  const old = readUsableOldManifest(manifestPath);
+  if (old) {
+    if (sameSlicePartition(old.slices, manifest.slices)) return { scope: old.scope, source: 'retained' };
+    return { scope: decideVerifyScope(root), source: 'decided' };
+  }
+  const recovered = recoverVerifyScopeFromLedger(proposalDir, manifest);
+  if (recovered.kind === 'hit') return { scope: recovered.scope, source: 'recovered' };
+  if (recovered.kind === 'ambiguous') {
+    throw new SlicePlanError('SLICE_PLAN_VERIFY_SCOPE_AMBIGUOUS',
+      `无法唯一恢复冻结的验收范围：checkpoint 账本中当前划分在 baseline（${recovered.identities.baseline}）`
+      + `与 owned（${recovered.identities.owned}）两个候选身份下都有 PASS 行（slice_id：${recovered.slice_ids.join(', ')}）；`
+      + '两产物均未落盘，需人工确认后处置');
+  }
+  return { scope: decideVerifyScope(root), source: 'decided' };
 }
 
 function resolveActiveProposal(root: string, explicitSlug?: string): { slug: string; proposalDir: string } {
@@ -298,6 +373,10 @@ export function planSlices(root: string, slicesFile: string, explicitSlug?: stri
     slices,
   };
 
+  // slice-verify-efficient-mode：验收范围在任何写入之前冻结（根规范 §2.3.2 / §2.4）。
+  const verifyScope = resolveVerifyScope(root, proposalDir, manifestPath, manifest);
+  manifest.verify_scope = verifyScope.scope;
+
   // ── fail-closed 落盘（根规范 §2.2.1 / §10，功能规格 §2.78.2）──
   // 两产物先各写同目录临时文件并 fsync/关闭；随后以**读取侧同一判据**对「即将生效的这一对
   // 产物」整体判定；全过才逐一原子 rename，任一不过即删除临时文件——正式产物字节零改写。
@@ -327,6 +406,8 @@ export function planSlices(root: string, slicesFile: string, explicitSlug?: stri
     task_fingerprint: manifest.task_fingerprint,
     spec_fingerprint: manifest.spec_fingerprint,
     manifest_path: `logos/changes/${slug}/${TEST_SLICE_MANIFEST}`,
+    verify_scope: verifyScope.scope,
+    verify_scope_source: verifyScope.source,
   };
 }
 
@@ -353,6 +434,7 @@ export function sliceCommand(sub: string | undefined, args: string[], format: Ou
     for (const id of result.slice_ids) console.log(`    - ${id}`);
     console.log(`  manifest：${result.manifest_path}`);
     console.log(`  task_fingerprint：${result.task_fingerprint}`);
+    console.log(`  验收范围：${result.verify_scope}（${result.verify_scope_source}）`);
     console.log('\n下一步：批准切片划分（slice-exit）后开始实现代码。');
   } catch (error) {
     const code = error instanceof SlicePlanError ? error.code : 'SLICE_PLAN_INPUT_INVALID';

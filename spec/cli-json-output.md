@@ -2393,12 +2393,15 @@ git diff --no-relative --name-status -z <base> <head> | openlogos impact --stdin
     "attempted_slice_id": "slice-02-runner",
     "confirmed_slice_ids": ["slice-01-manifest"],
     "eligible_test_ids": ["ST-S31-12", "UT-S31-28"],
-    "pending_test_ids": ["ST-S31-13", "UT-S31-29"]
+    "pending_test_ids": ["ST-S31-13", "UT-S31-29"],
+    "verify_scope": "owned"
   }
 }
 ```
 
-数组稳定排序；同一磁盘状态在 status/next 中逐字段同义。单切片 legacy、docs-only 或已越过 final 的兼容路径可省略整个对象。
+数组稳定排序；同一磁盘状态在 status/next 中逐字段同义。
+
+`verify_scope`（slice-verify-efficient-mode，1.x 可选增量）：manifest 有效时为其冻结的 checkpoint 验收范围 `baseline` / `owned`（manifest 缺该字段时为 `baseline`）；manifest 缺失、非法、不受支持或判定器不适用时为 `null`。`owned` 时 `eligible_test_ids` 不含基线回归用例，宿主可据此只派发覆盖 eligible 的测试、调整派发提示词；final 的 eligible 仍为全部已定义用例。该字段只读自 manifest，status/next 不按当前配置重新判定。打包的 status / next JSON Schema 中 `sliceVerificationState` 已允许附加属性，新增字段不改变既有校验；消费方未识别该字段时按 `baseline` 语义保守处理。单切片 legacy、docs-only 或已越过 final 的兼容路径可省略整个对象。
 
 ### 恢复动作
 
@@ -2643,6 +2646,15 @@ status/next 的模块级 `plan_state.plan_package` 承载完整对象；为便�
 
 成功时 stdout 输出标准 envelope，`data` 至少含 `slice_count`、`slice_ids`、`task_fingerprint`、`spec_fingerprint`、`manifest_path`。失败时走 §6 通用错误 envelope 并非零退出。
 
+`data` 另含（slice-verify-efficient-mode）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `verify_scope` | `"baseline"` \| `"owned"` | 本次写入 manifest 的 checkpoint 验收范围 |
+| `verify_scope_source` | `"retained"` \| `"recovered"` \| `"decided"` | `retained`：同一划分，沿用在盘旧 manifest 的值（旧值缺省视为 `baseline`）；`recovered`：旧 manifest 缺失或不可用，从 checkpoint 账本按候选身份唯一恢复；`decided`：本次按当前配置与用例数判定（真正重划、首次规划，或账本中无当前划分的已确认切片） |
+
+判定规则见根规范 `spec/test-slice-manifest.md` §2.3.2、§2.4。既有五个字段的语义与取值不变。文本模式的成功摘要在 `task_fingerprint` 行之后新增一行「验收范围：<verify_scope>（<verify_scope_source>）」。
+
 ### 稳定错误码
 
 | 错误码 | 触发 |
@@ -2651,6 +2663,8 @@ status/next 的模块级 `plan_state.plan_package` 承载完整对象；为便�
 | `SLICE_PLAN_DUPLICATE_SLICE_ID` | `slice_id` 在提案内重复 |
 | `SLICE_PLAN_UNKNOWN_TEST_ID` | `owned_test_ids` 含未在已合并测试规格中定义的 ID |
 | `SLICE_PLAN_NO_ACTIVE_CHANGE` | 无活跃提案或提案目录缺失 |
+| `SLICE_PLAN_VERIFY_SCOPE_AMBIGUOUS` | 旧 manifest 缺失或不可用，且 checkpoint 账本中当前划分在 `baseline` 与 `owned` 两个候选身份下都有 PASS 行，无法唯一恢复冻结的验收范围；错误 envelope 点名两个候选身份与命中的 `slice_id`（exit 1） |
+| `SLICE_PLAN_VERIFY_SCOPE_CONFIG_INVALID` | 需要判定验收范围时，`verify.slice_scope` 不在 `auto` / `baseline` / `owned` 内，或 `verify.slice_scope_threshold` 不是正整数；沿用与账本恢复路径不触发（exit 1） |
 
 **零副作用（强制）**：任一错误码触发时，`tasks.md` 与 `TEST_SLICE_MANIFEST.json` 均不得被修改。
 

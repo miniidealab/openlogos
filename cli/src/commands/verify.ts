@@ -859,6 +859,12 @@ export function generateReport(
     md += `## Slice Verification\n\n`;
     md += `- Mode: \`${sliceVerification.verify_mode}\`\n`;
     md += `- Attempted slice: ${sliceVerification.attempted_slice_id ? `\`${sliceVerification.attempted_slice_id}\`` : '`null`'}\n`;
+    // slice-verify-efficient-mode：checkpoint 摘要标明冻结的验收范围（spec/test-results.md「checkpoint/final 报告」）
+    if (sliceVerification.verify_mode === 'slice-checkpoint' && sliceVerification.verify_scope) {
+      md += sliceVerification.verify_scope === 'owned'
+        ? '- 验收范围 / Verify scope: `owned`（基线回归由 final 承担 / baseline regression is deferred to the final verify）\n'
+        : '- 验收范围 / Verify scope: `baseline`\n';
+    }
     md += `- Confirmed slices: ${sliceVerification.confirmed_slice_ids.length > 0 ? sliceVerification.confirmed_slice_ids.map(id => `\`${id}\``).join(', ') : '(none)'}\n`;
     md += `- Eligible tests: ${sliceVerification.eligible_test_ids.length}\n`;
     md += `- Pending tests: ${sliceVerification.pending_test_ids.length}\n`;
@@ -1210,9 +1216,12 @@ export function writeModuleAcceptanceReports(
   preRun: VerifyPreRunData,
   sandbox: SandboxData,
   scopeContext: VerifyScopeContext,
-  // 切片核验状态不参与模块报告统计：模块报告恒按完整 U(m)（code-r1 F2）；保留参数位以便调用方显式传入
-  _sliceVerification: SliceVerificationState | null,
+  // 切片核验状态不参与模块报告统计：写出的模块报告恒按完整 U(m)（code-r1 F2）；它只决定 owned checkpoint 是否跳过写入
+  sliceVerification: SliceVerificationState | null,
 ): string[] {
+  // slice-verify-efficient-mode（功能规格 §2.37.4）：owned 范围的 checkpoint 不写、不改模块验收报告——
+  // 模块报告按完整 U(m) 统计，只验收 owned 时会把基线误报为未覆盖；baseline 范围与 final 照旧写。
+  if (sliceVerification?.verify_mode === 'slice-checkpoint' && sliceVerification.verify_scope === 'owned') return [];
   const modules = registeredModules(readProjectYaml(root).data?.modules);
   if (modules.length < 2) return [];
   const coveredIds = scopeContext.scope?.mode === 'module' ? new Set(scopeContext.scope.modules) : new Set(modules.map(m => m.id));
@@ -1439,9 +1448,15 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   const config = readVerifyConfig(root);
   const resultPath = config.resultPath;
   const previousEligible = process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS;
+  const previousSliceScope = process.env.OPENLOGOS_VERIFY_SLICE_SCOPE;
   if (sliceVerification?.eligible_test_ids) {
     process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS = JSON.stringify(sliceVerification.eligible_test_ids);
   }
+  // slice-verify-efficient-mode（spec/test-results.md「三个集合」）：只有 slice-checkpoint 注入验收范围；
+  // final 与非切片 verify 不注入，且不让父进程的同名变量泄漏给预跑命令。
+  const checkpointScope = sliceVerification?.verify_mode === 'slice-checkpoint' ? sliceVerification.verify_scope : null;
+  if (checkpointScope) process.env.OPENLOGOS_VERIFY_SLICE_SCOPE = checkpointScope;
+  else delete process.env.OPENLOGOS_VERIFY_SLICE_SCOPE;
   let preRunResult: RunVerifyPreRunResult;
   try {
     // module-scoped-phase-reports（code-r3 F3）：结果路径落在模块报告保留路径上时，runner 可能按原配置写入保留路径，
@@ -1454,6 +1469,8 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   } finally {
     if (previousEligible === undefined) delete process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS;
     else process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS = previousEligible;
+    if (previousSliceScope === undefined) delete process.env.OPENLOGOS_VERIFY_SLICE_SCOPE;
+    else process.env.OPENLOGOS_VERIFY_SLICE_SCOPE = previousSliceScope;
   }
   const preRun = preRunResult.preRun;
   const sandbox = preRunResult.sandbox;

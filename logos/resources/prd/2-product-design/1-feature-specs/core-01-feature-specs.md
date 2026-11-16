@@ -1525,12 +1525,17 @@ C ∩ R = ∅
 
 同 ID 前后规范化记录相同则留在 B；不同则进入 C。新增进入 C；删除只进入 R；跨 target 迁移视为修改。`MODIFIED` Delta 中原样携带测试行不构成 C。
 
-当 `A` 存在时，`mode=slice-checkpoint`：
+当 `A` 存在时，`mode=slice-checkpoint`，eligible 按 manifest 冻结的验收范围 `verify_scope`（§2.101）分支；缺该字段的旧 manifest 按 `baseline`：
 
 ```text
-eligible_test_ids = B ∪ owned(P) ∪ owned({A})
-pending_test_ids  = C − owned(P) − owned({A})
+verify_scope = baseline:
+  eligible_test_ids = B ∪ owned(P) ∪ owned({A})
+verify_scope = owned:
+  eligible_test_ids = owned(P) ∪ owned({A})
+pending_test_ids    = C − owned(P) − owned({A})      # 两种范围相同
 ```
+
+`owned` 范围下基线 B 不进入 eligible：既不计入分母，也不计 uncovered；基线回归由 final 统一承担。pending 的定义与两种范围无关。
 
 当不存在 `A` 且 `[code]` 顶层及子任务全部完成时，`mode=final`：`eligible_test_ids=D`、`pending_test_ids=[]`。不存在 `A` 但任务未完成属于状态不一致，保守诊断且不得写最终通过。
 
@@ -1543,6 +1548,8 @@ pending_test_ids  = C − owned(P) − owned({A})
 ### 2.37.4 checkpoint Gate
 
 - checkpoint 只按 `eligible_test_ids` 计算 covered/uncovered/pass/fail/skip；`pending_test_ids` 单独呈现，不进入分母或 reporter。
+- checkpoint 执行任何预跑命令前，除既有 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 外再注入 `OPENLOGOS_VERIFY_SLICE_SCOPE=baseline|owned`（取 manifest 冻结值，旧 manifest 为 `baseline`）；final 不注入该变量。runner 只能输出 eligible 内的结果，`owned` 范围下输出基线 ID 同样判 `result_outside_eligible_scope`。
+- `owned` 范围下 checkpoint 照常写共用验收报告（标明验收范围），但**不写、不改**多模块项目各 initial 模块的模块验收报告（§2.99.5 按完整 U(m) 统计，只验收 owned 时会把基线误报为未覆盖）；`baseline` 范围与 final 照旧写模块验收报告。
 - PASS 向 `SLICE_CHECKPOINTS.jsonl` 追加绑定 slice manifest 哈希的事实，不写 `VERIFY_PASS`；等价 PASS 幂等。
 - FAIL 写 `VERIFY_FAIL` 与带稳定 `attempted_slice_id` 的 `LOOP_ITERS`；repair 锁定同一 slice。
 - checkpoint PASS 后清除该切片失败态，下一次选择新的首个未通过切片。
@@ -1573,6 +1580,8 @@ change set 缺失、未知 schema、payload hash/target identity 失配时，不
 - `type=no_delta_spec_complete` 且确无 mergeable delta 时可信派生 `C=[]、R=[]`。
 - 旧活跃 marker 无可信 before snapshot 时保守阻塞，迁移必须另立带可信快照的流程。
 - 未知 change-set 或 slice-manifest 主版本均 fail-closed，不得自动覆盖。
+- 没有 `verify_scope` 字段的旧 manifest 一律按 `baseline` 处理，判定实质身份与升级前逐字节相同，在途提案的已确认 checkpoint 不因升级失效（§2.101.4）。
+- 用例数小于 `verify.slice_scope_threshold` 或配置为 `baseline` 的项目，checkpoint 集合、Gate 与报告与引入 §2.101 前一致，仅多注入 `OPENLOGOS_VERIFY_SLICE_SCOPE=baseline`。
 - RunLogos 的 invalid manifest 消费与 recovery 生产接线不在本功能内改变。
 
 ## 2.38 公共 AI Tool Adapter Registry 与 ZCode 功能规格
@@ -2943,7 +2952,7 @@ openlogos slice plan --file <slices.json> [--format json]
 
 | 保留项 | 说明 |
 |---|---|
-| `verify` 的 `slice-checkpoint` 增量验收 | 收窄验收分母（`eligible = baseline ∪ 已确认切片 ∪ 本次切片`）与收窄实际执行（`OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS`）逐项不变——「每个切片实现后能单独通过验收」是产品能力 |
+| `verify` 的 `slice-checkpoint` 增量验收 | 按 manifest 冻结的验收范围收窄：`baseline` 范围 `eligible = baseline ∪ 已确认切片 ∪ 本次切片`，`owned` 范围 `eligible = 已确认切片 ∪ 本次切片`（§2.101）；收窄实际执行（`OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS`）不变——「每个切片实现后能单独通过验收」是产品能力 |
 | `TEST_SLICE_MANIFEST.json` / `SLICE_CHECKPOINTS.jsonl` | 结构化事实源，保留 |
 | `deriveSliceVerificationState` / `appendSliceCheckpoint` / manifest 读写 | 结构化数据层，一行不动 |
 | `slice_state` / `code_slices_green` / `slice-exit` | 切片循环能力，保留 |
@@ -5714,3 +5723,62 @@ verify 与 smoke 的报告写入允许路径扩展到对应模块报告（`logos
 - 规范：`spec/branch-sync.md`（配置项契约见 §4.8；`spec/logos.config.schema.json` 的 `branch_sync` 定义随实现交付）；`spec/cli-json-output.md`「`openlogos branch sync|status --format json`」。
 - 架构：「五十六、提案分支同步：同步处置清单与登记表合并」；场景：`core-S44-branch-sync-generated-files.md`；交互设计：「S44: 提案分支同步主分支 — 交互规格」。
 - 测试：`core-S44-test-cases.md`。
+
+## 2.101 切片 checkpoint 验收范围（verify_scope）
+
+> 来源变更：slice-verify-efficient-mode（决策 C01、C02、C03；proposal-r1 F1 处置）。权威格式见 `spec/test-slice-manifest.md` §2.3、§2.4、§3、§6.1、§7，`spec/test-results.md`「切片 checkpoint 的结果集合与 pending 语义」，`spec/cli-json-output.md`「status/next slice_verification_state」与「openlogos slice plan 输出合同」；本节描述用户可见行为。场景：S13「S13 切片 checkpoint 的 owned 验收范围」、S32「S32 切片规划冻结验收范围时序」。
+
+### 2.101.1 问题
+
+§2.37.2 的 checkpoint 集合把基线回归集 B（本提案未修改的全部既有用例）放进每一片的 eligible。用例规模大的项目里 B 占 eligible 的绝大部分（实测 4 个切片的 eligible 为 9640～9660 个，而各片 owned 只有 2～26 个），多切片提案的大半时间花在反复回归同一批既有用例上；这些回归在 final 还会再全量跑一次，checkpoint 阶段的基线回归只是把发现回归的时间点提前。用例规模小的项目基线回归几乎没有成本，现行做法仍然合适。
+
+### 2.101.2 配置
+
+`logos/logos.config.json` 的 `verify` 节点新增两个可选字段（本节为其权威定义；`spec/logos.config.schema.json` 的 `verify` 节点未限制额外属性，两字段不会被 schema 拒绝，schema 补录另案处理，取值合法性由 CLI 在 `slice plan` 判定路径上校验）：
+
+| 字段 | 取值 | 缺省 | 含义 |
+|---|---|---|---|
+| `verify.slice_scope` | `auto` / `baseline` / `owned` | `auto` | `auto`：按用例数与阈值判定；`baseline`：保持现行行为（每片回归基线）；`owned`：不论用例数一律只验收 owned |
+| `verify.slice_scope_threshold` | 正整数 | `1000` | `auto` 时的判定阈值 |
+
+`auto` 的判定：`openlogos slice plan` 落盘那一刻已合并测试规格中已定义的非 manual UT/ST 用例数（集合 D 的大小，不与模块范围求交）大于等于阈值取 `owned`，否则取 `baseline`。判定只发生在「新划分」时（§2.101.3）。需要判定而两字段取值非法（`slice_scope` 不在枚举内、`slice_scope_threshold` 不是正整数）时，`slice plan` 以 `SLICE_PLAN_VERIFY_SCOPE_CONFIG_INVALID`（exit 1，点名配置项与取值）拒绝且两产物零改写；沿用与账本恢复路径不读配置，不受非法配置影响，恢复入口保持可达。
+
+### 2.101.3 冻结与判定（`openlogos slice plan`）
+
+验收范围在 `slice plan` 落盘时写进 manifest 的 `verify_scope`（`baseline` 或 `owned`），此后用例数变化、配置变化本身都不改变已冻结的范围。因为首次规划、自动恢复与重划是同一个命令（`spec/test-slice-manifest.md` §2.3、§2.4），`slice plan` 按以下顺序决定写入值，取第一条成立的：
+
+| 情形 | 写入的 `verify_scope` | `verify_scope_source` |
+|---|---|---|
+| 在盘旧 manifest 可解析、其 `verify_scope` 合法或缺省，且新输入的 `slices` 与旧 manifest 的 `slices` 逐项相等（同一划分的幂等重跑、invalid / stale 的自动恢复） | 沿用旧值；旧值缺省时为 `baseline` 并显式写出 | `retained` |
+| 在盘旧 manifest 可解析，但 `slices` 不相等（真正重划） | 按当前配置与用例数判定（§2.101.2） | `decided` |
+| 旧 manifest 缺失、不可解析或 `verify_scope` 取值非法（manifest missing / invalid 的自动恢复） | 从 checkpoint 账本恢复：用本次将写出的判定实质分别按 `baseline` 与 `owned` 计算候选身份，与 `SLICE_CHECKPOINTS.jsonl` 中 `openlogos/slice-checkpoint@2` 的 PASS 行比对（只读，不写账本）。恰好一个候选命中 → 采用该值 | `recovered` |
+| 同上，两个候选都命中 | 拒绝写入：错误码 `SLICE_PLAN_VERIFY_SCOPE_AMBIGUOUS`（exit 1），`tasks.md` 与 manifest 零改写；不得按当前配置择一 | — |
+| 同上，两个候选都不命中（当前划分没有任何已确认切片，无进度可保） | 按当前配置与用例数判定 | `decided` |
+
+「`slices` 逐项相等」与重划判据同源：比较的是即将写出的 `slices` 数组与旧 manifest 的 `slices` 数组（逐字段、保序），不比较 `generated_at` 或指纹。`@1` 账本行按文件字节绑定，无法被重建的 manifest 命中，不参与恢复。
+
+### 2.101.4 身份与兼容
+
+manifest 判定实质身份（`spec/test-slice-manifest.md` §6.1）只在 `verify_scope = owned` 时把该字段加入哈希输入；`baseline` 与字段缺省按现行公式计算，与升级前逐字节相同。因此：
+
+- 升级不使任何在途提案的已确认 checkpoint 失效；旧 manifest 被同一划分重跑补写 `verify_scope: "baseline"` 后身份不变。
+- 同一划分的 `baseline` 与 `owned` 两份 manifest 身份不同，PASS checkpoint 不会跨范围冒充。
+
+### 2.101.5 checkpoint 行为
+
+- 集合：`owned` 范围 `eligible = owned(P) ∪ owned({A})`，`baseline` 范围不变（§2.37.2）；pending 两者相同。final 的集合（`eligible = D`）、100% 覆盖、一致性与 `VERIFY_PASS` 写入规则全部不变，作为唯一的全量回归门。
+- 注入：checkpoint 预跑前注入 `OPENLOGOS_VERIFY_SLICE_SCOPE`（§2.37.4）；宿主的 runner 可据此只运行覆盖 eligible 的测试文件。ID 到测试文件的映射由各项目 runner 自行决定，OpenLogos 不消费 `runner_selectors`。
+- 报告：共用验收报告的 checkpoint 摘要新增「验收范围」行（`baseline` / `owned`）；`owned` 时注明「基线回归由 final 承担」。`owned` 范围的 checkpoint 不写、不改模块验收报告（§2.37.4）。
+- 与模块范围（§2.96）叠加：`owned` 范围下 eligible 不含 B，与范围 S 求交后仍为 `owned(P) ∪ owned({A})`（变更测试 C 始终在 S 内）。
+
+### 2.101.6 机器输出
+
+- `status` / `next` 的 `slice_verification_state` 新增 `verify_scope`：manifest 有效时为其冻结值（缺省为 `baseline`），manifest 缺失 / 非法 / 不适用时为 `null`。
+- `openlogos slice plan` 成功输出新增 `verify_scope` 与 `verify_scope_source`（`retained` / `recovered` / `decided`）；文本摘要新增一行「验收范围」。既有五个 `data` 字段的语义与取值不变。
+
+### 2.101.7 非目标
+
+- 不改 final：仍跑全量、仍要求 100% 覆盖。
+- 不按全量耗时自动判定范围（耗时随机器负载波动）；不按「触达场景的全部既有用例」划范围（大场景上等于近全量）。
+- 不新增 CLI 参数；不改 checkpoint 账本格式与采信规则。
+- 宿主侧 runner 选文件、派发提示词与代码评审顺序归 RunLogos 提案 `driver-efficient-verify-mode`。

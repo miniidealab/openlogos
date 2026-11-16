@@ -370,7 +370,7 @@
 | UT-S32-100 | 非法 `spec_targets` 被写入口拒绝 | 构造合法度其余各项均满足、仅某片 `spec_targets` 含不在 `logos/resources/test/` 下路径的 `slices.json`（复刻 2026-09-10 事故输入：把全部 7 个 merge 目标填入）→ `slice plan` **非零退出**且退出码为 2；stdout 逐条列出 validator violations，每条含 `code` / `path` / `message` / `fix_hint` 且 `path` 精确指向出问题的切片与字段。**修复前该输入被写入口放行、两产物照常落盘，直到下游 `next` 才判 `test-slice-manifest-invalid`** |
 | UT-S32-101 | 拒绝时两产物零改写（原子性） | 前置：`tasks.md` 与 `TEST_SLICE_MANIFEST.json` 已有有效内容，记录二者字节与 mtime。以 UT-S32-100 的非法输入执行 → 两文件的**字节与 mtime 均不变**；提案目录下不残留任何临时文件。特别地，`tasks.md` 不得出现「已被新 `[code]` 段覆盖」的中间态——**修复前的实现先以普通 `writeFileSync` 提交 `tasks.md` 再写 manifest，该断言必失败** |
 | UT-S32-102 | 判据取自读取侧单点，写入口无副本 | 参数化构造读取侧 `deriveSliceVerificationState` 判为 `invalid` 的各类输入（`spec_targets` 越界、`owned_test_ids` 未归属 / 不存在、`slice_id` 重复、`task_text` 空、数组字段为空）→ 每一类均被 `slice plan` 拒绝，且其输出的 violation `code` 与直接调用读取侧 validator 对同一产物所得**逐条相等**（集合、顺序、`fix_hint` 全同）。断言写入侧不产生读取侧没有的码、也不遗漏读取侧有的码 |
-| UT-S32-103 | 合法输入零行为变化 | 以既有合法 `slices.json`（≥2 切片）执行 → exit 0；`[code]` 段文本与条目顺序、`TEST_SLICE_MANIFEST.json` 内容、五个 `data` 字段、人读摘要与本变更前**逐字节一致**；`task_fingerprint` 仍等于依刚落盘的 `tasks.md` 重算之值。证明校验前置只增加一次判定，不改变任何合法产出 |
+| UT-S32-103 | 合法输入零行为变化 | 以既有合法 `slices.json`（≥2 切片）执行 → exit 0；`[code]` 段文本与条目顺序、五个 `data` 字段与本变更前**逐字节一致**；`TEST_SLICE_MANIFEST.json` 除新增的 `verify_scope` 字段外逐字节一致，`data` 除新增的 `verify_scope` / `verify_scope_source` 外不变，人读摘要除新增的「验收范围」行外逐字节一致（slice-verify-efficient-mode 修订比较基准，新增部分由 UT-S32-116 断言）；`task_fingerprint` 仍等于依刚落盘的 `tasks.md` 重算之值。证明校验前置只增加一次判定，不改变任何合法产出 |
 
 ### 场景测试
 
@@ -392,3 +392,52 @@
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S32"`；失败不得写 pass。
 - 「零改写」必须直接读回磁盘字节（含 mtime）比对，不得以命令 stdout 的自述作为通过依据——本次缺陷的形态正是「命令自称成功而产物不合法」。
 - UT-S32-102 的两侧对照必须调用**同一个** validator 入口取基准值，禁止在测试内复述一份期望违规清单——那会把判据副本从实现搬进测试。
+
+## S32 切片规划冻结验收范围测试
+
+> 覆盖场景 `core-S32-slice-planning.md`「S32 切片规划冻结验收范围时序」（Step 1～8、EX-32.26～EX-32.32），功能规格 §2.101.2～§2.101.6，根规范 `spec/test-slice-manifest.md` §2.3.2、§2.4、§3、§6.1，`spec/cli-json-output.md`「status/next slice_verification_state」「openlogos slice plan 输出合同」，决策 C02、proposal-r1 F1。既有 UT-S32-90～UT-S32-103、ST-S32-40～ST-S32-43（受控写入口、checkbox 保留、身份绑定、fail-closed）作为回归守护。测试实现必须写入 OpenLogos reporter（`logos/resources/verify/test-results.jsonl`），测试名包含对应 ID，`scenario_id="S32"`。
+>
+> **夹具 FZ**：`mktemp -d` 一次性 git 项目，单模块 `core`（launched），活跃提案已 spec-complete。已合并测试规格共定义 N 个非 manual UT/ST 用例（各用例按需在三个变更用例之外增减基线用例来构造 N，故恒有 N≥3），另含 1 个 `[manual]` 用例；C = {UT-S90-01, UT-S90-02, UT-S90-03}。`slices.json` 两片：`slice-a` 拥有 UT-S90-01、UT-S90-02，`slice-b` 拥有 UT-S90-03。**`slices-v2.json`**：把 UT-S90-02 从 `slice-a` 移到 `slice-b`（划分改变）。「切片一已通过」指账本中有一行身份匹配当前 manifest 的 `openlogos/slice-checkpoint@2` `slice-a` PASS。
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S32-104 | `auto` 阈值两侧的判定 | 配置缺省（`auto` / 1000）：N=999 → 首次 `slice plan` 写 `verify_scope: "baseline"`；N=1000 → 写 `"owned"`；`[manual]` 用例不计入 N（N=999 加 1 个 manual 仍为 `baseline`）。配置 `slice_scope_threshold: 4`：N=3（夹具 FZ 仅含三个变更用例）→ `baseline`、N=4（另加一个基线用例）→ `owned`。两种情形 `verify_scope_source` 均为 `decided`。启用模块范围的多模块夹具中 N 按全部已定义用例计，不与模块范围求交 |
+| UT-S32-105 | `baseline` / `owned` 强制 | N=5000 且 `slice_scope: "baseline"` → 写 `baseline`；N=3（夹具 FZ 仅含三个变更用例，远低于缺省阈值）且 `slice_scope: "owned"` → 写 `owned`；均为 `decided` |
+| UT-S32-106 | 配置非法只在判定路径拒绝 | `slice_scope: "full"` 或 `slice_scope_threshold` 为 0 / -1 / 1.5 / `"1000"`：① 首次规划（需判定）→ exit 1、错误码 `SLICE_PLAN_VERIFY_SCOPE_CONFIG_INVALID` 且点名配置项与取值，`tasks.md` 与 manifest 字节和 mtime 不变；② 在盘已有冻结 `owned` 的有效 manifest、以相同 `slices.json` 重跑（`retained` 路径）→ exit 0，照常沿用 `owned` |
+| UT-S32-107 | 身份：`owned` 进哈希，`baseline` / 缺省与现行公式相同 | 对同一判定实质：缺 `verify_scope` 的 manifest、`verify_scope: "baseline"` 的 manifest 与以引入前公式计算的身份**三者相等**（与固化的引入前 golden 值逐字节相同）；`verify_scope: "owned"` 的身份与之**不同**，且等于在规范化 JSON 中加入 `"verify_scope":"owned"` 后的 SHA-256 |
+| UT-S32-108 | 用例数跨阈值后同一划分重跑沿用 | N=999 首次规划得 `baseline`；把 N 增至 1500 后以相同 `slices.json` 重跑 → 仍为 `baseline`、`verify_scope_source="retained"`、身份不变；反向（首次 `owned` 后 N 降至 10）同样沿用 `owned` |
+| UT-S32-109 | 反例 a：配置变化后的同一划分恢复保留范围、身份与已确认切片 | N=1200、配置缺省，首次规划冻结 `owned`，切片一已通过；把 `slice_scope_threshold` 改为 2000（按当前用例数应判 `baseline`）；分别从两种入口以相同 `slices.json` 重跑：① manifest 被破坏为 invalid（删除顶层必填字段 `module`），`next` 输出 `plan-slices` 后按指引重跑；② manifest 有效时的幂等重跑 → 写 `owned`、`verify_scope_source="retained"`；新 manifest 身份与重跑前相等；`deriveSliceVerificationState()` 的 `confirmed_slice_ids=["slice-a"]`、`attempted_slice_id="slice-b"` |
+| UT-S32-110 | 反例 b：同样配置变化下真正重划重新判定并使旧身份失效 | 同 UT-S32-109 的前置与配置变化，改用 `slices-v2.json` 重跑 → 写 `baseline`、`verify_scope_source="decided"`；新身份与旧身份不同；`confirmed_slice_ids=[]`、`attempted_slice_id="slice-a"`；`SLICE_CHECKPOINTS.jsonl` 字节不变（旧行保留审计） |
+| UT-S32-111 | 旧 manifest 缺 `verify_scope` 时恢复保留 baseline 与身份 | 以引入前格式写出的 manifest（无该字段）且切片一已通过；N=5000、配置缺省（按当前配置应判 `owned`）；以相同 `slices.json` 重跑 → 写出显式 `verify_scope: "baseline"`、`verify_scope_source="retained"`；身份与重跑前相等；`slice-a` 仍被采信 |
+| UT-S32-112 | manifest 缺失：账本单命中恢复 | 两个变体：① 冻结 `owned` 且切片一已通过；② 冻结 `baseline` 且切片一已通过。删除 `TEST_SLICE_MANIFEST.json`，把配置改为与原值相反的强制取值，以相同 `slices.json` 重跑 → ① 写 `owned`、② 写 `baseline`，`verify_scope_source="recovered"`；身份等于删除前；`slice-a` 仍被采信；账本字节不变 |
+| UT-S32-113 | manifest 缺失：账本双命中拒绝 | 账本中同一划分既有 `baseline` 候选身份的 `slice-a` PASS，又有 `owned` 候选身份的 `slice-a` PASS；manifest 缺失；重跑 → exit 1、错误码 `SLICE_PLAN_VERIFY_SCOPE_AMBIGUOUS`，错误 envelope 点名两个候选身份与命中的 `slice_id`；`tasks.md` 字节与 mtime 不变、manifest 仍不存在、无临时文件残留 |
+| UT-S32-114 | manifest 缺失：账本无命中按当前配置判定 | manifest 缺失，账本分别为：① 不存在；② 只有 `@1` 行（其 `manifest_sha256` 为旧文件字节哈希）；③ 只有身份匹配的 FAIL 行；④ 只有属于另一划分身份的 PASS 行 → 四种均按当前配置判定，`verify_scope_source="decided"`；② 中的 `@1` 行不参与比对 |
+| UT-S32-115 | manifest `verify_scope` 非法值 | 在盘 manifest 写 `verify_scope: "full"`（其余合法）→ `deriveSliceVerificationState()` 为 `invalid`，violation `code=test-slice-manifest-invalid`、`path` 指向 `verify_scope`、带 `fix_hint`；`next` 输出 `next_node.id=plan-slices`；verify 不启动 runner、不写 `VERIFY_FAIL` / `LOOP_ITERS`；随后以相同 `slices.json` 重跑 `slice plan` 时不沿用该值，走账本恢复（有匹配 PASS 时为 `recovered`） |
+| UT-S32-116 | `slice plan` 输出带出范围与来源 | 成功执行 `slice plan --format json` → `data.verify_scope` 与 `data.verify_scope_source` 存在且取值与写入 manifest 的一致，既有五个字段不变；文本模式在 `task_fingerprint` 行之后恰有一行「验收范围：<verify_scope>（<verify_scope_source>）」；拒绝路径不输出这两个字段 |
+| UT-S32-117 | `status` / `next` 的 `slice_verification_state.verify_scope` | manifest 有效且为 `owned` → 两命令均为 `"owned"`；旧 manifest 无该字段 → `"baseline"`；manifest 缺失或 invalid → `null`；同一磁盘状态下 status 与 next 逐字段同义；两命令输出通过打包的 status / next JSON Schema 校验；修改配置后不重新 `slice plan` 时该字段不变 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S32-44 | 配置变化后恢复保进度、重划才重判的端到端 | 真实 CLI，临时项目（N=1200、配置缺省）：① `slice plan` → `owned`；② `verify` 通过切片一并勾选；③ 把 `slice_scope_threshold` 改为 2000，破坏 manifest 使 `next` 输出 `plan-slices`，按 `next` 指引以相同 `slices.json` 重跑 `slice plan` → `owned`、`retained`；④ `next --format json` 的 `confirmed_slice_ids=["slice-a"]`、`attempted_slice_id="slice-b"`，`verify` 只验收 3 个 owned 用例；⑤ 改用 `slices-v2.json` 重跑 → `baseline`、`decided`，`next` 的 `confirmed_slice_ids=[]` 且 eligible 含基线用例。全程未手工编辑 `[code]` 或删除 OpenLogos 产物 |
+| ST-S32-45 | manifest 缺失时由账本恢复冻结范围的端到端 | 真实 CLI：① `slice plan`（`slice_scope: "owned"`）并通过切片一；② 删除 `TEST_SLICE_MANIFEST.json`、把配置改为 `slice_scope: "baseline"`；③ `next` 输出 `test-slice-manifest-missing` 与 `plan-slices`；④ 以相同 `slices.json` 重跑 → `owned`、`recovered`；⑤ `verify` 继续从切片二开始、eligible 不含基线用例，切片一不被重跑验收 |
+
+### 追溯与覆盖
+
+- AC 用例数阈值与强制配置的判定：UT-S32-104、UT-S32-105、UT-S32-106。
+- AC 范围计入身份且 baseline / 缺省身份与升级前相同：UT-S32-107、UT-S32-111。
+- AC 冻结：用例数或配置变化不改变已冻结范围：UT-S32-108、UT-S32-109、ST-S32-44 步骤③④。
+- AC 真正重划重新判定并使旧身份失效：UT-S32-110、ST-S32-44 步骤⑤。
+- AC manifest 缺失时从账本恢复、双命中拒绝、无命中按配置判定：UT-S32-112、UT-S32-113、UT-S32-114、ST-S32-45。
+- AC 非法 `verify_scope` 走既有恢复：UT-S32-115。
+- AC 机器输出：UT-S32-116、UT-S32-117；UT-S32-103 修订后的比较基准。
+- 功能规格：§2.101；根规范：`spec/test-slice-manifest.md` §2.3.2、§2.4、§3、§6.1；场景：S32 EX-32.26～EX-32.32。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S32"`；失败不得写 pass。
+- 身份相等 / 不等必须调用生产代码的同一身份函数取值；UT-S32-107 的引入前 golden 值以固化常量断言，不得在测试内复写一份公式。
+- 「零改写」「账本不变」直接读回磁盘字节与 mtime 比对，不以命令 stdout 自述为依据。

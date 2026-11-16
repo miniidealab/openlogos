@@ -49,8 +49,22 @@ export interface TestSliceManifestV1 {
   task_fingerprint: string;
   spec_fingerprint: string;
   generated_at: string;
+  /**
+   * checkpoint 验收范围（slice-verify-efficient-mode，根规范 §3）。1.x 增量字段：缺省按 `baseline`
+   * 读取；`owned` 时计入判定实质身份（§6.1）。由 `slice plan` 按 §2.3.2 / §2.4 冻结写入。
+   */
+  verify_scope?: SliceVerifyScope;
   slices: TestSliceManifestSlice[];
   [key: string]: unknown;
+}
+
+/** checkpoint 验收范围：`baseline` 每片回归基线；`owned` 只验收已确认切片与本片的 owned 用例。 */
+export type SliceVerifyScope = 'baseline' | 'owned';
+export const SLICE_VERIFY_SCOPES: readonly SliceVerifyScope[] = ['baseline', 'owned'];
+
+/** manifest 冻结的验收范围；字段缺省（升级前规划的 manifest）一律按 `baseline`。 */
+export function manifestVerifyScope(manifest: { verify_scope?: unknown }): SliceVerifyScope {
+  return manifest.verify_scope === 'owned' ? 'owned' : 'baseline';
 }
 
 export type TestSliceManifestStatus = 'valid' | 'missing' | 'invalid' | 'stale' | 'unsupported';
@@ -93,6 +107,11 @@ export interface SliceVerificationState {
   confirmed_slice_ids: string[];
   eligible_test_ids: string[];
   pending_test_ids: string[];
+  /**
+   * manifest 冻结的 checkpoint 验收范围（`spec/cli-json-output.md`「status/next slice_verification_state」）。
+   * manifest 有效时为其冻结值（缺省为 `baseline`）；缺失 / 非法 / 不受支持 / stale 时为 `null`。
+   */
+  verify_scope: SliceVerifyScope | null;
   reason?: string;
   human_action_required?: boolean;
   violations?: TestSliceViolation[];
@@ -167,6 +186,7 @@ export function computeSliceManifestIdentity(manifest: {
   task_fingerprint: string;
   spec_fingerprint: string;
   slices: ReadonlyArray<Record<string, unknown>>;
+  verify_scope?: unknown;
 }): string {
   return prefixedSha256(Buffer.from(canonicalJson({
     schema: manifest.schema,
@@ -175,7 +195,67 @@ export function computeSliceManifestIdentity(manifest: {
     slices: manifest.slices,
     task_fingerprint: manifest.task_fingerprint,
     spec_fingerprint: manifest.spec_fingerprint,
+    // §6.1（slice-verify-efficient-mode）：验收范围**只在 owned 时**计入身份——`baseline` 与缺省的
+    // 哈希输入与引入前逐字节相同，升级与补写 `baseline` 都不会作废在途提案的已确认 checkpoint；
+    // 同一划分的 baseline / owned 两份 manifest 身份不同，PASS 不会跨范围冒充。
+    ...(manifest.verify_scope === 'owned' ? { verify_scope: 'owned' } : {}),
   }), 'utf8'));
+}
+
+/**
+ * 两组切片是否为**同一划分**（根规范 §2.3.2，与 §2.4 重划判据同源）：按读取侧的规范化形态
+ * （`task_text` 空白规范化）逐字段、保序比较；不比较 `generated_at` 与指纹。
+ */
+export function sameSlicePartition(
+  a: ReadonlyArray<Record<string, unknown>>,
+  b: ReadonlyArray<Record<string, unknown>>,
+): boolean {
+  const norm = (rows: ReadonlyArray<Record<string, unknown>>) => canonicalJson(rows.map(row => ({
+    ...row,
+    task_text: typeof row.task_text === 'string' ? normalizeText(row.task_text) : row.task_text,
+  })));
+  return norm(a) === norm(b);
+}
+
+/**
+ * 「即将写出的 manifest」在读取侧会得到的判定实质身份——先经读取侧同一 shape 解析
+ * （与 {@link deriveSliceVerificationState} 采信时的输入同形），再求身份。
+ */
+export function identityAsRead(manifest: TestSliceManifestV1, scope: SliceVerifyScope): string {
+  const raw = JSON.parse(JSON.stringify({ ...manifest, verify_scope: scope })) as unknown;
+  const parsed = parseManifestShape(raw, []);
+  return computeSliceManifestIdentity(parsed ?? { ...manifest, verify_scope: scope });
+}
+
+export type LedgerScopeRecovery =
+  | { kind: 'hit'; scope: SliceVerifyScope }
+  | { kind: 'ambiguous'; identities: Record<SliceVerifyScope, string>; slice_ids: string[] }
+  | { kind: 'none' };
+
+/**
+ * 旧 manifest 缺失 / 不可用时，从 checkpoint 账本恢复冻结的验收范围（根规范 §2.3.2）。
+ *
+ * 只读账本：以即将写出的判定实质分别按 baseline / owned 计算候选身份，与 `@2` 的 PASS 行比对。
+ * `@1` 行按文件字节绑定，重建的 manifest 不可能命中，不参与比对。
+ */
+export function recoverVerifyScopeFromLedger(proposalDir: string, manifest: TestSliceManifestV1): LedgerScopeRecovery {
+  const identities: Record<SliceVerifyScope, string> = {
+    baseline: identityAsRead(manifest, 'baseline'),
+    owned: identityAsRead(manifest, 'owned'),
+  };
+  const passRows = readCheckpointRows(proposalDir)
+    .filter(row => row.result === 'PASS' && row.schema === SLICE_CHECKPOINT_SCHEMA);
+  const hits = SLICE_VERIFY_SCOPES.filter(scope => passRows.some(row => row.manifest_sha256 === identities[scope]));
+  if (hits.length === 1) return { kind: 'hit', scope: hits[0] };
+  if (hits.length === 2) {
+    const ids = new Set(Object.values(identities));
+    return {
+      kind: 'ambiguous',
+      identities,
+      slice_ids: uniqSorted(passRows.filter(row => ids.has(row.manifest_sha256)).map(row => row.slice_id)),
+    };
+  }
+  return { kind: 'none' };
 }
 
 function normalizeText(text: string): string {
@@ -339,6 +419,12 @@ function parseManifestShape(raw: unknown, violations: TestSliceViolation[]): Tes
   if (typeof top.generated_at === 'string' && Number.isNaN(Date.parse(top.generated_at))) {
     violations.push(violation('test-slice-manifest-invalid', '$.generated_at', 'generated_at 不是合法 ISO 8601 时间', '使用 new Date().toISOString()。'));
   }
+  // slice-verify-efficient-mode（根规范 §3）：1.x 增量字段，缺省合法；在场时只接受 baseline / owned。
+  if ('verify_scope' in top && !SLICE_VERIFY_SCOPES.includes(top.verify_scope as SliceVerifyScope)) {
+    violations.push(violation('test-slice-manifest-invalid', '$.verify_scope',
+      `verify_scope 取值非法：${JSON.stringify(top.verify_scope)}（只允许 baseline / owned）`,
+      '以相同 slices.json 重跑 openlogos slice plan 重建 manifest；禁止手工改写该字段。'));
+  }
   if (!Array.isArray(top.slices) || top.slices.length === 0) {
     violations.push(violation('test-slice-manifest-invalid', '$.slices', 'slices 必须是非空数组', '为每个顶层 [code] 切片生成一项。'));
     return null;
@@ -438,6 +524,7 @@ function emptyState(
     confirmed_slice_ids: [],
     eligible_test_ids: [],
     pending_test_ids: [],
+    verify_scope: null,
     reason,
     ...(violations.length > 0 ? { violations: sortViolations(violations) } : {}),
     manifest: summary,
@@ -696,7 +783,12 @@ export function deriveSliceVerificationState(
   const attemptedOwnedAll = attempted?.owned_test_ids ?? [];
   const confirmedOwned = confirmedOwnedAll.filter(id => definedSet.has(id));
   const attemptedOwned = attemptedOwnedAll.filter(id => definedSet.has(id));
-  const eligible = uniqSorted([...baseline, ...confirmedOwned, ...attemptedOwned]);
+  // §7（slice-verify-efficient-mode）：owned 范围下基线 B 不进 eligible——不计分母、不计 uncovered，
+  // 由 final 统一回归；baseline（含缺省）与引入前逐字一致。pending 与范围无关。
+  const verifyScope = manifestVerifyScope(manifest);
+  const eligible = verifyScope === 'owned'
+    ? uniqSorted([...confirmedOwned, ...attemptedOwned])
+    : uniqSorted([...baseline, ...confirmedOwned, ...attemptedOwned]);
   const pending = attempted
     ? changedIds.filter(id => !confirmedOwnedAll.includes(id) && !attemptedOwnedAll.includes(id)).sort()
     : [];
@@ -708,6 +800,7 @@ export function deriveSliceVerificationState(
       ]),
       confirmed_slice_ids: confirmed,
       eligible_test_ids: defined,
+      verify_scope: verifyScope,
       manifest_data: manifest,
       checkpoint: { final: false, result: null, confirmed_slice_ids: confirmed },
       human_action_required: true,
@@ -721,6 +814,7 @@ export function deriveSliceVerificationState(
     confirmed_slice_ids: confirmed,
     eligible_test_ids: attempted ? eligible : defined,
     pending_test_ids: attempted ? pending : [],
+    verify_scope: verifyScope,
     manifest: { ...summary, status: 'valid' },
     checkpoint: { final: !attempted, result: null, confirmed_slice_ids: confirmed },
     manifest_data: manifest,

@@ -796,3 +796,110 @@ sequenceDiagram
 - 需求：`core-01-requirements.md`「S13 按模块限定 verify 范围验收补充」。
 - 功能规格：§2.96。
 - 测试：`core-S13-test-cases.md`「S13 按模块限定 verify 范围测试」——UT-S13-104～UT-S13-121、ST-S13-27～ST-S13-32；smoke：SMOKE-core-280～284。
+
+## S13 切片 checkpoint 的 owned 验收范围
+
+### 场景目标
+
+用例规模达到阈值的项目，多切片提案的每次 slice-checkpoint 只验收本片与已通过前序切片的 owned 用例，不再回归基线集 B；所有切片完成后由 final 跑一次全量回归。本子场景是「切片 checkpoint 与 final verify 时序」在 manifest 冻结 `verify_scope: "owned"` 时的分支；`baseline` 范围（含旧 manifest 缺该字段）沿用原时序，行为不变。
+
+### 参与者
+
+- **用户或自动化宿主**：执行 `openlogos verify`，读取 `status` / `next` 的 `slice_verification_state.verify_scope` 调整派发。
+- **openlogos verify（CLI）**：读取 manifest 冻结的验收范围，计算 eligible / pending，注入环境变量，执行 Gate 并写报告。
+- **SliceVerificationService**（`deriveSliceVerificationState()`）：按 `verify_scope` 分支计算集合，与 status / next 同源。
+- **测试 runner / OpenLogos reporter**：据 `OPENLOGOS_VERIFY_SLICE_SCOPE` 与 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 只运行覆盖 eligible 的测试，只输出 eligible 内结果。
+- **manifest / checkpoint 账本 / 验收报告**：`TEST_SLICE_MANIFEST.json`、`SLICE_CHECKPOINTS.jsonl`、`acceptance-report.md` 与多模块项目的 `<m>-acceptance-report.md`。
+
+### 前置条件
+
+- 活跃 launched 提案已 spec-complete，`openlogos slice plan` 已按 S32「S32 切片规划冻结验收范围时序」写出有效 manifest，且其 `verify_scope` 为 `owned`。
+- 仍有未通过 checkpoint 的切片（存在 attempted slice A），或全部切片已通过且 `[code]` 全部勾选（进入 final）。
+
+### 成功后置条件
+
+- checkpoint：eligible 为 `owned(P) ∪ owned({A})`；基线 ID 不进入分母、不计 uncovered；PASS 追加绑定当前 manifest 身份的 checkpoint 行，不写 `VERIFY_PASS`；共用验收报告标明验收范围；模块验收报告字节不变。
+- final：eligible 为全部已定义非 manual 用例 D，100% 覆盖、一致性与 `VERIFY_PASS` 规则与 `baseline` 范围相同，模块验收报告照常写出。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    actor Caller as 用户/宿主
+    participant CLI as openlogos verify
+    participant SV as SliceVerificationService
+    participant Runner as 测试 runner
+    participant State as manifest/checkpoint/报告
+
+    Caller->>CLI: Step 1: verify [--format json]
+    CLI->>SV: Step 2: 校验 manifest 并读取冻结的 verify_scope（缺省 baseline）
+    alt 仍有未确认切片
+        SV-->>CLI: Step 3: mode=slice-checkpoint, eligible=owned(P)∪owned(A), pending=C−owned(P)−owned(A)
+        CLI->>Runner: Step 4: 注入 OPENLOGOS_VERIFY_SLICE_SCOPE=owned 与收窄后的 OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS，执行预跑
+        Runner-->>CLI: Step 5: reporter JSONL（只含 eligible 内结果）
+        CLI->>CLI: Step 6: 按 eligible 执行覆盖、合法性、去重与通过率 Gate；基线 ID 结果判 result_outside_eligible_scope
+        alt eligible 全覆盖且通过
+            CLI->>State: Step 7a: 追加 PASS checkpoint，写共用报告（验收范围 owned），不写模块验收报告
+            CLI-->>Caller: Step 8a: checkpoint PASS，不写 VERIFY_PASS
+        else eligible 失败或越界
+            CLI->>State: Step 7b: 写 VERIFY_FAIL + LOOP_ITERS(attempted_slice_id)，写共用报告，不写模块验收报告
+            CLI-->>Caller: Step 8b: checkpoint FAIL，repair 锁定同一切片
+        end
+    else 所有切片已确认且任务完成
+        SV-->>CLI: Step 9: mode=final, eligible=D, pending=[]
+        CLI->>Runner: Step 10: 不注入 OPENLOGOS_VERIFY_SLICE_SCOPE，执行全量测试
+        Runner-->>CLI: Step 11: reporter JSONL
+        CLI->>State: Step 12: 全量 Gate；PASS 写 VERIFY_PASS，写共用报告与模块验收报告
+        CLI-->>Caller: Step 13: final PASS / FAIL
+    end
+```
+
+### 步骤说明
+
+1. **用户或宿主**执行 `openlogos verify`；宿主可先从 `status` / `next` 的 `slice_verification_state.verify_scope` 得知本提案的验收范围。
+2. **CLI** 在运行任何测试前校验 manifest，读取冻结的 `verify_scope`；字段缺省按 `baseline`，取值非法时 manifest 判 `test-slice-manifest-invalid`，转 S32 恢复路径，不启动 runner。
+3. **SliceVerificationService** 在 `owned` 范围下计算 `eligible = owned(P) ∪ owned({A})`，pending 与 `baseline` 范围相同；启用模块范围时先与范围 S 求交，C 始终在 S 内，结果不变。
+4. **CLI** 在执行预跑命令前注入 `OPENLOGOS_VERIFY_SLICE_SCOPE=owned` 与收窄后的 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS`；runner 据此只运行覆盖 eligible 的测试，ID 到测试文件的映射由项目 runner 自行决定。
+5. **Runner** 通过 OpenLogos reporter 只输出 eligible 内的结果。
+6. **CLI** 只按 eligible 执行既有 Gate；基线与 pending ID 的结果一律判 `result_outside_eligible_scope`。
+7. **CLI** 在 PASS 时追加 checkpoint 行（身份含 `verify_scope: "owned"`）；PASS 与 FAIL 都写共用验收报告并标明验收范围；`owned` 范围的 checkpoint 不写、不改模块验收报告。
+8. **CLI** 返回 checkpoint 结论；checkpoint PASS 不写 `VERIFY_PASS`，FAIL 锁定同一 attempted slice。
+9. **SliceVerificationService** 在全部切片确认且 `[code]` 全部勾选时切换为 final，eligible 为 D。
+10. **CLI** final 不注入 `OPENLOGOS_VERIFY_SLICE_SCOPE`，执行全量预跑。
+11. **Runner** 输出全量结果。
+12. **CLI** 以全量 Gate 裁决：100% 覆盖且通过才写 `VERIFY_PASS`；共用与模块验收报告照常写出。基线回归在此处第一次、也是唯一一次被验收。
+13. **CLI** 返回 final 结论。
+
+### 异常与边界
+
+#### EX-11.1: owned 范围下 runner 输出基线用例结果
+- **触发条件**：runner 未按 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 收窄，输出了基线用例的结果行。
+- **期望响应**：既有越界规则不变，以 `result_outside_eligible_scope` 判 checkpoint FAIL，不把基线结果吸收入 eligible。
+- **副作用**：写 `VERIFY_FAIL` 与带 `attempted_slice_id` 的 `LOOP_ITERS`，与其他 checkpoint 失败相同。
+
+#### EX-11.2: 旧 manifest 没有 `verify_scope` 字段
+- **触发条件**：升级前规划的在途提案，manifest 无 `verify_scope`。
+- **期望响应**：按 `baseline` 处理，eligible 含 B，注入 `OPENLOGOS_VERIFY_SLICE_SCOPE=baseline`；判定实质身份与升级前相同，已确认 checkpoint 继续被采信。
+- **副作用**：无。
+
+#### EX-11.3: 多模块项目 owned 范围的 checkpoint
+- **触发条件**：多模块项目，manifest 冻结为 `owned`，checkpoint 完成 Gate 裁决。
+- **期望响应**：共用验收报告照常写；各 initial 模块的 `<m>-acceptance-report.md` 字节与修改时间不变（模块报告按完整 U(m) 统计，只验收 owned 时会把基线误报为未覆盖）。
+- **副作用**：无；final 照常写模块验收报告。
+
+#### EX-11.4: 后续切片改坏了前序切片
+- **触发条件**：`owned` 范围下切片二的实现使切片一的 owned 用例失败。
+- **期望响应**：切片二的 checkpoint eligible 含 `owned(P)`，切片一的用例失败使 checkpoint FAIL，repair 锁定切片二。
+- **副作用**：写 `VERIFY_FAIL` 与 `LOOP_ITERS(attempted_slice_id=切片二)`。
+
+#### EX-11.5: final 发现基线回归
+- **触发条件**：`owned` 范围下所有切片已通过 checkpoint，final 全量中某个基线用例失败。
+- **期望响应**：final FAIL，不得把缺失或失败的基线结果改列 pending；修复目标由失败输出判断。
+- **副作用**：写 `VERIFY_FAIL` 与 final `LOOP_ITERS`，不写 `VERIFY_PASS`。
+
+### 追溯
+
+- 需求：`core-01-requirements.md`「S13/S16/S27/S28/S31/S32 多切片验收边界与自动恢复要求」高效模式验收条件。
+- 功能规格：§2.37.2、§2.37.4、§2.37.8、§2.101。
+- 根规范：`spec/test-slice-manifest.md` §7；`spec/test-results.md`「切片 checkpoint 的结果集合与 pending 语义」。
+- 测试：`core-S13-test-cases.md`「S13 切片 checkpoint owned 验收范围测试」——UT-S13-132～UT-S13-140、ST-S13-35～ST-S13-37。

@@ -86,6 +86,8 @@ manifest 失效（missing / invalid / stale）时，OpenLogos 依 `deriveSliceVe
 
 **恢复重跑保住的不只是 checkbox，还有 checkpoint 账本。** 恢复以逐字相同的 `slices.json` 重建 manifest，其**判定实质**（`slices`、`task_fingerprint`、`spec_fingerprint`）与重建前完全一致，故按 §6.1 算出的身份不变，已确认切片继续被采信、前沿停在首个未确认切片。这条保证同样**由构造完成**——身份只由判定实质决定，不含 `generated_at` 这类写盘时刻的审计字段（§6.1）。§9「恢复仅重建 manifest、保留 checkpoint」由此从名义变为实质。
 
+**恢复重跑同样保住冻结的验收范围。** manifest 的 `verify_scope`（§3）属于判定实质，`owned` 时计入身份（§6.1）。若恢复重跑按当前配置重新判定它，配置或用例数一变，身份就随之变化，已确认切片被作废——恢复反而触发重跑。因此 `slice plan` 只在形成新划分时判定范围，同一划分的重跑沿用冻结值，规则见 §2.3.2。
+
 #### 2.3.1 恢复入口的可达性与产物所有权
 
 恢复入口的可达性是本规范的一部分：**只要判定为可自动恢复（§8 表中「可自动恢复=是」且 `human_action_required=false`），恢复动作就必须真实可执行**。`slice plan` 无前置相位、无活跃名额、无终态短路，任何时刻都接受一次合法输入——这正是删除事务外壳后恢复入口不再可能被永久短路的原因（旧形态下 `completed` 的 `allowed_actions` 为空、恢复事务又创建不出来，提案被永久锁死在 `plan-slices`）。
@@ -94,6 +96,22 @@ manifest 失效（missing / invalid / stale）时，OpenLogos 依 `deriveSliceVe
 
 - **禁止要求消费方删除或改名 OpenLogos 拥有的产物**（`TEST_SLICE_MANIFEST.json` 等）来「腾位」或「触发恢复」。让消费方去改它与「canonical 产物只由 OpenLogos 写」（§2.1）直接冲突。任何把「人工删除产物文件」写进恢复步骤的文档、Skill 或测试夹具都是违规的——**测试夹具尤其**：在夹具里预先删除该文件，等于把人工绕过写进前提，会使本条约束在测试中天然不可见。
 - **文档与投影必须与实际命令面一致。** 恢复指引不得提示已删除的命令面（`slice transaction submit-content / seal / apply / recover / abort / reopen`）；拒绝文案不得断言未发生的前提（例如在写入成功的现场声称「已整体回滚」）。指引不可执行时 Agent 无路可走，会退而写出无人消费的死文件——这是本条被列为硬性要求的实证来由。
+
+#### 2.3.2 验收范围的沿用与恢复（slice-verify-efficient-mode）
+
+`slice plan` 写 manifest 时按下表决定 `verify_scope`，取第一条成立的。判定权与写入权仍在同一进程内（§2.1），不新增恢复相位、开关或状态文件，冻结值只取自既有可信产物：
+
+| 情形 | 写入值 | `verify_scope_source` |
+|---|---|---|
+| 在盘旧 manifest 可解析、schema 主版本为 1、`verify_scope` 合法或缺省，且即将写出的 `slices` 与旧 `slices` 逐项相等 | 旧值；缺省时显式写 `baseline` | `retained` |
+| 旧 manifest 可用，但 `slices` 不相等 | 按 §2.4 重新判定 | `decided` |
+| 旧 manifest 缺失、不可解析或 `verify_scope` 非法 | 从账本恢复：以即将写出的判定实质分别按 `baseline` 与 `owned` 计算 §6.1 身份，与 `SLICE_CHECKPOINTS.jsonl` 中 `openlogos/slice-checkpoint@2` 且 `result=PASS` 的行比对；恰好一个候选命中即采用 | `recovered` |
+| 同上，两个候选都命中 | 拒绝：`SLICE_PLAN_VERIFY_SCOPE_AMBIGUOUS`，两产物零改写；不得按当前配置择一 | — |
+| 同上，都不命中 | 当前划分没有已确认切片、无进度可保，按 §2.4 判定 | `decided` |
+
+- 「逐项相等」比较即将写出的 `slices` 与旧 manifest 的 `slices`（逐字段、保序），与 §2.4 的重划判据同源；不比较 `generated_at`，也不比较指纹——指纹漂移（stale）的恢复正是需要沿用范围的情形。
+- 读账本是只读：`slice plan` 不写 `SLICE_CHECKPOINTS.jsonl`（§2 写入者表不变）。`@1` 行按 manifest 文件字节绑定，重建的 manifest 不可能命中，不参与比对。
+- 沿用与账本恢复两条路径不读 `verify` 配置；配置非法只在需要判定时拒绝（`SLICE_PLAN_VERIFY_SCOPE_CONFIG_INVALID`），不得使 §2.3.1 的恢复入口不可达。
 
 ### 2.4 已完成规划的重划
 
@@ -104,6 +122,8 @@ manifest 失效（missing / invalid / stale）时，OpenLogos 依 `deriveSliceVe
 **产物处置**：重跑整体替换 `[code]` 段与 manifest，两者在同一次调用内先后写出（§2.2），任何时刻不得半新半旧。checkbox 按 §2.3 判据**逐条目独立处置**：`task_text` 被改写的切片重置为未勾选，未改写的保留原状态——「划分错了」与「这一片已经做完了」是两件事，不因同批重跑而互相牵连。
 
 重划改变了 `slices`，manifest 的**判定实质身份**随之变化，**verify 只采信身份与当前 manifest 一致的 checkpoint 行**（§6.1）——旧划分的 PASS checkpoint 不得冒充新划分的收敛证据。
+
+**重划重新判定验收范围。** 新划分按当前 `verify.slice_scope` 与 `verify.slice_scope_threshold` 判定 `verify_scope`：`baseline` / `owned` 直接采用；`auto` 时，落盘那一刻已合并测试规格中已定义的非 manual UT/ST 用例数（集合 D 的大小，不与模块范围求交）大于等于阈值（缺省 1000）取 `owned`，否则取 `baseline`。配置取值非法时以 `SLICE_PLAN_VERIFY_SCOPE_CONFIG_INVALID` 拒绝且零副作用。此后提案内用例数或配置的变化都不改变已冻结的范围，直到下一次重划。
 
 该判据必须锚在判定实质上，不能锚在文件字节上：后者对**输入完全没变的空转重跑**也会变化（`generated_at` 每次不同），于是「作废」在两种本该区分的情形里一律发生，这条不变量便失去判别力，同时把 §2.3 的恢复承诺一并推翻。
 
@@ -122,6 +142,7 @@ manifest 失效（missing / invalid / stale）时，OpenLogos 依 `deriveSliceVe
 | `spec_fingerprint` | string | 是 | 同上 |
 | `generated_at` | ISO 8601 string | 是 | 审计字段，不参与 fingerprint |
 | `slices` | array | 是 | 非空、有序、slice ID 唯一 |
+| `verify_scope` | string | 否 | `baseline` 或 `owned`；checkpoint 验收范围（§7），由 `slice plan` 按 §2.3.2 / §2.4 写入；缺省按 `baseline` 读取 |
 
 每个 `slices[]` 项：
 
@@ -135,6 +156,8 @@ manifest 失效（missing / invalid / stale）时，OpenLogos 依 `deriveSliceVe
 
 v1 对未知顶层/切片字段允许读取并保留，以支持 1.x 增量；未知 `schema` 主版本不得覆盖，状态为 `unsupported`。
 
+`verify_scope` 是 1.x 增量字段：缺省的旧 manifest 按 `baseline` 读取，行为与引入前相同；在场但取值不是 `baseline` / `owned` 时判 `test-slice-manifest-invalid`（violation `path` 为 `verify_scope`），按 §9 自动恢复。新写出的 manifest 一律显式写出该字段。
+
 示例：
 
 ```json
@@ -145,6 +168,7 @@ v1 对未知顶层/切片字段允许读取并保留，以支持 1.x 增量；�
   "task_fingerprint": "sha256:5f2f8f536ab387bd9b2738e70c4e5416c328e4c91e8f4bb90ff0d99688c5c9bb",
   "spec_fingerprint": "sha256:c2fda0fb20b808d3eb0953c71b37b1fefdbbb5b7c2e5bb2a1ed086e3a101bf29",
   "generated_at": "2026-08-15T00:00:00.000Z",
+  "verify_scope": "owned",
   "slices": [
     {
       "slice_id": "slice-01-manifest-validation",
@@ -200,6 +224,8 @@ R ∩ D = ∅
 
 `manifest_sha256` 承载的语义是「这条 PASS 属于**哪一份切片划分**」。自 `openlogos/slice-checkpoint@2` 起，该值为 manifest **判定实质的规范化哈希**：对 `schema`、`change`、`module`、`slices`（逐字段、保序）、`task_fingerprint`、`spec_fingerprint` 求规范化 JSON 的 SHA-256，**排除 `generated_at`**。
 
+**`verify_scope` 只在取值为 `owned` 时计入身份**：此时规范化 JSON 额外含 `"verify_scope": "owned"`；取值 `baseline` 或字段缺省时，哈希输入与上句逐字节相同。这样升级不改变任何既有 manifest 的身份，旧 manifest 被补写 `verify_scope: "baseline"` 后身份也不变；而同一划分的 `baseline` 与 `owned` 两份 manifest 身份不同，PASS checkpoint 不会跨验收范围冒充。验收范围计入身份的理由与指纹相同：它决定了这条 PASS 验收过哪些用例。
+
 排除 `generated_at` 是规范性要求，不是实现口味：它是**无判定价值的写盘时刻**——两次调用相差毫秒即不同，而这种不同不携带任何关于「切片划分或其依赖是否改变」的信息，故不得进入任何流程分支的条件（`spec/cli-json-output.md`「指纹语义（降级为观察）」）。此前该值取 manifest **整份文件字节**的 SHA-256，于是一个只差毫秒的时间戳即可让整本账本失效——§2.3 的恢复重跑以逐字相同的输入重建 manifest 时 `generated_at` 必然不同，§9 承诺的「保留 checkpoint」随之名存实亡。
 
 **这与两个 fingerprint 计入身份并不矛盾。** 指纹有两种角色，被禁止的只是其中一种：把指纹的 stale **漂移诊断**升格为独立阻塞门（功能规格 §2.68.4）——那回答的是「产物写出后依据有没有被改过」。身份回答的是另一个问题：「某条已落盘的 PASS 属不属于**当前这份**划分」，而 `task_fingerprint` / `spec_fingerprint` 恰好是这个问题的答案所在，故必须计入。角色区分见 `spec/cli-json-output.md`「指纹语义（降级为观察）」。反过来说，若以「指纹是观察面」为由把它们排除出身份，「划分或其依赖的规格已经变了」这件事在归属判定中就不可见，旧绿得以冒充新证据。
@@ -211,6 +237,8 @@ R ∩ D = ∅
 | 恢复重跑（§2.3，输入逐字未变） | 不变 | 已确认切片继续被采信，前沿停在首个未确认切片 |
 | 重划（§2.4，`slices` 变更） | 变化 | 旧划分的 PASS 全部落空，不得冒充新划分的收敛证据 |
 | 规格重合并（`spec_fingerprint` 变化） | 变化 | 旧绿不再是对当前规格的证据，账本作废 |
+| 同一划分重跑，配置或用例数已变化（§2.3.2，范围沿用） | 不变 | 已确认切片继续被采信 |
+| 旧 manifest 缺 `verify_scope`，同一划分重跑补写 `baseline` | 不变 | 已确认切片继续被采信 |
 
 `spec_fingerprint` 计入身份是有意的：切片所依赖的已合并规格变了，此前的通过就不再是对当前规格的证据。
 
@@ -237,7 +265,8 @@ R ∩ D = ∅
 ```text
 A exists:
   mode = slice-checkpoint
-  eligible = B ∪ owned(P) ∪ owned(A)
+  eligible = B ∪ owned(P) ∪ owned(A)      # verify_scope = baseline（含缺省）
+  eligible = owned(P) ∪ owned(A)          # verify_scope = owned
   pending = C − owned(P) − owned(A)
 
 A absent and code section complete:
@@ -246,9 +275,11 @@ A absent and code section complete:
   pending = ∅
 ```
 
+`verify_scope` 取 manifest 冻结值（§3），缺省为 `baseline`。`owned` 范围下基线 B 不在 eligible：不计入分母、不计 uncovered；基线回归由 final 承担，final 的集合与硬门不随范围变化。checkpoint 执行预跑命令前注入 `OPENLOGOS_VERIFY_SLICE_SCOPE=<verify_scope>`（与 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 一起）；final 不注入该变量。
+
 checkpoint 对 eligible 执行既有 100% 覆盖、合法状态、去重和通过率 Gate。PASS 追加 checkpoint、不写 `VERIFY_PASS`；FAIL 写 `VERIFY_FAIL` 与 `LOOP_ITERS{verify_mode:"slice-checkpoint",attempted_slice_id:A}`。final 保持全量硬门，只有 PASS 写 `VERIFY_PASS`。
 
-pending 不是 reporter status，不生成结果、不进入 uncovered。runner 输出 pending ID 时返回 `result_outside_eligible_scope`。
+pending 不是 reporter status，不生成结果、不进入 uncovered。runner 输出 pending ID 时返回 `result_outside_eligible_scope`；`owned` 范围下输出基线 ID 同样返回 `result_outside_eligible_scope`。
 
 ### 7.1 与模块范围求交（module-scoped-verify）
 
@@ -261,7 +292,8 @@ B_S = B ∩ S
 
 A exists:
   mode = slice-checkpoint
-  eligible = B_S ∪ owned(P) ∪ owned(A)
+  eligible = B_S ∪ owned(P) ∪ owned(A)    # verify_scope = baseline（含缺省）
+  eligible = owned(P) ∪ owned(A)          # verify_scope = owned（C ⊆ S，求交不改变结果）
   pending = C − owned(P) − owned(A)
 
 A absent and code section complete:
@@ -274,7 +306,7 @@ A absent and code section complete:
 - **范围外结果**：结果行 `id ∈ D − S` 时既不进入 eligible 判定，也不返回 `result_outside_eligible_scope`，而是按 `spec/test-results.md`「按模块限定 verify 范围的运行约定」忽略，计入 verify JSON 的 `scope.out_of_scope_result_count`。`result_outside_eligible_scope` 只用于范围内、但不在本次 eligible 中的 ID（如 pending）。
 - **注入**：`OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 注入求交后的 eligible。
 - **未启用或 `scope.mode` 为 `all` / `fallback-full`**：`S = D`，上式退化为本节开头的原始公式，行为与引入前一致。
-- manifest、checkpoint ledger 与 fingerprint 的格式不变。范围 M 不写入 manifest，每次 verify 按当时的改动重新计算。因此同一 manifest 下，前后两次 checkpoint 的范围可以不同；已采信的 checkpoint 不因后续范围变化而重新判定。
+- manifest、checkpoint ledger 与 fingerprint 的格式不因模块范围改变（`verify_scope` 是验收范围，不是模块范围）。范围 M 不写入 manifest，每次 verify 按当时的改动重新计算。因此同一 manifest 下，前后两次 checkpoint 的范围可以不同；已采信的 checkpoint 不因后续范围变化而重新判定。
 
 ## 8. Validator 与诊断码
 
