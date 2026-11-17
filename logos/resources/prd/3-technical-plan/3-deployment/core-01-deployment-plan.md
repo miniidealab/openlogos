@@ -5716,3 +5716,83 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 - 测试：UT-S09-481～UT-S09-488、ST-S09-210～ST-S09-217；安装态 smoke：SMOKE-core-312～SMOKE-core-314，以及通用的 SMOKE-core-268～SMOKE-core-271。
 - 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
 - 来源提案：fix-guard-background-record-never-closed、fix-merge-hang-on-baseline-blob-stdin；本提案：release-0-16-15（决策 C01、C02）。
+
+## OpenLogos 0.16.16 本机测试环境发布（release-0-16-16）
+
+> 本节引用「本机测试环境脚本部署（scripts/deploy-local.mjs）」通用方案，只写本次的差异：版本号、CHANGELOG、源码回归范围、本仓 `openlogos sync` 与安装态 smoke。冻结、回滚制品、构建候选、试装、全局安装、复核与回执一律按通用方案第三～七节执行，不在本节复写。
+
+### 部署目标与授权边界
+
+把已经验收并归档、但尚未进入本机全局安装态的提案 `slice-verify-efficient-mode`（归档提交 `48a623f`，场景 S13「S13 切片 checkpoint 的 owned 验收范围」、S32「S32 切片规划冻结验收范围时序」，功能规格 §2.101）装上。该提案立案时声明「无需部署、随常规版本发布」，所以归档后全局安装态仍是 0.16.15（deploy `832a26af`，提交 `8ae5a45`）。它的行为差异是：
+
+- 新配置 `verify.slice_scope`（`auto` / `baseline` / `owned`，缺省 `auto`）与 `verify.slice_scope_threshold`（缺省 1000）；`openlogos slice plan` 落盘时把验收范围冻结进 manifest 的 `verify_scope`，同一划分重跑沿用、manifest 缺失由 checkpoint 账本恢复、真正重划才重判，并输出 `verify_scope` / `verify_scope_source`。
+- `owned` 范围下 slice-checkpoint 的 eligible 只含已确认切片与本片的 owned 用例，基线回归由 final 承担；checkpoint 预跑前注入 `OPENLOGOS_VERIFY_SLICE_SCOPE`，验收报告标明验收范围，不写模块验收报告；`status` / `next` 的 `slice_verification_state` 带出 `verify_scope`。
+- 根规范 `spec/test-slice-manifest.md`、`spec/test-results.md`、`spec/cli-json-output.md` 与 Skill `code-implementor`（中英文）、`slice-planner` 的口径同步改为按范围说明。
+
+本次把版本号升到 0.16.16 后重新部署，不改任何 CLI 行为代码。
+
+- **目标环境**：`test`（登记表 `proposal_default_env: test`，来源提案决策 C02，`source: policy`）。登记表中 `test.deploy` 为 `mode: script`、`script: scripts/deploy-local.mjs`。
+- **入口**：提案通道 `openlogos deploy --env test`，部署请求 HEAD；由 CLI 追加部署报告、写 `DEPLOY_DONE` 并勾选 `[deploy]`。提案通道已完成受控落标，部署成功后**不再**另行执行 `openlogos deploy-done`。
+- **授权**：用户 2026-11-17 要求部署本机全局，并授权本发布链一次跑完、不 push（决策 C01）。`test` 未配置 `promote_from` / `require_approval`。本方案不含 `git push`。
+- **版本号边界**：0.16.16 只作本机全局版本，不进入 npm registry。本方案**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`。不改写其他仓库（包括 runlogos），不在其项目根运行任何命令。
+- **本仓行为**：本仓已定义的非 manual UT/ST 用例数（计划时 2613 个）超过缺省阈值 1000，升级后本仓**新规划**的多切片提案默认冻结为 `owned`；在途提案的 manifest 不含 `verify_scope`，按 `baseline` 处理、行为不变。
+
+### 部署前置与版本
+
+1. 本提案 delta 已 merge，`[code]` 切片实现并提交，`openlogos verify` PASS；`openlogos env check` 无 error，`openlogos deploy --env test --dry-run` 通过（通用方案第三节）。
+2. **请求提交已提交**：部署前确认 merge 后的规格、切片代码与验收报告都已提交、工作区干净；未提交时按「规格合并 → 代码 → 验收报告」的顺序补提交后再部署。
+3. **版本事实复核**：读取 `cli/package.json` 当前版本，计划时为 `0.16.15`（未发布到 npm）。候选为下一 patch `0.16.16`，执行 `npm view @miniidealab/openlogos@0.16.16 version` 应返回 E404。若实施前已有其他提案升版，或 registry 已存在候选版本号，候选改为「当时版本与 registry 最高版本中较大者的下一 patch」，并在部署记录写明实际值。
+4. **升版**：在实现中执行 `node cli/scripts/bump-version.mjs 0.16.16`，由脚本一次更新全部版本载体，并调用既有生成器重算 `cli/asset-manifest.json`，**禁止手改** manifest。脚本会把 `cli/src/lib/local-release-candidate.ts` 的回滚版本设为升版前版本，应为 `0.16.15`；不符时改为 `0.16.15`，并在部署记录说明。
+5. **CHANGELOG**：在 `## [Unreleased]` 之后新增 `## [0.16.16]` 条目，注明「本机全局发布（未发布到 npm）」，不改既有条目：
+   - **Added**：多切片提案的切片验收高效模式。用例数达到 `verify.slice_scope_threshold`（缺省 1000）的项目，`openlogos slice plan` 把验收范围冻结为 `owned`，此后每个 checkpoint 只验收本片与已通过前序切片的 owned 用例，基线回归集中到所有切片完成后的 final 一次完成；`verify.slice_scope` 可设为 `baseline` 保持原行为或 `owned` 强制启用。同一划分的重跑与自动恢复沿用冻结范围，manifest 缺失时从 checkpoint 账本恢复，真正重划才按当前配置重判。
+   - **Added**：checkpoint 预跑前注入 `OPENLOGOS_VERIFY_SLICE_SCOPE`，验收报告标明验收范围；`status` / `next` 的 `slice_verification_state` 与 `slice plan` 输出带出 `verify_scope`（及 `verify_scope_source`）；新错误码 `SLICE_PLAN_VERIFY_SCOPE_AMBIGUOUS`、`SLICE_PLAN_VERIFY_SCOPE_CONFIG_INVALID`。
+   - **升级提示**：升级后新规划的多切片提案才会冻结范围；在途提案的 manifest 不含 `verify_scope`，按 `baseline` 处理、身份与已确认切片不变。Skill 与规范副本的新口径需在各项目执行 `openlogos sync` 才生效。`spec/logos.config.schema.json` 尚未补录两个新配置项，其 `verify` 节点不限制额外属性，配置不会被拒绝。
+
+### 源码回归范围
+
+部署前的 verify 负责源码回归，脚本不跑测试（通用方案第八节）。升版后复跑以下检查，必须全绿：
+
+- `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`、`npm run build`。
+- 范围包括来源提案的 UT-S13-132～UT-S13-140、ST-S13-35～ST-S13-37、UT-S32-103～UT-S32-117、ST-S32-44～ST-S32-45，既有切片验收与恢复（`slice-aware-verify`、S32 写入口 / 恢复 / 身份绑定）全部用例，S42 / S43 部署全部用例，以及 UT-S19-46（版本身份）、UT-S19-49（asset-manifest 自洽）。
+
+### 部署、sync 与部署后检查
+
+1. 执行 `openlogos deploy --env test`（提案通道）。按通用方案第七节第 1、2 条读回回执与账本：
+   - 全局 `--version` 为 `0.16.16`；
+   - 入口 realpath 等于回执 `entry_realpath`，全局 `dist/index.js` 的 SHA-256 等于 `candidate_entry_sha256`；
+   - 记录候选 tarball 与回滚制品的路径与 SHA-256；回滚制品由脚本第 ③ 步从当前全局安装打包，计划时应为提交 `8ae5a45` 的 0.16.15 安装态；
+   - 部署前账本 `test.current_ref` 为 `8ae5a456851e9dfd0add0ae8f3de9f710db7343a`（0.16.15，deploy `832a26af`），部署成功后它成为 `previous_ref`。
+2. **本仓 sync**：来源提案修改了根规范 `spec/test-slice-manifest.md`、`spec/test-results.md`、`spec/cli-json-output.md` 与 Skill `skills/code-implementor/SKILL.md`、`skills/code-implementor/SKILL.en.md`、`skills/slice-planner/SKILL.md`；本仓 `logos/spec/` 与 `logos/skills/` 下的托管副本尚未刷新（计划时逐字节不同）。在主工作树执行一次 `openlogos sync` 并读回：
+   - 上述 3 份规范与 3 份 Skill 的 `logos/` 副本与全局安装包内 `spec/`、`skills/` 下的同名文件逐字节一致；
+   - 本仓 AGENTS.md / CLAUDE.md 的变化只来自托管内容与版本戳，不出现与本次发布无关的改写；
+   - sync 产生的托管文件变化随部署记录一起由流程提交，不 push；
+   - 若 sync 再次向 `.claude/settings.json` 追加重复的 SessionStart 条目（已知缺陷），按前几版部署记录同样还原并记录。
+3. **补部署报告**：自动部署记录不含版本号，而安装态 runner 的适用性检查要求 `logos/resources/verify/deployment-report.md` 记载候选版本。部署后追加人写的「部署报告」小节（版本、deploy_id、ref、制品哈希、sync 读回结果）并提交，然后才执行 smoke。
+4. 经授权执行 `openlogos smoke --env test`：
+   - 本次行为用例：「OpenLogos 0.16.16 切片验收范围冻结与 owned checkpoint 安装态 smoke（SMOKE-core-315～317）」；
+   - 通用安装态用例：「本机测试环境脚本部署安装态 smoke（SMOKE-core-268～SMOKE-core-271）」。
+
+### 失败处置与回滚
+
+回滚目标是**提交 `8ae5a45` 的 0.16.15 安装态**（不含验收范围冻结与 owned checkpoint），处置按通用方案第五节，本次差异如下：
+
+- **部署前置或 dry-run 失败**：不执行部署，修正后重试，或回流实现。
+- **脚本失败（部署未成功）**：脚本自动回装第 ③ 步的回滚制品，复核 `--version` 为 `0.16.15`；账本记 `result=failed`，不推进。
+- **成功部署后要回退**：执行 `openlogos deploy --env test --rollback`。账本 `previous_ref` 为 `8ae5a45…`，该提交含 `scripts/deploy-local.mjs`。回退后用回退到的版本在本仓执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件。已用 0.16.16 写出含 `verify_scope` 的 manifest，在 0.16.15 下按未知字段保留读取、按 `baseline` 计算集合；但 `owned` manifest 的身份在 0.16.15 下不同，其已确认 checkpoint 不再被采信，需重跑对应切片。
+- **成功落账后 smoke 失败**：按通用方案第五节「(c)」处置：停止后续完成流程，保留失败证据，回流修复后以 `openlogos deploy --env test` 部署修复提交并重跑 smoke。不得手工回装旧包。
+- 本次无数据迁移：既有配置、文件格式与命令输出只增不改。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`，不部署官网。
+- 不改写其他仓库（包括 runlogos），不在其项目根运行任何命令；其他项目的 Skill 与规范副本由用户在各项目执行 `openlogos sync` 刷新。
+- 不改任何 CLI 行为代码：来源提案已验收并归档。
+- 不补录 `spec/logos.config.schema.json` 的两个新配置项（来源提案已决定另案处理）。
+
+### 追溯
+
+- 场景：S13「S13 切片 checkpoint 的 owned 验收范围」Step 1～13；S32「S32 切片规划冻结验收范围时序」Step 1～8、EX-32.26～EX-32.32。
+- 需求：`core-01-requirements.md`「S13/S16/S27/S28/S31/S32 多切片验收边界与自动恢复要求」高效模式验收条件。
+- 测试：UT-S13-132～UT-S13-140、ST-S13-35～ST-S13-37、UT-S32-103～UT-S32-117、ST-S32-44～ST-S32-45；安装态 smoke：SMOKE-core-315～SMOKE-core-317，以及通用的 SMOKE-core-268～SMOKE-core-271。
+- 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
+- 来源提案：slice-verify-efficient-mode；本提案：release-0-16-16（决策 C01、C02）。

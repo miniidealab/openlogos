@@ -2856,3 +2856,39 @@ SMOKE-core-21 / 23 的既有认领者是 `website/scripts/smoke-releases.mjs`（
 - SMOKE-core-313 的 merge 子进程由 runner 设时限（不超过 120 秒）；超时判 fail 并在证据中写明，不得重试后写 pass。
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-312～SMOKE-core-314 均被 runner 覆盖。
+
+## OpenLogos 0.16.16 切片验收范围冻结与 owned checkpoint 安装态 smoke（SMOKE-core-315～317）
+
+> 这组用例验证来源提案 slice-verify-efficient-mode 的能力在本机全局安装态中以 0.16.16 的身份可用：`openlogos slice plan` 冻结 checkpoint 验收范围（场景 S32「S32 切片规划冻结验收范围时序」，根规范 `spec/test-slice-manifest.md` §2.3.2、§2.4），以及 owned 范围下 checkpoint 只验收 owned 用例、注入 `OPENLOGOS_VERIFY_SLICE_SCOPE`、final 仍全量（场景 S13「S13 切片 checkpoint 的 owned 验收范围」，根规范 §7）。完整行为已由仓库内 UT-S13-132～UT-S13-140、ST-S13-35～ST-S13-37、UT-S32-103～UT-S32-117、ST-S32-44～ST-S32-45 覆盖；安装态只取证三件事：装上的是本次候选且包内带着新能力、全局 CLI 的 `slice plan` 按规则冻结范围、全局 CLI 的 verify 按冻结范围收窄 checkpoint 并在 final 全量回归。
+>
+> 用例在 `mktemp -d` 一次性 git 项目内执行：经全局 `openlogos init` 建立项目，再写入夹具（单模块 `core` 为 `launched`；基线测试规格 `core-S01-test-cases.md` 定义 UT-S01-01～UT-S01-03 与 ST-S01-01，变更测试规格 `core-S90-test-cases.md` 定义 UT-S90-01～UT-S90-03；活跃提案的 `SPEC_MERGED.test_change_set` 只把 S90 记为变更；`slices.json` 两片：`slice-a` 拥有 UT-S90-01、UT-S90-02，`slice-b` 拥有 UT-S90-03）并提交。change set 由全局安装包内 `dist/lib/test-change-set.js` 的生成函数构造。runner 以子进程调用全局 CLI，对全局安装态**只读**，不做安装或卸载；不触碰本仓活跃提案、本仓 `logos/resources/`（结果账本除外）、本仓运行态目录与用户其他仓库（包括 runlogos）。版本以部署记录与 `cli/src/lib/local-release-candidate.ts` 的候选版本为准，断言写成关系式，不硬编码 `0.16.16`。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-315 | 安装态版本与制品身份 | 本机全局已安装本次候选；部署记录中有候选版本 | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 以 `import` 加载包内 `dist/lib/test-slice-manifest.js`，对同一份固定 manifest 分别以缺省、`baseline`、`owned` 的 `verify_scope` 计算 `computeSliceManifestIdentity`；④ 读取包内 `dist/commands/verify.js`、`skills/slice-planner/SKILL.md` 与 `spec/test-slice-manifest.md` | ① `--version` 等于部署记录候选版本，入口无 workspace link；② `payloadHash` 自洽；③ 模块导出 `manifestVerifyScope`、`sameSlicePartition`、`recoverVerifyScopeFromLedger`；缺省与 `baseline` 的身份相等，`owned` 的身份与之不同；④ `verify.js` 含 `OPENLOGOS_VERIFY_SLICE_SCOPE`；`SKILL.md` 含「删后续能否独立过本片 checkpoint」；`test-slice-manifest.md` 含「2.3.2 验收范围的沿用与恢复」 | 保留读取结果；任一不符 → 停止后续流程，按部署方案以 `openlogos deploy --env test --rollback` 回退 |
+| SMOKE-core-316 | 全局 CLI 的 slice plan 冻结验收范围 | 本机全局已安装本次候选；一次性项目按上述夹具建立，`verify.slice_scope_threshold` 为 3（已定义用例 7 个） | ① 全局 CLI `slice plan --file slices.json --format json`；② 以相同 `slices.json` 再执行一次；③ 把 `slice_scope_threshold` 改为 2000 后以相同 `slices.json` 再执行；④ 改用把 UT-S90-02 移到 `slice-b` 的 `slices-v2.json` 执行；⑤ 把 `verify.slice_scope` 改为 `full`，改回 `slices.json`（相对在盘 v2 为新划分）执行，执行前后记录 `tasks.md` 与 manifest 的字节 | ① 退出码 0，`data.verify_scope=owned`、`verify_scope_source=decided`，manifest 的 `verify_scope` 为 `owned`；② `owned`、`retained`；③ `owned`、`retained`（配置变化本身不改变冻结范围）；④ `baseline`、`decided`；⑤ 退出码 1，错误码 `SLICE_PLAN_VERIFY_SCOPE_CONFIG_INVALID`，两份文件字节不变 | 同上；任一不成立表示冻结规则未完整进入安装态 |
+| SMOKE-core-317 | 全局 CLI 的 owned checkpoint、账本恢复与 final | 本机全局已安装本次候选；一次性项目按上述夹具建立，`verify.slice_scope` 为 `owned`、`sandbox_mode` 为 `off`、`pre_run_command` 为项目内记录型 runner（只为 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 中的用例写 pass，并把收到的 `OPENLOGOS_VERIFY_SLICE_SCOPE` 及其是否存在记入调用日志） | ① 全局 CLI `slice plan` 后执行 `verify --format json`；② 删除 manifest，把 `verify.slice_scope` 改为 `baseline`，以相同 `slices.json` 重跑 `slice plan`，再执行 `next --format json`；③ 勾选 `slice-a` 后执行 `verify --format json`；④ 勾选 `slice-b` 后，在父进程环境预置 `OPENLOGOS_VERIFY_SLICE_SCOPE=owned` 执行 `verify --format json` | ① checkpoint PASS，`eligible_test_ids` 为 UT-S90-01、UT-S90-02；runner 收到 `owned` 与这 2 个用例；`acceptance-report.md` 含「验收范围 / Verify scope: `owned`」；② `slice plan` 输出 `owned`、`recovered`；`slice_verification_state` 的 `verify_scope=owned`、`confirmed_slice_ids=[slice-a]`、`attempted_slice_id=slice-b`；③ checkpoint PASS，runner 只收到 3 个 UT-S90-* 用例；④ `verify_mode=final`、Gate PASS，runner 收到全部 7 个用例且环境中不存在 `OPENLOGOS_VERIFY_SLICE_SCOPE`，写 `VERIFY_PASS` | 同上；任一不成立表示 owned checkpoint 或 final 行为未完整进入安装态 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目与受控临时目录内进行，结束即删除；`git` 操作只作用于这些一次性项目，不配置远端、不联网。
+- **不得**触碰本仓活跃提案、本仓 `logos/resources/`（结果账本除外）、本仓运行态目录、本仓 `.claude/` 下的托管副本、本仓的 git 分支与工作区、用户其他仓库（包括 runlogos）或本机全局 prefix。
+- 记录型 runner 写在一次性项目内，由全局 CLI 的 verify 以预跑命令调用；runner 不调用本仓任何脚本。
+- 结果写入本仓 `logos/resources/verify/smoke-results.jsonl`；实际执行的结果行带 `target_environment="test"`，窗口之外的 skip 行不声明 `target_environment`。
+
+### 三、追溯与覆盖
+
+- 场景：S32「S32 切片规划冻结验收范围时序」Step 1～8、EX-32.26、EX-32.27、EX-32.31（SMOKE-core-316），EX-32.30 的反面与账本恢复 Step 6（SMOKE-core-317 ②）；S13「S13 切片 checkpoint 的 owned 验收范围」Step 1～13（SMOKE-core-317 ①③④）。需求：`core-01-requirements.md`「S13/S16/S27/S28/S31/S32 多切片验收边界与自动恢复要求」高效模式验收条件。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.16 本机测试环境发布（release-0-16-16）」。
+- 仓库内对应用例：UT-S32-107（对应 SMOKE-core-315 ③）；UT-S32-104、UT-S32-108、UT-S32-110、UT-S32-106（对应 SMOKE-core-316）；ST-S32-45、ST-S13-35、UT-S13-135、UT-S13-138（对应 SMOKE-core-317）。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-release-0-16-16.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-315～SMOKE-core-317，不得依靠通配发现后无条件 PASS。
+- 适用窗口：活跃变更为 `release-0-16-16`，或 `OPENLOGOS_R01616_SMOKE=1`；窗口之外按既有留痕机制为全部 owned ID 写 skip，skip 行不声明 `target_environment`。环境变量一律使用 `OPENLOGOS_R01616_` 前缀。
+- 适用性判定不得依赖自动流程不会设置的环境变量。只有部署记录确实缺失，或候选版本早于 0.16.16 时，才写显式 `skip` 并携带缺失项。有 skip 时不得写 `SMOKE_PASS`。
+- 全局 CLI 子进程由 runner 设时限（不超过 120 秒）；超时判 fail 并在证据中写明，不得重试后写 pass。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-315～SMOKE-core-317 均被 runner 覆盖。
