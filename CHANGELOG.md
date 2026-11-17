@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.16] - 2026-11-17
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- 多切片提案的切片验收高效模式。新配置 `verify.slice_scope`（`auto` / `baseline` / `owned`，缺省 `auto`）与 `verify.slice_scope_threshold`（缺省 1000）：已定义的非 manual UT/ST 用例数达到阈值时，`openlogos slice plan` 把验收范围冻结为 `owned`，此后每个 checkpoint 只验收本片与已通过前序切片的 owned 用例，基线回归集中到所有切片完成后的 final 一次完成；`baseline` 保持原行为，`owned` 强制启用。
+- 验收范围冻结进 `TEST_SLICE_MANIFEST.json` 的 `verify_scope`：同一划分的重跑与自动恢复沿用冻结值，manifest 缺失时从 checkpoint 账本按候选身份恢复，真正重划才按当前配置重判；身份只在 `owned` 时纳入该字段，`baseline` 与缺省的身份与升级前相同。
+- checkpoint 预跑前注入 `OPENLOGOS_VERIFY_SLICE_SCOPE`（final 不注入，也不把父进程的同名变量传给预跑命令）；验收报告的切片摘要标明验收范围；`owned` 范围的 checkpoint 不写模块验收报告。
+- `status` / `next` 的 `slice_verification_state` 新增 `verify_scope`；`openlogos slice plan` 输出新增 `verify_scope` 与 `verify_scope_source`（`retained` / `recovered` / `decided`）；新错误码 `SLICE_PLAN_VERIFY_SCOPE_AMBIGUOUS`、`SLICE_PLAN_VERIFY_SCOPE_CONFIG_INVALID`。
+
+### 升级提示
+
+- 只有升级后**新规划**的多切片提案才会冻结范围；在途提案的 manifest 不含 `verify_scope`，按 `baseline` 处理，身份与已确认切片不变。
+- Skill（`code-implementor`、`slice-planner`）与规范副本的新口径需在各项目执行一次 `openlogos sync` 才生效。
+- `spec/logos.config.schema.json` 尚未补录两个新配置项；其 `verify` 节点不限制额外属性，配置不会被拒绝。
+
 ## [0.16.15] - 2026-11-13
 
 本机全局发布（未发布到 npm）。
