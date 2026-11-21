@@ -1526,3 +1526,62 @@ public_release_commit: 3d851a71a17c86d081ce9d69adf2ea88331a94fe
 
 - 安装态 smoke：执行 `openlogos smoke --env test`，覆盖 SMOKE-core-315～317（runner `scripts/smoke-release-0-16-16.js`）与通用用例 SMOKE-core-268～271。
 - 部署前已以自测模式验证 runner：以工作区候选为入口时三条均通过；以当时的全局安装包（0.16.15）为入口时三条均判失败。
+
+## 部署记录 2026-11-21T08:00:23.414Z → test
+
+- 目标环境: test
+- 通道 / 执行方式: proposal / script
+- deploy_id: 30396a5b-f35b-4967-b3f5-3f2b6a5cc142
+- ref_requested: fba29517f1c76305d9f9722a2084ce2ddabe2915（HEAD）
+- ref: fba29517f1c76305d9f9722a2084ce2ddabe2915
+- 执行脚本: scripts/deploy-local.mjs（workdir: worktree）
+- 耗时: 53231 ms
+- 结果: done
+- log_path: logos/.openlogos-runtime/deploy-logs/30396a5b-f35b-4967-b3f5-3f2b6a5cc142.log
+- previous_ref: 5f230b3deb0da8eb693722af5f869edb13eb7a41
+
+# 部署报告：enterprise-knowledge-base / OpenLogos 0.16.17 本机全局发布（2026-11-21，**已部署：本机测试环境 test**）
+
+按部署方案「OpenLogos 0.16.17 本机测试环境发布（enterprise-knowledge-base）」经 `openlogos deploy --env test` 提案通道部署（登记表 `test.deploy` = script，`scripts/deploy-local.mjs`，workdir: worktree）。目标环境取决策 C06（用户要求部署到本机全局，与登记表 `proposal_default_env=test` 一致）；本次执行以 `next --auto` 的 deliver 门 `gate_auto_passed=true` 为依据（`GATE_AUTO_PASSED` 中 `deliver-entry` 一行）。不 npm publish、不打 tag、不 push。
+
+## 一、部署前置
+
+- `openlogos verify` PASS（`VERIFY_PASS` 在场，验收报告 Gate 3.5 PASS）。请求提交已提交：`0962f9d` 规格合并（含 `logos-project.yaml` 登记 S45、`scenario_counter.next_id`=46）、`916dc0d` 代码（knowledge 类别、change-lint L10、升版 0.16.17、CHANGELOG、安装态 runner）、`fba2951` 验收报告。
+- 部署前工作区只有 `.claude/settings.json` 一处未提交改动：该改动在本提案开始前就已存在、与本次发布无关，未提交也未改动；部署以 worktree 方式取请求提交 `fba2951`，不读工作区。
+- 新场景文档 `core-S45-enterprise-knowledge.md` 受 `.gitignore` 的 `/logos/resources/*` 规则排除、未入库，与 S41～S44 场景文档的现状一致（`openlogos merge` 未暂存该文件）；本次未强制加入。
+- 版本事实：`cli/package.json` 为 0.16.17，回滚常量为 0.16.16（由 `node cli/scripts/bump-version.mjs 0.16.17` 写入，未手改）。`npm view @miniidealab/openlogos@0.16.17 version` 返回 E404。
+- `openlogos env check`：errors 为空。`openlogos deploy --env test --dry-run`：`status=dry-run`，脚本 `scripts/deploy-local.mjs`。
+- 部署前全局：`openlogos --version` = 0.16.16（deploy `51e480f6`，提交 `5f230b3`）；账本 `test.current_ref` = `5f230b3deb0d…`。
+
+## 二、部署结果与安装态读回
+
+- `deploy_id` = `30396a5b-f35b-4967-b3f5-3f2b6a5cc142`，`ref` = `fba29517f1c76305d9f9722a2084ce2ddabe2915`，`status=done`，耗时 53.2 秒。
+- 落标：`DEPLOY_DONE` 由提案通道写入；`[deploy]` 三项由提案通道勾选（3/3），`next_step=ready-to-smoke`。按部署方案未再运行 `openlogos deploy-done`。
+- 回执 `logos/.openlogos-runtime/local-install/last-deploy.json`：`candidate_version=0.16.17`，`previous_version=0.16.16`，`result=done`，`restored=false`。
+- 复核：
+  - `openlogos --version` = 0.16.17；
+  - 入口 realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` 等于回执 `entry_realpath`；
+  - 入口 SHA-256 `6fba2837b407a2b64ebca6e21468a591816877e23b3663eba00f73225e450ddd` 等于回执 `candidate_entry_sha256`。`cli/src/index.ts` 未变，入口哈希不能区分新旧安装态；
+  - 所以另外核对了包内内容：存在 `dist/lib/knowledge-view.js`，`dist/lib/delta-classify.js` 含 `knowledge` 类别，`skills/scenario-architect/SKILL.md` 含「适用业务约束」。
+- 候选 tarball：`logos/.openlogos-runtime/local-install/candidates/30396a5b-f35b-4967-b3f5-3f2b6a5cc142.tgz`，SHA-256 `f9e050e48d6640301b161c51c81e9c2e34ca46750e1f76e162101d6e18249d57`。
+- 回滚制品：`logos/.openlogos-runtime/local-install/rollback/30396a5b-f35b-4967-b3f5-3f2b6a5cc142.tgz`，SHA-256 `9daadfa33542f4187b11cef38e1d5acf2c366fd6981ba1e7949a3fb7ba30535b`。与 deploy `51e480f6`（提交 `5f230b3`）的候选 tarball 同哈希，即部署前的 0.16.16 安装态。
+- 环境视图：`test.current_ref` = `fba29517f1c7…`；`previous_ref` = `5f230b3deb0d…`，与方案预期一致。
+
+## 三、本仓 sync
+
+- 本仓执行 `openlogos sync`（0.16.17）：AGENTS.md / CLAUDE.md 与 sync 前逐字节一致；17 个 Skills 与 26 份规范已同步。
+- 读回：`logos/spec/directory-convention.md`、`logos/spec/change-management.md`、`logos/spec/cli-json-output.md` 与 `logos/skills/` 下 prd-writer、product-designer、scenario-architect、change-writer、test-writer 的 `SKILL.md`，均与全局安装包内 `spec/`、`skills/` 下的同名文件逐字节一致。zh 项目只部署当前语言的 `SKILL.md`（按设计）。
+- 受版本控制的托管副本中只有 `logos/spec/cli-json-output.md` 发生变化，随本部署记录一并提交；其余副本被 `.gitignore` 排除，不入库。
+- 本次 sync 未改动 `.claude/settings.json`（未出现前几版的重复 SessionStart 条目缺陷）。
+- 不改写其他仓库（包括 runlogos）；其他项目需各自执行 `openlogos sync` 才会换上新的 Skill 与规范副本。
+
+## 四、回滚
+
+- 成功部署后要回退：执行 `openlogos deploy --env test --rollback`，回到提交 `5f230b3` 的 0.16.16 安装态（不含企业知识能力）。回退后用回退到的版本在本仓执行一次 `openlogos sync`。已写入的 `logos/resources/knowledge/` 条目在 0.16.16 下不再被校验，`deltas/knowledge/` 会被判 `delta_path_invalid`。
+- 脚本失败时 `deploy-local.mjs` 自动以回滚制品回装（本次未触发）。
+- 本次无数据迁移：既有配置、文件格式与命令输出只增不改。
+
+## 五、后续
+
+- 安装态 smoke：执行 `openlogos smoke --env test`，覆盖 SMOKE-core-318～320（runner `scripts/smoke-enterprise-knowledge-base.js`）与通用用例 SMOKE-core-268～271。本工作单元不执行 smoke。
+- 实现阶段已以自测模式（打包出的 0.16.17 tarball 为入口、独立账本）验证 runner 三条均通过；部署记录记载候选版本后，runner 的适用性检查才会进入正式执行。
