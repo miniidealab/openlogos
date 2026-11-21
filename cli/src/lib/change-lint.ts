@@ -29,6 +29,7 @@ import {
   isAcceptedTestId,
 } from './proposal-lifecycle.js';
 import { stripFirstCellManualMarker } from './test-id.js';
+import { SPEC_MERGED_MARKER } from './proposal-markers.js';
 import {
   enumerateTestDefinitionTables, findDuplicateHeaderCells,
   rowColumnsMatchHeader, testDefinitionRowId,
@@ -79,7 +80,9 @@ import { resolvePendingAmendContext } from './merge-baseline.js';
 import {
   CONSTRAINT_SECTION_TITLE, KNOWLEDGE_DIR, KNOWLEDGE_SOURCE_DIR, SCENARIO_DIR, buildKnowledgeView, candidateMarkdownAfter, extractConstraintReferences,
   findDuplicateIds, hasConstraintSection, isCanonicalKnowledgePath, parseKnowledgeEntry, readKnowledgeDir, resolveKnowledgeReference,
+  KNOWLEDGE_TAGS_FILE, applyTagCriterion, parseTagTable, readTagStateFacts, resolveTagState, tagsOutsideTable,
 } from './knowledge-view.js';
+import { KNOWLEDGE_TXN_DIR, incompleteMessage, withKnowledgeReadLock } from './knowledge-lock.js';
 
 // 单一事实源转发：分类器与类别映射归 delta-classify.ts；既有消费方（merge/tests）从本模块继续可见。
 export { DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError };
@@ -159,6 +162,10 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   'knowledge_id_duplicate',
   'knowledge_removal_forbidden',
   'knowledge_retired_id_mutated',
+  // L10 增量（knowledge-direct-intake，功能规格 §2.103.11）
+  'knowledge_tag_unknown',
+  'knowledge_tags_missing',
+  'knowledge_apply_incomplete',
 ] as const;
 
 export type ChangeLintViolationCode = typeof CHANGE_LINT_VIOLATION_CODES[number];
@@ -1271,7 +1278,24 @@ interface KnowledgeLayerResult {
  * 候选后态按既有阶段判定计算：未合并 = 磁盘前态叠加 delta；已合并且无待应用修正 = 直接读落盘（不重放）；
  * 待应用修正 = 合并基线（`priorStateOf` → `amendCtx.beforeOf`）叠加修正 delta，撤回的基线目标恢复为基线内容。
  */
-function evaluateKnowledgeLayer(input: KnowledgeLayerInput): KnowledgeLayerResult {
+/** L10 的知识与场景候选状态（evaluateKnowledgeLayer 与 `knowledge apply` 的 proposal_view 共用，§2.103.4）。 */
+export interface KnowledgeCandidateState {
+  enabled: boolean;
+  replay: boolean;
+  knowledgeAll: DeltaEntryClassification[];
+  knowledgeDeltas: DeltaEntryClassification[];
+  malformedKnowledge: DeltaEntryClassification[];
+  scenarios: Array<{ target: string; deltaRel: string; content: string }>;
+  removedScenarioTargets: Set<string>;
+  live: Map<string, string>;
+  candidate: Map<string, string>;
+  deltaRelByTarget: Map<string, string>;
+  touchedKnowledge: Set<string>;
+  /** `deltas/knowledge/` 下的目录内非条目文件（TAGS.md / INDEX.md / .tags-enabled），§2.103.5。 */
+  nonEntryKnowledge: string[];
+}
+
+function computeKnowledgeCandidateState(input: KnowledgeLayerInput, opts: { force?: boolean } = {}): KnowledgeCandidateState {
   const { root, slug, deltaEntries, deltaContents, priorStateOf, specCompleteRaw, amendCtx } = input;
   const mergeable = deltaEntries.filter(e => e.mergeDisposition === 'mergeable' && e.lintValidity === 'valid');
   const targetOf = (e: DeltaEntryClassification) => canonicalTargetFromDeltaPath(e.relativePath);
@@ -1325,24 +1349,20 @@ function evaluateKnowledgeLayer(input: KnowledgeLayerInput): KnowledgeLayerResul
     }
   }
   const scenarioHasSection = scenarios.some(sc => hasConstraintSection(sc.content));
-  const enabled = knowledgeAll.length > 0 || scenarioHasSection || amendKnowledgeTargets.length > 0;
-  const result: KnowledgeLayerResult = { enabled, violations: [], warnings: [] };
-  if (!enabled) return result;
-
-  for (const e of malformedKnowledge) {
-    result.violations.push({
-      code: 'knowledge_entry_invalid',
-      path: rel(e),
-      message: `知识目标 ${targetOf(e)} 不符合规范形态 ${KNOWLEDGE_DIR}/<module>-KXX-<slug>.md（只允许顶层、.md、文件名为模块前缀 + KXX + slug）`,
-      fix_hint: `把条目放到 ${KNOWLEDGE_DIR}/ 顶层并命名为 <module>-KXX-<slug>.md`,
-    });
-  }
-
-  // —— 知识候选后态 ——
-  const live = readKnowledgeDir(root);
-  const candidate = new Map(live);
+  const nonEntryKnowledge = deltaEntries
+    .map(e => e.relativePath.replace(/\\/g, '/'))
+    .filter(p => /^deltas\/knowledge\/(?:TAGS\.md|INDEX\.md|\.tags-enabled)$/.test(p))
+    .map(p => `logos/changes/${slug}/${p}`);
+  const enabled = knowledgeAll.length > 0 || scenarioHasSection || amendKnowledgeTargets.length > 0 || nonEntryKnowledge.length > 0;
+  const live = new Map<string, string>();
+  const candidate = new Map<string, string>();
   const deltaRelByTarget = new Map<string, string>();
   const touchedKnowledge = new Set<string>();
+  if (!enabled && !opts.force) {
+    return { enabled, replay, knowledgeAll, knowledgeDeltas, malformedKnowledge, scenarios, removedScenarioTargets, live, candidate, deltaRelByTarget, touchedKnowledge, nonEntryKnowledge };
+  }
+  // —— 知识候选后态 ——
+  for (const [p, c] of readKnowledgeDir(root)) { live.set(p, c); candidate.set(p, c); }
   if (replay) {
     const currentTargets = new Set<string>();
     for (const e of knowledgeDeltas) {
@@ -1373,6 +1393,57 @@ function evaluateKnowledgeLayer(input: KnowledgeLayerInput): KnowledgeLayerResul
       deltaRelByTarget.set(target, rel(e));
     }
   }
+  return { enabled, replay, knowledgeAll, knowledgeDeltas, malformedKnowledge, scenarios, removedScenarioTargets, live, candidate, deltaRelByTarget, touchedKnowledge, nonEntryKnowledge };
+}
+
+function evaluateKnowledgeLayer(input: KnowledgeLayerInput): KnowledgeLayerResult {
+  const { root } = input;
+  // 先只判启用条件（不读知识文件）；启用后在知识读锁区间内计算候选并完成全部知识读取（§2.103.4「事务」第 6 条）。
+  const probe = computeKnowledgeCandidateState(input);
+  const result: KnowledgeLayerResult = { enabled: probe.enabled, violations: [], warnings: [] };
+  if (!probe.enabled) return result;
+  const locked = withKnowledgeReadLock(root, () => evaluateKnowledgeLayerLocked(input, result));
+  if (!locked.ok) {
+    result.violations.push({
+      code: 'knowledge_apply_incomplete',
+      path: `${KNOWLEDGE_TXN_DIR}/`,
+      message: `企业知识录入事务未完成：${incompleteMessage(locked.reason)}；不在半写入或跨提交的状态上解析引用`,
+      fix_hint: locked.reason === 'busy' ? '等待另一个 openlogos knowledge apply / index 完成后重跑' : '运行 openlogos knowledge apply --recover 后重跑',
+    });
+  }
+  return result;
+}
+
+function evaluateKnowledgeLayerLocked(input: KnowledgeLayerInput, result: KnowledgeLayerResult): KnowledgeLayerResult {
+  const { root } = input;
+  const st = computeKnowledgeCandidateState(input, { force: true });
+  const { deltaContents } = input;
+  const { replay, knowledgeDeltas, malformedKnowledge, scenarios, removedScenarioTargets, live, candidate, deltaRelByTarget, touchedKnowledge, nonEntryKnowledge } = st;
+  const rel = (e: DeltaEntryClassification) => `logos/changes/${input.slug}/${e.relativePath}`;
+  const targetOf = (e: DeltaEntryClassification) => canonicalTargetFromDeltaPath(e.relativePath);
+  for (const p of nonEntryKnowledge) {
+    result.violations.push({
+      code: 'knowledge_entry_invalid',
+      path: p,
+      message: `${p.split('/').pop()} 不是知识条目：标签表与索引只能经 openlogos knowledge apply / index 维护`,
+      fix_hint: '删除该 delta；需要的新标签先用 openlogos knowledge apply 加入 TAGS.md',
+    });
+  }
+
+  for (const e of malformedKnowledge) {
+    if (nonEntryKnowledge.includes(rel(e))) continue;
+    result.violations.push({
+      code: 'knowledge_entry_invalid',
+      path: rel(e),
+      message: `知识目标 ${targetOf(e)} 不符合规范形态 ${KNOWLEDGE_DIR}/<module>-KXX-<slug>.md（只允许顶层、.md、文件名为模块前缀 + KXX + slug）`,
+      fix_hint: `把条目放到 ${KNOWLEDGE_DIR}/ 顶层并命名为 <module>-KXX-<slug>.md`,
+    });
+  }
+
+  // —— 标签表三态（§2.103.6 / §2.103.11）——
+  const tagFacts = readTagStateFacts(root);
+  const tagState = resolveTagState(tagFacts);
+  const tagTable = tagState === 'enabled' && tagFacts.tags !== null ? parseTagTable(tagFacts.tags) : null;
   const view = buildKnowledgeView([...candidate].map(([p, c]) => parseKnowledgeEntry(p, c, { root })));
   const entryByPath = new Map(view.entries.map(e => [e.path, e]));
 
@@ -1380,7 +1451,20 @@ function evaluateKnowledgeLayer(input: KnowledgeLayerInput): KnowledgeLayerResul
   if (replay) {
     for (const [target, deltaRel] of [...deltaRelByTarget].sort()) {
       const entry = entryByPath.get(target);
-      if (!entry || entry.valid) continue;
+      if (!entry) continue;
+      if (entry.valid) {
+        // §2.103.11：标签表已启用时，本提案新增或修改的条目使用表外标签 → knowledge_tag_unknown
+        const outside = tagTable ? tagsOutsideTable(entry, tagTable) : [];
+        if (outside.length > 0) {
+          result.violations.push({
+            code: 'knowledge_tag_unknown',
+            path: deltaRel,
+            message: `知识条目 ${entry.id ?? target} 的标签不在标签表（${KNOWLEDGE_TAGS_FILE}）：${outside.join('、')}`,
+            fix_hint: '改用标签表中的标签或别名，或先用 openlogos knowledge apply 把新标签加入 TAGS.md',
+          });
+        }
+        continue;
+      }
       result.violations.push({
         code: 'knowledge_entry_invalid',
         path: deltaRel,
@@ -1471,6 +1555,20 @@ function evaluateKnowledgeLayer(input: KnowledgeLayerInput): KnowledgeLayerResul
     for (const d of duplicates) reportDuplicate(d.id, d.paths, d.paths[0]);
   }
 
+  // —— 标签表已启用但词表丢失（§2.103.6）：本提案知识 delta 与场景中的每一处知识引用都要求先恢复 ——
+  const tagsMissingFix = '从 git 恢复 logos/resources/knowledge/TAGS.md，或经 openlogos knowledge apply 提交完整 TAGS.md，或运行 openlogos knowledge apply --init-tags';
+  if (tagState === 'missing') {
+    for (const [target, deltaRel] of [...deltaRelByTarget].sort()) {
+      result.violations.push({
+        code: 'knowledge_tags_missing',
+        path: deltaRel,
+        message: `标签表已启用但 ${KNOWLEDGE_TAGS_FILE} 丢失，无法判定知识条目 ${target} 的有效性`,
+        fix_hint: tagsMissingFix,
+      });
+    }
+  }
+  const refView = applyTagCriterion(view, tagState, tagTable);
+
   // —— 第 4 步：引用解析 ——
   const warn = (message: string) => result.warnings.push({
     code: 'knowledge_reference_deprecated',
@@ -1480,7 +1578,16 @@ function evaluateKnowledgeLayer(input: KnowledgeLayerInput): KnowledgeLayerResul
   const warnedRefs = new Set<string>();
   for (const sc of scenarios) {
     for (const ref of extractConstraintReferences(sc.content)) {
-      const r = resolveKnowledgeReference(view, ref.ref);
+      if (tagState === 'missing') {
+        result.violations.push({
+          code: 'knowledge_tags_missing',
+          path: sc.deltaRel,
+          message: `${sc.target}:${ref.line} 引用的 ${ref.ref}：标签表已启用但 ${KNOWLEDGE_TAGS_FILE} 丢失，无法判定目标有效性`,
+          fix_hint: tagsMissingFix,
+        });
+        continue;
+      }
+      const r = resolveKnowledgeReference(refView, ref.ref);
       if (r.kind === 'duplicate') {
         reportDuplicate(r.id, r.paths, sc.deltaRel);
       } else if (r.kind === 'unknown') {
@@ -1488,7 +1595,9 @@ function evaluateKnowledgeLayer(input: KnowledgeLayerInput): KnowledgeLayerResul
           code: 'knowledge_reference_unknown',
           path: sc.deltaRel,
           message: r.reason === 'invalid'
-            ? `${sc.target}:${ref.line} 引用的 ${ref.ref} 目标条目结构无效（${r.entryPath}）`
+            ? (entryByPath.get(r.entryPath ?? '')?.valid
+              ? `${sc.target}:${ref.line} 引用的 ${ref.ref} 目标条目标签不在标签表（${r.entryPath}）`
+              : `${sc.target}:${ref.line} 引用的 ${ref.ref} 目标条目结构无效（${r.entryPath}）`)
             : `${sc.target}:${ref.line} 引用的 ${ref.ref} 在有效知识视图中不存在`,
           fix_hint: '核对引用拼写；新知识先在 deltas/knowledge/ 规划对应条目；目标条目结构无效时按条目模板补齐',
         });
@@ -2220,4 +2329,57 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
       }),
     } : {}),
   };
+}
+
+/**
+ * 活跃提案的知识与场景候选状态（knowledge-direct-intake，功能规格 §2.103.4 的 `proposal_view` 与判据 9 的配对视图）。
+ * 与 L10 同一阶段判定与合成器：未合并 = 磁盘叠加 delta；已合并且无待应用修正 = 落盘（`replay=false`）；
+ * 待应用修正 = 合并基线叠加修正 delta。不读锁——调用方（`knowledge apply`）已持写锁。
+ * 提案目录不存在时返回 null（视为无活跃提案）；提案存在但产物不可读时抛 {@link ProposalKnowledgeUnreadableError}
+ * ——调用方不得把「视图不可计算」当作「无提案」（code-r1 F3）。
+ */
+export class ProposalKnowledgeUnreadableError extends Error {
+  constructor(public readonly slug: string, public readonly artifact: string, detail: string) {
+    super(`无法计算活跃提案 ${slug} 的知识候选状态：logos/changes/${slug}/${artifact} 不可读（${detail}）`);
+    this.name = 'ProposalKnowledgeUnreadableError';
+  }
+}
+
+export function computeProposalKnowledgeState(root: string, slug: string): KnowledgeCandidateState | null {
+  const proposalDir = join(root, 'logos', 'changes', slug);
+  if (!existsSync(proposalDir)) return null;
+  const deltaEntries = classifyProposalDeltas(proposalDir);
+  const broken = deltaEntries.find(e => e.ioError);
+  if (broken) throw new ProposalKnowledgeUnreadableError(slug, broken.relativePath, String(broken.ioError));
+  const deltaContents = new Map<string, string>();
+  for (const entry of deltaEntries) {
+    if (!entry.contentProbeEligible) continue;
+    try { deltaContents.set(entry.relativePath, readFileSync(join(proposalDir, entry.relativePath), 'utf-8')); }
+    catch (e) { throw new ProposalKnowledgeUnreadableError(slug, entry.relativePath, e instanceof Error ? e.message : String(e)); }
+  }
+  const specCompleteRaw = hasSpecCompleteMarker(proposalDir);
+  // code-r2 / code-r3 F3：阶段证据（合并标记）读取失败 ≠ 「旧标记 / 无待应用修正」——由阶段解析器以 strict 模式
+  // 在**同一次**读取中传播错误（不另做一次可读性预检），否则待应用修正新增的知识会被漏判。
+  // 内容可读但不是带合并基线的新形态（legacy 标记）仍按无待应用修正处理。
+  let amendCtx: ReturnType<typeof resolvePendingAmendContext> = null;
+  if (specCompleteRaw) {
+    try {
+      amendCtx = resolvePendingAmendContext(root, proposalDir, { strict: true });
+    } catch (e) {
+      throw new ProposalKnowledgeUnreadableError(slug, SPEC_MERGED_MARKER, e instanceof Error ? e.message : String(e));
+    }
+  }
+  const priorStateOf = (targetPath: string): PriorTargetState => {
+    if (!specCompleteRaw) {
+      const abs = join(root, ...targetPath.split('/'));
+      if (!existsSync(abs)) return { frozen: false, mode: 'CREATE', content: null, readable: true };
+      try { return { frozen: false, mode: 'MODIFY', content: readFileSync(abs, 'utf-8'), readable: true }; }
+      catch { return { frozen: false, mode: 'MODIFY', content: null, readable: false }; }
+    }
+    if (!amendCtx) return { frozen: true };
+    const state = amendCtx.beforeOf(targetPath);
+    if (state === 'unknown') return { frozen: true };
+    return { frozen: false, mode: state.mode, content: state.content, readable: true };
+  };
+  return computeKnowledgeCandidateState({ root, slug, deltaEntries, deltaContents, priorStateOf, specCompleteRaw, amendCtx }, { force: true });
 }

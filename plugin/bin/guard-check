@@ -2391,7 +2391,13 @@ case "$TOOL_NAME" in
     if [ "$PROTECT_STEP" != "fallback" ] || [ -n "$(fallback_engine_hint)" ]; then
       _DETAIL="\\n$(protect_block_detail)"
     fi
-    block "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n目标文件：$FILE_PATH${_DETAIL}\\n\\n请先运行 \`openlogos change <slug>\` 创建变更提案后再修改代码。"
+    # knowledge-direct-intake（spec/pretooluse-guard.md「企业知识目录的免立案录入」）：知识目录保持受保护，只补改用 apply 的提示
+    _KHINT=""
+    case "$FILE_PATH" in
+      logos/resources/knowledge/*|*/logos/resources/knowledge/*)
+        _KHINT="\\n\\n录入企业知识请使用 \`openlogos knowledge apply <候选目录>\`（无需立案）：把候选条目写到项目根之外的临时目录后运行，见 spec/directory-convention.md。" ;;
+    esac
+    block "⛔ 变更管理拦截：项目处于 launched 生命周期，但没有活跃的变更提案。\\n\\n目标文件：$FILE_PATH${_DETAIL}${_KHINT}\\n\\n请先运行 \`openlogos change <slug>\` 创建变更提案后再修改代码。"
     ;;
 
   Bash|PowerShell)

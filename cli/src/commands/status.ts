@@ -13,6 +13,7 @@ import { listFiles } from '../lib/list-files.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import { collectStatusEnvironmentFields } from '../lib/environments.js';
 import type { OutputFormat } from '../lib/json-output.js';
+import { knowledgeStatusHint } from '../lib/knowledge-lookup.js';
 import { readProjectYaml, isAdoptedBootstrap, formatYamlDegradedLines } from '../lib/project-yaml.js';
 import type { BootstrapMode, YamlDiagnostics, ProjectYamlScenario } from '../lib/project-yaml.js';
 import { buildModuleFeatures, formatFeaturesText } from '../lib/feature-grouping.js';
@@ -1384,6 +1385,8 @@ export function status(format: OutputFormat = 'text', moduleId?: string) {
 
   // AC-YAMLW-04：降级必须在人类可读通道可见，且与 next 同源；健康项目零新增输出
   for (const line of formatYamlDegradedLines(data.yaml_diagnostics, locale)) console.log(line);
+  // knowledge-direct-intake（功能规格 §2.103.13）：知识检查有问题时的文本提示；JSON 输出不变
+  { const hint = knowledgeStatusHint(root); if (hint) console.log(`⚠️  ${hint}`); }
 
   if (!moduleId) {
     console.log('\n📊 OpenLogos Project Status\n');

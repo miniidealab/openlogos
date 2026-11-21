@@ -4,7 +4,9 @@ import { readLocale, t, mergePromptTemplate, type Locale } from '../i18n.js';
 import { resetCodeSection } from '../lib/proposal-lifecycle.js';
 // S35 前置重构②③⑤：段标记/模板骨架校验、delta 分类、模块归属解析改为共享判据打包调用（严禁第二份判据）。
 import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resolveProposalModuleContext, DeltaScanUnreadableError, evaluateDeltaConservation, deltaTargetProjectPath, resolveModifiedSectionKeys, runChangeLint, isKnowledgeTargetPath } from '../lib/change-lint.js';
-import { recoverBaselineClosureApply } from '../lib/baseline-apply.js';
+import { BASELINE_CLOSURE_APPLY_JOURNAL, recoverBaselineClosureApply } from '../lib/baseline-apply.js';
+import { holdKnowledgeLockForProcess } from '../lib/knowledge-lock.js';
+import { resolvePendingAmendContext } from '../lib/merge-baseline.js';
 import { deriveUiImpact, readUiUxDeclaration } from '../lib/ui-first.js';
 import { markAmendContext, mergeDirect, type MergeDirectHooks } from '../lib/merge-direct.js';
 import { describeMergeFailure, extractMergeFailureDiagnostics } from '../lib/merge-failure-report.js';
@@ -356,6 +358,35 @@ function admitOrExit(root: string, changePath: string, slug: string, json: boole
   }
 }
 
+/**
+ * 本次合并（首次或增量修正）的写入集合是否可能含 `logos/resources/knowledge/` 目标（§2.103.4「事务」第 7 条）：
+ * 当前有 `deltas/knowledge/` 产物，或处于待应用修正且合并基线含知识目标——撤回最后一份知识 delta 时，
+ * 恢复集合仍会写回知识文件（code-r1 F1）。判定失败时保守地视为「含」。
+ */
+function mergeMayWriteKnowledge(root: string, changePath: string): boolean {
+  // code-r2 F1：残留的合并事务日志（如修正在新版 SPEC_MERGED 落盘后、日志标为 committed 前中断）会在下方
+  // recoverBaselineClosureApply 中把目标写回——其目标含知识文件（或日志不可解析）时，恢复同样须先持锁。
+  const journal = join(changePath, BASELINE_CLOSURE_APPLY_JOURNAL);
+  if (existsSync(journal)) {
+    try {
+      const parsed = JSON.parse(readFileSync(journal, 'utf-8')) as { entries?: Array<{ target_path?: unknown }> };
+      if (!Array.isArray(parsed.entries)) return true;
+      if (parsed.entries.some(e => typeof e.target_path !== 'string' || e.target_path.startsWith('logos/resources/knowledge/'))) return true;
+    } catch {
+      return true;
+    }
+  }
+  const dir = join(changePath, 'deltas', 'knowledge');
+  try { if (existsSync(dir) && readdirSync(dir).length > 0) return true; } catch { return true; }
+  if (!hasSpecCompleteMarker(changePath)) return false;
+  try {
+    const ctx = resolvePendingAmendContext(root, changePath);
+    return ctx !== null && ctx.baseline.targets.some(t => t.path.startsWith('logos/resources/knowledge/'));
+  } catch {
+    return true;
+  }
+}
+
 export function merge(slug?: string, format: OutputFormat = 'text') {
   const json = format === 'json';
   // JSON 模式下 stdout 只留 envelope：人读进度行改走 stderr。
@@ -391,6 +422,14 @@ export function merge(slug?: string, format: OutputFormat = 'text') {
   if (guard && typeof guard.activeChange === 'string' && guard.activeChange && guard.activeChange !== slug) {
     console.error(`Error: active guard 指向提案 '${guard.activeChange}'，与 merge 目标 '${slug}' 不一致。`);
     console.error('  拒绝 merge：请先切换到正确的活跃提案，或核对 slug。未生成 MERGE_PROMPT、未写 SPEC_MERGED。');
+    process.exit(1);
+  }
+
+  // knowledge-direct-intake（功能规格 §2.103.4「事务」第 7 条）：本提案含知识 delta 时，准入与写入在企业知识
+  // 排他锁内进行，与 `openlogos knowledge apply` 互斥；锁持有到进程退出。
+  if (mergeMayWriteKnowledge(root, changePath) && holdKnowledgeLockForProcess(root) === 'busy') {
+    console.error('Error: 另一个企业知识录入（openlogos knowledge apply / index）正在进行，等待排他锁超时。');
+    console.error('  拒绝 merge：未生成 MERGE_PROMPT、未写 SPEC_MERGED。稍后重试。');
     process.exit(1);
   }
 

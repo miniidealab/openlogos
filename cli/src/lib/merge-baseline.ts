@@ -191,12 +191,28 @@ export interface SpecMergedRecord {
   amendments: MergeAmendmentRecord[];
 }
 
-export function readSpecMergedRecord(proposalDir: string): SpecMergedRecord {
+/**
+ * 读取 SPEC_MERGED 记录。`strict` 时 IO 读取失败（与「内容不是带合并基线的新形态」区分）向调用方传播错误，
+ * 供必须区分「旧标记 / 无修正」与「阶段证据读取失败」的入口使用（knowledge-direct-intake code-r3 F3）；
+ * 默认语义不变：读取或解析失败都折叠为无记录。
+ */
+export function readSpecMergedRecord(proposalDir: string, opts: { strict?: boolean } = {}): SpecMergedRecord {
   const path = join(proposalDir, SPEC_MERGED_MARKER);
   if (!existsSync(path)) return { record: null, baseline: null, amendments: [] };
   let record: Record<string, unknown> | null = null;
+  let raw: string;
   try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    // 故障注入仅在 NODE_ENV=test 下生效：模拟阶段判定读取标记时的 IO 错误（UT-S45-39）
+    if (process.env.NODE_ENV === 'test' && process.env.OPENLOGOS_TEST_SPEC_MERGED_READ_FAIL === '1') {
+      throw Object.assign(new Error('EIO: i/o error, read (test fault)'), { code: 'EIO' });
+    }
+    raw = readFileSync(path, 'utf8');
+  } catch (e) {
+    if (opts.strict) throw e;
+    return { record: null, baseline: null, amendments: [] };
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) record = parsed as Record<string, unknown>;
   } catch { record = null; }
   if (!record) return { record: null, baseline: null, amendments: [] };
@@ -303,12 +319,13 @@ export interface PendingAmendContext {
   beforeOf(targetPath: string): AmendBeforeState | 'unknown';
 }
 
-export function resolvePendingAmendContext(root: string, proposalDir: string): PendingAmendContext | null {
+export function resolvePendingAmendContext(root: string, proposalDir: string, opts: { strict?: boolean } = {}): PendingAmendContext | null {
   if (!hasSpecCompleteMarker(proposalDir)) return null;
-  const { baseline } = readSpecMergedRecord(proposalDir);
+  // strict：标记或 delta 读取失败向调用方传播，不折叠为「无待应用修正」（code-r3 F3）
+  const { baseline } = readSpecMergedRecord(proposalDir, { strict: opts.strict });
   if (!baseline) return null;
   let currentDigest: string;
-  try { currentDigest = computeDeltaDigest(proposalDir); } catch { return null; }
+  try { currentDigest = computeDeltaDigest(proposalDir); } catch (e) { if (opts.strict) throw e; return null; }
   if (currentDigest === baseline.delta_digest) return null;
   const byPath = new Map(baseline.targets.map(t => [t.path, t]));
   const cache = new Map<string, AmendBeforeState | 'unknown'>();

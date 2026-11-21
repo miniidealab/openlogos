@@ -219,9 +219,17 @@ const heldLockTokens = new Map<string, string>();
 let lockTokenSeq = 0;
 
 function lockHeldByCurrentProcess(root: string, moduleId: string): boolean {
-  const token = heldLockTokens.get(moduleId);
+  return lockHeldByCurrentProcessAt(lockPath(root, moduleId), moduleId);
+}
+
+/**
+ * 锁原语按锁路径参数化（knowledge-direct-intake，功能规格 §2.103.4「事务」第 0 / 6 条）：`key` 是进程内持有表的键，
+ * baseline-seed 以模块 id 为键、锁文件为 `<module>.commit.lock`；其他调用方（如企业知识录入）传自己的锁路径与键。
+ */
+export function lockHeldByCurrentProcessAt(path: string, key: string): boolean {
+  const token = heldLockTokens.get(key);
   if (!token) return false;
-  const owner = readLockOwner(lockPath(root, moduleId));
+  const owner = readLockOwner(path);
   return owner !== 'unparseable' && owner.pid === process.pid && owner.token === token;
 }
 
@@ -238,8 +246,14 @@ function readLockOwner(path: string): LockOwner | 'unparseable' {
 }
 
 export function acquireLock(root: string, moduleId: string): boolean {
-  const path = lockPath(root, moduleId);
   mkdirSync(runsRoot(root), { recursive: true });
+  return acquireLockAt(lockPath(root, moduleId), moduleId);
+}
+
+/** 按锁路径获取排他锁（协议同 {@link acquireLock}）；`key` 为进程内持有表的键。 */
+export function acquireLockAt(path: string, key: string): boolean {
+  const moduleId = key;
+  mkdirSync(dirname(path), { recursive: true });
   const token = `${process.pid}-${Date.now()}-${lockTokenSeq++}`;
   const payload = JSON.stringify({ pid: process.pid, at: Date.now(), token });
   const tmp = `${path}.acq-${process.pid}-${token}`;      // 持有者身份（发布进 path）
@@ -343,23 +357,34 @@ export function setReadLockRetryPolicyForTests(policy?: Partial<ReadLockRetryPol
  * 写路径（begin/commit）不得调用——保持 fail-fast。
  */
 export function acquireReadLockWithRetry(root: string, moduleId: string): boolean {
-  if (acquireLock(root, moduleId)) return true;
+  mkdirSync(runsRoot(root), { recursive: true });
+  return acquireReadLockWithRetryAt(lockPath(root, moduleId), moduleId);
+}
+
+/** 按锁路径的读路径锁获取（有界指数退避，策略同 {@link acquireReadLockWithRetry}）。 */
+export function acquireReadLockWithRetryAt(path: string, key: string, policyOverride?: Partial<ReadLockRetryPolicy>): boolean {
+  if (acquireLockAt(path, key)) return true;
   // 同进程已持锁（公共 acquire 拒绝重入）：同一同步调用栈内等待自己释放必死锁，
   // 保持既有立即失败语义，不消耗重试预算。
-  if (lockHeldByCurrentProcess(root, moduleId)) return false;
-  const policy = readLockRetryPolicy;
+  if (lockHeldByCurrentProcessAt(path, key)) return false;
+  const policy = policyOverride ? { ...readLockRetryPolicy, ...policyOverride } : readLockRetryPolicy;
   const start = policy.now();
   for (let attempt = 0; ; attempt++) {
     const remaining = policy.budgetMs - (policy.now() - start);
     if (remaining <= 0) return false;
     const backoff = policy.backoffMs[Math.min(attempt, policy.backoffMs.length - 1)] ?? 400;
     policy.sleep(Math.min(backoff, remaining));
-    if (acquireLock(root, moduleId)) return true;
+    if (acquireLockAt(path, key)) return true;
   }
 }
 
 export function releaseLock(root: string, moduleId: string): void {
-  const path = lockPath(root, moduleId);
+  releaseLockAt(lockPath(root, moduleId), moduleId);
+}
+
+/** 按锁路径释放本进程本次获取的锁（pid + token 双匹配）。 */
+export function releaseLockAt(path: string, key: string): void {
+  const moduleId = key;
   const myToken = heldLockTokens.get(moduleId);
   // 仅释放**本进程本次获取**（pid + token 双匹配）的锁——若锁已被回收并由他人重建（token/pid 不符），不误删。
   try {

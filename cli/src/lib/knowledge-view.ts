@@ -10,6 +10,7 @@
  * 保证校验出的后态与 merge 实际写入一致。
  */
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, posix } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { classifyCanonicalTargetCategory, classifyDeltaRoute, contained, existingPathContained } from './canonical-target.js';
@@ -259,6 +260,11 @@ export function knowledgeSourcePathProblem(root: string, rawPath: string): strin
 export interface ParseKnowledgeOptions {
   /** 校验 `source.path` 归属所需的项目根；不提供时跳过 source 文件存在性与归属（只校验形态）。 */
   root?: string;
+  /**
+   * 本批将同时写入的原文（项目根相对路径，`knowledge apply` 候选 `sources/`，§2.103.4 的 after_sources）：
+   * 命中时视为存在于原文目录，不再要求磁盘上已有该文件。
+   */
+  extraSources?: ReadonlySet<string>;
 }
 
 /** 解析一个知识条目并给出 §2.102.3 的结构有效性结论。 */
@@ -298,7 +304,10 @@ export function parseKnowledgeEntry(path: string, content: string, opts: ParseKn
         const rec = item && typeof item === 'object' && !Array.isArray(item) ? item as Record<string, unknown> : null;
         if (!rec || !nonEmptyString(rec.path)) { problems.push(`source[${idx}] 缺 path`); return; }
         if (!nonEmptyString(rec.version)) problems.push(`source[${idx}] 缺 version`);
-        if (opts.root !== undefined) {
+        const normalizedSource = posix.normalize(rec.path.replace(/\\/g, '/'));
+        if (opts.extraSources?.has(normalizedSource) && !rec.path.replace(/\\/g, '/').split('/').includes('..')) {
+          // 本批候选原文：apply 校验通过后与条目同批写入
+        } else if (opts.root !== undefined) {
           const pp = knowledgeSourcePathProblem(opts.root, rec.path);
           if (pp) problems.push(pp);
         } else {
@@ -360,13 +369,17 @@ export function buildKnowledgeView(entries: KnowledgeEntry[]): KnowledgeView {
   return { entries: sorted, byId };
 }
 
-/** 读取磁盘上 `logos/resources/knowledge/` 下的条目原文（顶层 `.md`）。 */
+/**
+ * 读取磁盘上 `logos/resources/knowledge/` 下的条目原文（顶层 `.md`）。
+ * 文件名不含 KXX 的文件（`TAGS.md`、`INDEX.md` 等目录内非条目文件，§2.103.6 / §2.103.14）不进入视图。
+ */
 export function readKnowledgeDir(root: string): Map<string, string> {
   const out = new Map<string, string>();
   const dir = join(root, ...KNOWLEDGE_DIR.split('/'));
   if (!existsSync(dir)) return out;
   for (const name of readdirSync(dir).sort()) {
     if (!name.endsWith('.md')) continue;
+    if (parseKnowledgeFileId(name) === null) continue;
     const abs = join(dir, name);
     try {
       if (!statSync(abs).isFile()) continue;
@@ -466,4 +479,267 @@ export function candidateMarkdownAfter(
   } catch {
     return null;
   }
+}
+
+// ———————————————————————————————————————————————————————————————————————————————
+// knowledge-direct-intake（功能规格 §2.103）：标签表、三态、含标签判据的有效性、总索引
+// ———————————————————————————————————————————————————————————————————————————————
+
+export const KNOWLEDGE_TAGS_FILE = `${KNOWLEDGE_DIR}/TAGS.md`;
+export const KNOWLEDGE_INDEX_FILE = `${KNOWLEDGE_DIR}/INDEX.md`;
+export const KNOWLEDGE_TAGS_MARKER = `${KNOWLEDGE_DIR}/.tags-enabled`;
+
+export type TagState = 'never' | 'enabled' | 'missing';
+
+/** 标签规范化（§2.103.6）：首尾去空白、Unicode NFKC、ASCII 小写。 */
+export function normalizeTag(tag: string): string {
+  return tag.normalize('NFKC').trim().replace(/[A-Z]/g, c => c.toLowerCase());
+}
+
+/** 疑似同义判定键：规范化后再去除空白、`-`、`_`。 */
+function synonymKey(tag: string): string {
+  return normalizeTag(tag).replace(/[\s\-_]+/g, '');
+}
+
+export interface TagRow { label: string; aliases: string[]; line: number }
+
+export interface TagTable {
+  rows: TagRow[];
+  /** 规范化后的标签 / 别名 → 所属行的标签。 */
+  lookup: Map<string, string>;
+  /** 格式错误（`knowledge_tags_invalid`）。 */
+  problems: string[];
+  /** 疑似同义（warning `knowledge_tag_synonym`）。 */
+  synonyms: string[];
+}
+
+/** 解析 `TAGS.md`：首个表格，表头首列「标签」、第二列「别名」；别名以 `、` 或 `,` 分隔。 */
+export function parseTagTable(content: string): TagTable {
+  const lines = scanLines(content);
+  const table = firstTable(lines);
+  const out: TagTable = { rows: [], lookup: new Map(), problems: [], synonyms: [] };
+  if (!table || !table.delimiterOk) {
+    out.problems.push('TAGS.md 缺标签表（首个表格须有表头与分隔行）');
+    return out;
+  }
+  if ((table.header[0] ?? '').trim() !== '标签' || (table.header[1] ?? '').trim() !== '别名') {
+    out.problems.push('TAGS.md 标签表表头须为「标签 | 别名 | 说明」');
+    return out;
+  }
+  const owner = new Map<string, string>();
+  for (const row of table.rows) {
+    const label = (row.cells[0] ?? '').trim();
+    if (label === '') { out.problems.push(`TAGS.md 第 ${row.line} 行「标签」为空`); continue; }
+    const aliases = (row.cells[1] ?? '').split(/[、,，]/).map(x => x.trim()).filter(x => x !== '');
+    const key = normalizeTag(label);
+    if (owner.has(key)) { out.problems.push(`TAGS.md 第 ${row.line} 行标签「${label}」与「${owner.get(key)}」重复`); continue; }
+    owner.set(key, label);
+    out.rows.push({ label, aliases, line: row.line });
+  }
+  for (const r of out.rows) {
+    out.lookup.set(normalizeTag(r.label), r.label);
+    for (const a of r.aliases) {
+      const k = normalizeTag(a);
+      const prev = owner.get(k) ?? out.lookup.get(k);
+      if (prev !== undefined && prev !== r.label) {
+        out.problems.push(`TAGS.md 别名「${a}」与标签「${prev}」冲突（行 ${r.line}）`);
+        continue;
+      }
+      out.lookup.set(k, r.label);
+    }
+  }
+  const seen = new Map<string, string>();
+  for (const r of out.rows) {
+    for (const term of [r.label, ...r.aliases]) {
+      const k = synonymKey(term);
+      const prev = seen.get(k);
+      if (prev !== undefined && prev !== r.label) out.synonyms.push(`「${prev}」与「${r.label}」疑似同义（${term}）`);
+      else seen.set(k, r.label);
+    }
+  }
+  out.synonyms = [...new Set(out.synonyms)];
+  return out;
+}
+
+/** 由一组标签生成 `TAGS.md`（初始化 / 重新初始化，§2.103.6「启用」）；`base` 存在时保留其全部行并只追加缺少的标签。 */
+export function renderTagTable(tags: Iterable<string>, base: TagTable | null, note = '初始化自既有条目'): string {
+  const rows: Array<{ label: string; aliases: string; note: string }> = [];
+  const known = new Map<string, string>();
+  if (base) {
+    for (const r of base.rows) {
+      rows.push({ label: r.label, aliases: r.aliases.join('、'), note: '' });
+      known.set(normalizeTag(r.label), r.label);
+      for (const a of r.aliases) known.set(normalizeTag(a), r.label);
+    }
+  }
+  const added = [...new Set([...tags].map(t => t.trim()).filter(t => t !== ''))]
+    .filter(t => !known.has(normalizeTag(t)))
+    .sort();
+  const addedKeys = new Set<string>();
+  for (const t of added) {
+    const k = normalizeTag(t);
+    if (addedKeys.has(k)) continue;
+    addedKeys.add(k);
+    rows.push({ label: t, aliases: '', note });
+  }
+  const esc = (v: string) => v.replace(/\|/g, '\\|');
+  return ['# 知识标签表', '', '| 标签 | 别名 | 说明 |', '|---|---|---|',
+    ...rows.map(r => `| ${esc(r.label)} | ${esc(r.aliases)} | ${esc(r.note)} |`), ''].join('\n');
+}
+
+/** 条目中不在标签表内的标签（规范化比较，别名同样命中）。 */
+export function tagsOutsideTable(entry: KnowledgeEntry, table: TagTable): string[] {
+  const tags = Array.isArray(entry.meta?.tags) ? (entry.meta!.tags as unknown[]).filter((t): t is string => typeof t === 'string') : [];
+  return tags.filter(t => !table.lookup.has(normalizeTag(t)));
+}
+
+/** 条目的标签（字符串列表；元数据缺失时为空）。 */
+export function entryTags(entry: KnowledgeEntry): string[] {
+  return Array.isArray(entry.meta?.tags) ? (entry.meta!.tags as unknown[]).filter((t): t is string => typeof t === 'string') : [];
+}
+
+function gitHeadHas(root: string, relPath: string): boolean | null {
+  try {
+    execFileSync('git', ['-C', root, 'rev-parse', '--is-inside-work-tree'], { stdio: 'ignore' });
+  } catch { return null; }
+  try {
+    execFileSync('git', ['-C', root, 'cat-file', '-e', `HEAD:${relPath}`], { stdio: 'ignore' });
+    return true;
+  } catch { return false; }
+}
+
+/** git HEAD 中的文件内容；非 git、无 HEAD 或不存在时为 null。 */
+export function gitHeadContent(root: string, relPath: string): string | null {
+  try {
+    return execFileSync('git', ['-C', root, 'show', `HEAD:${relPath}`], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch { return null; }
+}
+
+/** git HEAD 中 `logos/resources/knowledge/` 顶层条目文件列表；非 git 项目为 null。 */
+export function gitHeadKnowledgeEntries(root: string): Map<string, string> | null {
+  try {
+    execFileSync('git', ['-C', root, 'rev-parse', '--verify', 'HEAD'], { stdio: 'ignore' });
+  } catch { return null; }
+  let names: string[];
+  try {
+    names = execFileSync('git', ['-C', root, 'ls-tree', '--name-only', 'HEAD', `${KNOWLEDGE_DIR}/`], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] })
+      .split('\n').map(x => x.trim()).filter(x => x !== '');
+  } catch { return new Map(); }
+  const out = new Map<string, string>();
+  for (const p of names.sort()) {
+    const base = posix.basename(p);
+    if (!base.endsWith('.md') || parseKnowledgeFileId(base) === null) continue;
+    const c = gitHeadContent(root, p);
+    if (c !== null) out.set(p, c);
+  }
+  return out;
+}
+
+export interface TagStateFacts { tags: string | null; marker: boolean; headHasTags: boolean | null }
+
+/** 读取三态判定所需的事实（磁盘 `TAGS.md`、启用标记、git HEAD）。 */
+export function readTagStateFacts(root: string): TagStateFacts {
+  const tagsAbs = join(root, ...KNOWLEDGE_TAGS_FILE.split('/'));
+  let tags: string | null = null;
+  try { if (existsSync(tagsAbs) && statSync(tagsAbs).isFile()) tags = readFileSync(tagsAbs, 'utf-8'); } catch { tags = null; }
+  const marker = existsSync(join(root, ...KNOWLEDGE_TAGS_MARKER.split('/')));
+  const headHasTags = tags !== null || marker ? null : gitHeadHas(root, KNOWLEDGE_TAGS_FILE);
+  return { tags, marker, headHasTags };
+}
+
+/**
+ * 标签表三态（§2.103.6，apply / check / list / index / L10 共用）：`TAGS.md` 存在 → enabled；
+ * 不存在而启用标记存在或 HEAD 中有 `TAGS.md` → missing；否则 never。不读派生的 `INDEX.md`。
+ */
+export function resolveTagState(facts: TagStateFacts): TagState {
+  if (facts.tags !== null) return 'enabled';
+  if (facts.marker || facts.headHasTags === true) return 'missing';
+  return 'never';
+}
+
+/** 含标签判据的条目有效性（§2.103.11）：enabled 时标签必须在表中；其余状态沿用 §2.102.3。 */
+export function entryEffectivelyValid(entry: KnowledgeEntry, state: TagState, table: TagTable | null): boolean {
+  if (!entry.valid) return false;
+  if (state === 'enabled' && table) return tagsOutsideTable(entry, table).length === 0;
+  return true;
+}
+
+/** 把标签判据叠加到视图：enabled 时标签不在表中的条目标为无效（problems 追加说明）。 */
+export function applyTagCriterion(view: KnowledgeView, state: TagState, table: TagTable | null): KnowledgeView {
+  if (state !== 'enabled' || !table) return view;
+  const entries = view.entries.map(e => {
+    if (!e.valid) return e;
+    const outside = tagsOutsideTable(e, table);
+    if (outside.length === 0) return e;
+    return { ...e, valid: false, problems: [...e.problems, `标签不在标签表：${outside.join('、')}`] };
+  });
+  return buildKnowledgeView(entries);
+}
+
+const TAG_STATE_LABEL: Record<TagState, string> = { never: '未启用', enabled: '已启用', missing: '已启用但词表丢失' };
+
+/** 生成 `INDEX.md`（§2.103.7）：落盘条目的确定性派生视图，不含时间戳。 */
+export function renderKnowledgeIndex(entries: KnowledgeEntry[], state: TagState): string {
+  const num = (id: string | null) => (id ? Number(id.slice(1)) : Number.MAX_SAFE_INTEGER);
+  const sorted = [...entries].sort((a, b) => num(a.id) - num(b.id) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const esc = (v: string) => v.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  const stateLine = state === 'enabled' ? `标签表：已启用（${KNOWLEDGE_TAGS_FILE}）` : `标签表：${TAG_STATE_LABEL[state]}`;
+  const rows = sorted.map(e => {
+    const meta = e.meta ?? {};
+    const str = (v: unknown) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : '—');
+    const tags = entryTags(e);
+    const active = e.rules.filter(r => r.status === 'active').length;
+    const status = e.valid ? str(meta.status) : '结构无效';
+    const title = e.title ? e.title.replace(/^K\d+\s*[:：]\s*/, '') : '—';
+    return `| ${e.id ?? '—'} | ${esc(title)} | ${esc(str(meta.type))} | ${esc(str(meta.scope))} | ${esc(str(meta.module))} | ${esc(tags.length ? tags.join('、') : '—')} | ${esc(status)} | ${active}/${e.rules.length} | ${esc(posix.basename(e.path))} |`;
+  });
+  return ['<!-- 由 openlogos knowledge index 生成，请勿手工编辑 -->', '# 企业知识索引', '', stateLine, '',
+    '| ID | 标题 | type | scope | module | tags | status | 规则（active/全部） | 文件 |',
+    '|---|---|---|---|---|---|---|---|---|', ...rows, ''].join('\n');
+}
+
+/** 读取磁盘全部场景文档（项目根相对路径 → 内容）。 */
+export function readScenarioDir(root: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const dir = join(root, ...SCENARIO_DIR.split('/'));
+  if (!existsSync(dir)) return out;
+  for (const name of readdirSync(dir).sort()) {
+    if (!name.endsWith('.md')) continue;
+    try { out.set(`${SCENARIO_DIR}/${name}`, readFileSync(join(dir, name), 'utf-8')); } catch { /* 跳过 */ }
+  }
+  return out;
+}
+
+/** 「规则」表的结构化行（`knowledge show` 的 rules，§2.103.8）：列按表头「ID / 规则 / 状态 / 例外」取值。 */
+export function parseRuleRows(content: string): Array<{ id: string; rule: string; status: string; exception: string }> {
+  const body = sectionLines(scanLines(content), '规则');
+  const table = body ? firstTable(body) : null;
+  if (!table) return [];
+  const col = (name: string) => table.header.findIndex(h => h === name);
+  const [ruleCol, statusCol, exCol] = [col('规则'), col('状态'), col('例外')];
+  return table.rows
+    .filter(r => RULE_ID_RE.test(r.cells[0] ?? ''))
+    .map(r => ({
+      id: r.cells[0],
+      rule: ruleCol >= 0 ? (r.cells[ruleCol] ?? '') : '',
+      status: statusCol >= 0 ? (r.cells[statusCol] ?? '') : '',
+      exception: exCol >= 0 ? (r.cells[exCol] ?? '') : '',
+    }));
+}
+
+/** 「适用业务约束」表的引用行（`knowledge refs`，§2.103.9）：引用、行号、作用位置、例外。 */
+export function extractConstraintRows(content: string): Array<{ ref: string; line: number; location: string; exception: string }> {
+  const body = sectionLines(scanLines(content), CONSTRAINT_SECTION_TITLE);
+  if (!body) return [];
+  const table = firstTable(body);
+  if (!table) return [];
+  const loc = table.header.findIndex(h => h === '作用位置');
+  const ex = table.header.findIndex(h => h === '例外');
+  const out: Array<{ ref: string; line: number; location: string; exception: string }> = [];
+  for (const row of table.rows) {
+    const first = (row.cells[0] ?? '').replace(/`/g, '').trim();
+    if (!REF_RE.test(first)) continue;
+    out.push({ ref: first, line: row.line, location: loc >= 0 ? (row.cells[loc] ?? '') : '', exception: ex >= 0 ? (row.cells[ex] ?? '') : '' });
+  }
+  return out;
 }

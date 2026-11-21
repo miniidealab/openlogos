@@ -137,7 +137,8 @@ export function change(slug?: string, moduleArg?: string) {
     }
     console.log('');
 
-    const deltaDirs = ['deltas/prd', 'deltas/api', 'deltas/database', 'deltas/scenario'];
+    // knowledge-direct-intake（功能规格 §2.103.13）：提案骨架含 deltas/knowledge/（知识修订须与场景同批生效时使用）
+    const deltaDirs = ['deltas/prd', 'deltas/api', 'deltas/database', 'deltas/scenario', 'deltas/knowledge'];
 
     mkdirSync(changePath, { recursive: true });
     for (const dir of deltaDirs) {

@@ -58,7 +58,13 @@ export function scanCandidateFiles(root: string): string[] {
   scanDir(join(root, 'logos/resources/scenario'));
   scanDir(join(root, 'logos/resources/decisions'));
   // S45：企业知识条目（initial 阶段直接写入的条目由此补录；merge 对 CREATE 目标自行登记）
-  scanDir(join(root, 'logos/resources/knowledge'));
+  // knowledge-direct-intake（§2.103.14）：只收录文件名含 KXX 的条目文件——TAGS.md、INDEX.md、.tags-enabled 不是条目
+  {
+    const before = results.length;
+    scanDir(join(root, 'logos/resources/knowledge'));
+    const kept = results.splice(before).filter(p => /\/[^/]*K\d+-[^/]+\.md$/.test(p));
+    results.push(...kept);
+  }
   // verify/ 只收顶层报告：其子目录是 baseline-seed 事务工作区、证据包与部署制品，
   // 其中 staging/ 与 resolved/ 存放主文档的**完整副本**——一旦与权威并列进索引，
   // AI 就在两个同名条目之间无从选择。`logos/spec/baseline-closure.md` 已明文禁止

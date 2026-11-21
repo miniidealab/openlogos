@@ -1,6 +1,6 @@
 {
   "schema": "openlogos/asset-manifest@1",
-  "version": "0.16.17",
+  "version": "0.16.18",
   "planContractVersion": "1.4.0",
   "skills": [
     {
@@ -9,11 +9,11 @@
     },
     {
       "path": "skills/change-writer/SKILL.md",
-      "sha256": "09086a5fc497d8e363dbd2ef5251a17c3cf5138ca537badcf10c6fe8bce664a1"
+      "sha256": "72d9659649359c7ede17e13cf93e129c2131a61050d3e5901e43891bb8bf93d3"
     },
     {
       "path": "skills/change-writer/SKILL.en.md",
-      "sha256": "365b7e36cabaa2714878e9fca842fecf9d6092671f2b3f76f3f4e8c7fe131a40"
+      "sha256": "15721c3e2b6931efe8283a32802ea97ddf15344c4643ef1889be8e9df2336526"
     },
     {
       "path": "skills/merge-executor/SKILL.md",
@@ -25,7 +25,7 @@
     },
     {
       "path": "skills/scenario-architect/SKILL.md",
-      "sha256": "2d2abf7cee9dce2d952e796771b1e64e7c787f545387ed8972e2dccaf64bcfba"
+      "sha256": "04a65d0760c309e9d078fe95a2f4e55f8174d144737cecdc3231365be03d468c"
     },
     {
       "path": "skills/deployment-designer/SKILL.md",
@@ -37,7 +37,7 @@
     },
     {
       "path": "skills/test-writer/SKILL.md",
-      "sha256": "5794444812f08c1089ef34691efb888e373baab55175259b7d411ec185da7875"
+      "sha256": "ffd7114647ba6711e189a138409838c787a82c1b5edd20680c6bf867cf4237bf"
     },
     {
       "path": "skills/code-reviewer/SKILL.md",
@@ -71,11 +71,11 @@
   "plugins": [
     {
       "path": "claude-plugin-template/.claude-plugin/plugin.json",
-      "sha256": "f438ebb61e48ddb77b3a07d5c10e8524dda71b2f12536f34e60c4dffa8e9e866"
+      "sha256": "f41ce6e0d6fdac0aecde8792c60f6c905e492c382f298c28e590f363c9d109c0"
     },
     {
       "path": "claude-plugin-template/bin/guard-check",
-      "sha256": "169a8df59c59acdeb2d7f1612c2ac1804ce64f39752b343bf613792dbe76cd77"
+      "sha256": "3808b03aa96a8cc2398cc4f692a01e7c5b1d7b0118372b5e5421afcb6617f204"
     },
     {
       "path": "claude-plugin-template/bin/guard-post-check.cjs",
@@ -114,5 +114,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "ab0647101f001c057fd7a27bc98d6b5524fb6e77c6a1369b033d2eb1757a20f1"
+  "payloadHash": "b5114a1c8ff4facaf404b6a6b368a4944fecc488c27c4b344a0f135f314b08c5"
 }

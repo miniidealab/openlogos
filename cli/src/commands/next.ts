@@ -6,6 +6,7 @@ import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
 import { collectStatusData, deriveActiveOverlay } from './status.js';
 import type { ProposalStep, ProposalBlockReason, PlanState, CmdGate, ProductTypeConfirmation } from './status.js';
+import { knowledgeStatusHint } from '../lib/knowledge-lookup.js';
 import { formatYamlDegradedLines, isAdoptedBootstrap, readProjectYaml } from '../lib/project-yaml.js';
 import type { BaselineSeedState, BaselineCoverage } from '../lib/baseline-provenance.js';
 import { effectiveBaselineSeedState } from '../lib/baseline-jit.js';
@@ -1155,6 +1156,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
 
   // AC-YAMLW-04：与 status 同源的降级告警（同一 formatYamlDegradedLines 渲染入口）
   for (const line of formatYamlDegradedLines(data.yaml_diagnostics, locale)) console.log(line);
+  // knowledge-direct-intake（功能规格 §2.103.13）：知识检查有问题时的文本提示；JSON 输出不变
+  { const hint = knowledgeStatusHint(root); if (hint) console.log(`⚠️  ${hint}`); }
 
   console.log(`\n💡 ${t(locale, 'next.title')}\n`);
 

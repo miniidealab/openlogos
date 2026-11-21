@@ -106,6 +106,8 @@ Commands:
   flow show          Show the dev-flow orchestration (built-in or overlay-resolved)
                        --resolved                   Apply project logos/flow overlay
                        --lifecycle <initial|launched>  Pick which flow (default: inferred)
+  knowledge <sub>    Enterprise knowledge without a proposal: apply <candidate-dir> [--init-tags] / apply --recover / index / check
+                       list [--module <m>] [--tag <t>] / show <KXX> / refs <KXX|KXX-Rn>
   impact             Classify a git change range as lifecycle-only bookkeeping (read-only, for CI)
                        --base <rev> --head <rev>   Git range mode (safe revision resolution)
                        --stdin                      Read \`git diff --no-relative --name-status -z\` bytes from stdin
@@ -122,7 +124,7 @@ Options:
   --version, -v      Show version number
   --fresh-sandbox    verify / smoke: rebuild the persistent sandbox workspace from scratch
   --all              verify: check every module (skip module-scoped verify range)
-  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, deploy, approve, branch sync, branch status, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list, env list, env show, env check)
+  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, deploy, approve, branch sync, branch status, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list, env list, env show, env check, knowledge apply, knowledge index, knowledge check, knowledge list, knowledge show, knowledge refs)
 
 Examples:
   openlogos init my-saas-project
@@ -161,6 +163,7 @@ const VALUE_OPTIONS = new Set([
   '--manifest', '--run-id', '--slug', '--lifecycle', '--format',
   '--base', '--head', '--prefix', '--ref',
   '--channel', '--complete', '--result', '--abandon', '--note', '--force-promote',
+  '--tag',
 ]);
 
 /** 剔除取值选项的值位 token，仅保留可参与全局选项判定的 token。 */
@@ -425,6 +428,12 @@ async function main() {
     }
     case 'impact': {
       impact(args.slice(1), format);
+      break;
+    }
+    case 'knowledge': {
+      // 企业知识直接录入与检索（knowledge-direct-intake，功能规格 §2.103）
+      const { knowledgeCommand } = await import('./commands/knowledge.js');
+      knowledgeCommand(args.slice(1), format);
       break;
     }
     case 'ignore':

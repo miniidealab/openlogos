@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.18] - 2026-11-21
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- `openlogos knowledge apply`：只录入企业资料时不需要立案——把候选条目、标签表与原文放在项目根之外的临时目录，一条命令校验并录入；任一检查不通过（结构、编号、禁止删除与退役冻结、标签表、受影响引用、与活跃提案冲突）整批拒绝、一个字节不写。写入以事务提交并持项目级排他锁，进程中断后由下一次录入或 `--recover` 整批回滚。
+- `openlogos knowledge index / list / show / refs / check`：总索引 `INDEX.md`、按模块与标签筛选（含活跃提案的知识 delta）、读取合成后的条目全文、按规则反查引用它的场景、全库诊断（含 git HEAD 辅助比较）。
+- 标签表 `logos/resources/knowledge/TAGS.md`：标签与别名、疑似同义提示；首次录入时由已有条目自动生成，「从未启用 / 已启用 / 已启用但词表丢失」三态与 change-lint 共用同一判据。
+
+### Changed
+
+- change-lint L10：标签表启用后拒绝引用标签不在表中的知识条目；新增 violation `knowledge_tag_unknown`、`knowledge_tags_missing`、`knowledge_apply_incomplete`。
+- `openlogos change` 生成的提案骨架包含 `deltas/knowledge/`；`openlogos status` / `next` 的文本输出在知识检查有问题时追加一行提示（JSON 不变）；guard 拦截文件工具写知识目录时提示改用 `openlogos knowledge apply`。
+
+### 升级提示
+
+- 没有知识条目的项目行为不变；已有条目的项目在首次 `knowledge apply`（或 `knowledge apply --init-tags`）时自动生成标签表。Skill 与规范副本的新口径需在各项目执行 `openlogos sync` 才生效。
+
 ## [0.16.17] - 2026-11-21
 
 本机全局发布（未发布到 npm）。
