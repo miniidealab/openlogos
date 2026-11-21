@@ -3567,3 +3567,133 @@ openlogos branch status [--base <ref>] --format json
 ### 零漂移
 
 L10 的启用条件：本提案有 `deltas/knowledge/`，或本提案场景 delta 含「适用业务约束」章节，或提案处于待应用修正阶段且修正目标集合（`merge-amend` 的重组 / 新增 / 恢复三类）含 `logos/resources/knowledge/` 下的目标——撤回最后一个知识 delta、删除空的 `deltas/knowledge/` 目录后，被恢复为合并基线内容的知识目标仍在恢复集合中，照常比较当前已生效版本与候选后态。三者都不满足时 L10 不执行，`change-lint --format json` 输出与本子节引入前除 `timestamp` 外逐字节一致。
+
+## change-lint 企业知识检查增量：标签表（L10，knowledge-direct-intake）
+
+> 归属 `## 3.15 openlogos change-lint --format json` 与「change-lint 企业知识检查（L10，S45 enterprise-knowledge-base）」。本子节只扩充 `violations[].code` 闭合枚举，不改 §3.15 的信封、字段（violation 仍为 `code` / `path` / `message` / `fix_hint`）、排序与 exit code 三分流；新增码不带 `flow_reason`。采用 ADDED 子节而非 MODIFIED 既有枚举表，理由同 S45 首版。规则权威：功能规格 §2.103.11。
+
+### 新增 violation code（进入 `ChangeLintViolationCode` 闭合枚举）
+
+| 检查项 | code | 触发 | `path` | fix_hint 语义 |
+|---|---|---|---|---|
+| L10 | `knowledge_tag_unknown` | 标签表已启用，本提案新增或修改的条目有标签既不是 `TAGS.md` 中的标签也不是别名 | 对应知识 delta 路径；`message` 含条目 ID 与标签 | 改用表中的标签或别名，或先用 `openlogos knowledge apply` 把标签加入 `TAGS.md` |
+| L10 | `knowledge_apply_incomplete` | L10 启用时，在 `knowledge-apply.lock` 读锁区间内发现未完成的知识录入事务（进程中断后尚未回滚），或退避预算内取不到该锁（另一个录入正在提交） | `logos/.openlogos-runtime/knowledge-apply/` | 运行 `openlogos knowledge apply --recover` 后重跑 |
+| L10 | `knowledge_tags_missing` | 标签表三态为「已启用但词表丢失」（`TAGS.md` 不存在，而启用标记或 git HEAD 中的 `TAGS.md` 仍在），本提案场景中引用了知识，或本提案含知识 delta | 场景 delta 路径（每处引用一条，`message` 含行号与引用文本）或知识 delta 路径 | 从 git 恢复 `TAGS.md`，或经 `openlogos knowledge apply` 提交完整 `TAGS.md`，或 `openlogos knowledge apply --init-tags` 重新初始化 |
+
+- 既有 `knowledge_reference_unknown` 的触发扩充：标签表已启用时，被引用的目标条目有标签不在表中，视为目标无效，`message` 注明「目标条目标签不在标签表」。
+- 既有 `knowledge_entry_invalid` 的触发扩充：`deltas/knowledge/` 下出现 `TAGS.md`、`INDEX.md` 或 `.tags-enabled`，`message` 注明「标签表与索引只能经 `openlogos knowledge apply` / `index` 维护」。
+- 标签表三态为「从未启用」时，以上扩充都不生效，L10 与 S45 首版判据一致。
+- L10 的启用条件不变；三者都不满足时 `change-lint --format json` 输出与本子节引入前除 `timestamp` 外逐字节一致。
+
+## `openlogos knowledge` 命令组（knowledge-direct-intake）
+
+> 规则权威：功能规格 §2.103。六个子命令共用 §1.2 通用信封，`command` 取值为 `"knowledge apply"`、`"knowledge index"`、`"knowledge check"`、`"knowledge list"`、`"knowledge show"`、`"knowledge refs"`；不携带 `contract` 字段（`contract` 只属于 `status` / `next`）。`status` / `next` 的 JSON 不因本提案变化。
+
+### 共用对象
+
+**issue**（`errors[]` 与 `warnings[]` 的元素，闭合字段）：
+
+```jsonc
+{ "code": "knowledge_entry_invalid", "path": "logos/resources/knowledge/core-K05-x.md", "message": "…", "fix_hint": "…" }
+```
+
+- `path` 为项目根相对路径；候选目录中的文件写作 `candidate:<候选目录内相对路径>`；无具体文件时为 `null`。
+- 排序：`path` 字典序（`null` 最后）→ `code` → `message`。
+- `tag_state` 闭合枚举：`"never"` | `"enabled"` | `"missing"`。
+
+**错误码**（`errors[].code`）：S45 既有 `knowledge_entry_invalid`、`knowledge_id_duplicate`、`knowledge_removal_forbidden`、`knowledge_retired_id_mutated`、`knowledge_reference_unknown`，以及本提案新增 `knowledge_tag_unknown`、`knowledge_tags_missing`、`knowledge_tags_invalid`、`knowledge_apply_input_invalid`、`knowledge_apply_conflict`、`knowledge_apply_write_failed`、`knowledge_apply_recover_failed`、`knowledge_apply_incomplete`、`knowledge_apply_busy`（apply / index / `--recover` 等待排他锁超过 30 秒，退出码 2，`result="rejected"`，未做任何恢复或写入）。
+**warning 码**（`warnings[].code`）：`knowledge_reference_deprecated`、`knowledge_index_stale`、`knowledge_tag_synonym`。
+
+### `openlogos knowledge apply <候选目录> [--init-tags] --format json` / `openlogos knowledge apply --recover --format json`
+
+```jsonc
+"data": {
+  "result": "applied" | "rejected" | "unchanged" | "write_failed" | "recovered",
+  "rolled_back": true,                     // 仅 result=write_failed 时出现：整批回滚是否成功
+  "candidate_dir": "/tmp/tmp.abc",          // 绝对路径；仅 --init-tags 时为 null
+  "tag_state_before": "never" | "enabled" | "missing",
+  "tag_state_after": "never" | "enabled" | "missing",
+  "written": ["logos/resources/reference/knowledge/refund-v3.md", "logos/resources/knowledge/core-K01-refund.md", "logos/resources/knowledge/TAGS.md", "logos/resources/knowledge/.tags-enabled", "logos/resources/knowledge/INDEX.md"],
+  "errors": [ /* issue */ ],
+  "warnings": [ /* issue */ ]
+}
+```
+
+- `written` 按实际写入顺序列出；`result` 不是 `"applied"` 时为 `[]`。`"unchanged"` 表示候选与磁盘逐字节相同或 `enabled` 状态下单独 `--init-tags`。
+- 退出码：`applied` / `unchanged` / `recovered` → 0；`rejected` → 1；用法错误、项目根不正确、`write_failed` → 2。`write_failed` 时 `errors[]` 含 `knowledge_apply_write_failed`，`message` 写明失败目标；`rolled_back=false` 时另含 `knowledge_apply_recover_failed`，事务日志保留。开始时恢复上一次未完成事务失败 → `result="rejected"`、`errors[]` 含 `knowledge_apply_recover_failed`、退出码 2。
+- `--recover`：只恢复未完成事务；有事务且回滚成功 → `result="recovered"`；无未完成事务 → `result="unchanged"`；`written` 为 `[]`，`candidate_dir` 为 `null`。
+
+### `openlogos knowledge index --format json`
+
+```jsonc
+"data": { "result": "written" | "unchanged" | "rejected", "path": "logos/resources/knowledge/INDEX.md", "entries": 12, "tag_state": "enabled", "errors": [] }
+```
+
+- `tag_state="missing"` 时 `result="rejected"`，`errors[]` 含 `knowledge_tags_missing`，退出码 1；其余退出码 0。
+
+### `openlogos knowledge check --format json`
+
+```jsonc
+"data": {
+  "tag_state": "enabled",
+  "entries": 12,
+  "head_compare": "ok" | "unavailable",     // 非 git 项目为 unavailable
+  "errors": [ /* issue */ ],
+  "warnings": [ /* issue */ ]
+}
+```
+
+- 只读。退出码：`errors` 为空 → 0；非空 → 1；用法错误或项目根不正确 → 2。
+
+### `openlogos knowledge list [--module <m>] [--tag <t>] --format json`
+
+```jsonc
+"data": {
+  "tag_state": "enabled",
+  "filters": { "module": "core", "tag": null },
+  "entries": [
+    {
+      "id": "K12", "title": "K12：退款限额", "path": "logos/changes/p2/deltas/knowledge/core-K12-refund-limit.md",
+      "origin": "resources" | "delta",
+      "type": "rule", "scope": "module", "module": "core", "tags": ["退款"], "status": "active",
+      "rules_active": 2, "rules_total": 2,
+      "valid": true, "problems": []
+    }
+  ]
+}
+```
+
+- `entries` 按 KXX 数值升序，同号按 `path`；`origin="delta"` 时 `path` 为提案内 delta 路径。结构无效或标签不在表中的条目 `valid=false`，`problems[]` 为可读说明字符串。
+- 退出码：0；用法错误 → 2。
+
+### `openlogos knowledge show <KXX> --format json`
+
+```jsonc
+"data": {
+  "id": "K04",
+  "path": "logos/resources/knowledge/core-K04-settle.md",       // 规范目标路径
+  "origin": "resources" | "delta",                              // 本提案是否叠加了 delta
+  "delta_path": "logos/changes/p2/deltas/knowledge/core-K04-settle.md",  // origin=delta 时出现
+  "content": "# K04：结算规则\n…",                              // 有效知识视图中的合成后全文（与合并结果逐字节一致）
+  "rules": [ { "id": "K04-R1", "rule": "…", "status": "active", "exception": "无" } ],
+  "valid": true, "problems": []
+}
+```
+
+- 不存在 → 退出码 1，`errors[]` 含 `knowledge_reference_unknown`；重号 → 退出码 1，`errors[]` 含 `knowledge_id_duplicate`（`message` 列出各来源）；参数不匹配 `^K\d+$` → 退出码 2；成功 → 0。
+
+### `openlogos knowledge refs <KXX|KXX-Rn> --format json`
+
+```jsonc
+"data": {
+  "query": "K03-R1",
+  "target_status": "active" | "deprecated" | "unknown" | "invalid" | "duplicate",
+  "refs": [
+    { "scenario_path": "logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S12-refund.md", "line": 88,
+      "ref": "K03-R1", "level": "rule" | "entry", "location": "Step 4「提交退款」", "exception": "无", "origin": "resources" | "delta" }
+  ]
+}
+```
+
+- `refs` 按 `scenario_path` → `line` 排序；没有引用时为 `[]`。参数不匹配 `^K\d+(-R\d+)?$` → 退出码 2；其余退出码 0。
+- **未完成事务与读锁**：`check` / `list` / `show` / `refs` 在 `knowledge-apply.lock` 读锁区间内读取（功能规格 §2.103.4「事务」第 6 条）。区间内存在未完成的录入事务，或退避预算内取不到锁时，`list` / `show` / `refs` 不输出视图数据，`data` 为 `{"errors": [issue]}`（含 `knowledge_apply_incomplete`，`message` 区分「上一次录入被中断」与「另一个录入正在进行」），退出码 1；`check` 在事务未完成时照常输出并在 `errors[]` 中报告，取不到锁时与前三者相同；`index` 先取写锁、恢复再生成。
