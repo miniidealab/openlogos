@@ -4000,14 +4000,15 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 
 ## S45: 企业知识沉淀与场景引用
 
-> 来源变更：enterprise-knowledge-base（决策 C01～C06；proposal-r1 F1～F5、r2 F1/F4、r3 F4 处置）。规则的权威定义见功能规格 §2.102；目录约定见 `spec/directory-convention.md`「logos/resources/knowledge/」；change-lint JSON 见 `spec/cli-json-output.md` §3.15。
+> 来源变更：enterprise-knowledge-base（决策 C01～C06；proposal-r1 F1～F5、r2 F1/F4、r3 F4 处置）；knowledge-direct-intake（决策 C01～C06；proposal-r1 F1～F5、r2 F2/F3、r3 F3 处置）。规则的权威定义见功能规格 §2.102（条目、引用与提案通道）与 §2.103（直接录入、强拦截与检索辅助）；目录约定见 `spec/directory-convention.md`「logos/resources/knowledge/」；change-lint JSON 见 `spec/cli-json-output.md` §3.15，`openlogos knowledge` 命令组 JSON 见同文件「`openlogos knowledge` 命令组」。
 
 ### 场景定义
 
 - **触发条件**：企业内部有既定的业务规则（如「单笔退款超过 5000 元需财务二审」）、术语（如「结算日」的定义）、外部系统约束（如「客户编号由主数据系统统一下发」）或合规要求，它们不是本次需求，却决定场景的主路径与异常分支；用户把这些资料交给 AI，希望 AI 在写需求、做产品设计、建场景与写测试时一并考虑。
-- **用户价值**：企业规则从「只活在某次对话或某份需求的一句话里」变成有编号、可引用、可校验的规格资源；AI 设计时按场景检索并遵守，写明依据；需求与规则冲突时由用户裁决而不是被 AI 静默取舍；规则引用写错、编号冲突或退役规则被改写时由 change-lint 拦下。
+- **用户价值**：企业规则从「只活在某次对话或某份需求的一句话里」变成有编号、可引用、可校验的规格资源；只录入资料不需要立案，一条命令即可生效，录入有错时整批拒绝、一个字节不写；AI 设计时按场景检索并遵守，写明依据；条目增多后可按标签与总索引筛选、按规则反查引用它的场景；需求与规则冲突时由用户裁决而不是被 AI 静默取舍；规则引用写错、编号冲突或退役规则被改写时被拦下。
 - **优先级**：P1
-- **主路径**：用户提供企业资料 → AI 把原始资料存入 `logos/resources/reference/knowledge/`，提炼成知识条目 delta（`deltas/knowledge/<module>-KXX-<slug>.md`，编号在编写 delta 时预定）→ 场景设计时在有效知识视图（已合并条目 + 本提案知识 delta）上加载相关条目，在场景文档「适用业务约束」章节按 `KXX` / `KXX-Rn` 引用并写明作用位置 → 需求与规则冲突时作为待决问题交用户裁决 → change-lint 校验引用、重号、禁止删除与退役 ID 冻结 → `openlogos merge` 把知识条目与场景、索引登记、完成标记一次原子落盘。
+- **主路径（直接录入，默认）**：用户提供企业资料 → AI 在项目根之外的一次性临时目录写入候选条目、需要新增的标签与原文 → `openlogos knowledge apply` 在落盘前对「已接受内容 + 本批候选」做完整校验 → 通过则条目、原文、`TAGS.md` 与 `INDEX.md` 同批写入，不通过则零写入并逐条报出原因 → 设计时 `openlogos knowledge list` 按模块与标签筛选，场景文档「适用业务约束」章节按 `KXX` / `KXX-Rn` 引用并写明作用位置 → 需求与规则冲突时作为待决问题交用户裁决 → change-lint 校验本提案的引用。
+- **提案通道（需求与知识一起改）**：知识修订必须与场景修改同批生效时，仍可在提案中产出 `deltas/knowledge/<module>-KXX-<slug>.md`（编号在编写 delta 时预定；原文在 `reference/` 不豁免的项目中经只含 `sources/` 的 `knowledge apply` 写入），由 change-lint 校验引用、重号、禁止删除、退役 ID 冻结与标签判据，`openlogos merge` 把知识条目与场景、索引登记、完成标记一次原子落盘。
 
 ### 验收条件
 
@@ -4017,7 +4018,7 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 - **THEN** 产出 `logos/resources/knowledge/<module>-KXX-<slug>.md` 形态的条目：首节「元数据」用 YAML 给出 `type`（rule / term / external-system / compliance / process）、`scope`（global / module）、`module`、`tags`、`status`（active / deprecated）与 `source`（原文仓库相对路径与版本）；`type=rule` 的条目以表格列出规则，每行首列为规则 ID `KXX-Rn`，每条规则可判定；KXX 取有效知识视图中最大 KXX（含 deprecated）+ 1（视图为空时为 K01），规则取本条目最大 Rn + 1；本提案新增或修改的条目缺 H1 中的 KXX、缺元数据或必填字段（含 `tags`，以及 `source` 的仓库相对 `path` 与 `version`，`path` 须指向 `logos/resources/reference/knowledge/` 内现存的原文文件）、`type=rule` 而无规则行、或规则表任一行首列不是本条目的 `KXX-Rn` 时，change-lint violation `knowledge_entry_invalid`，结构无效的条目不能作为引用目标
 
 #### S45-AC-02 正常：原始资料同仓存放
-- **THEN** 原始资料存入 `logos/resources/reference/knowledge/`（guard 默认豁免目录，无需经 delta；目录不存在时由 AI 创建，项目首次录入时同样适用，不因「尚无知识」被跳过），条目 `source` 以仓库相对路径指向原文并注明版本；AI 写入原文时提示「原文将随仓库 push 扩散，push 前请确认可公开范围」
+- **THEN** 原始资料存入 `logos/resources/reference/knowledge/`，条目 `source` 以仓库相对路径指向原文并注明版本；AI 写入原文时提示「原文将随仓库 push 扩散，push 前请确认可公开范围」。写入方式二选一：项目保留 `reference/` 豁免时可直接写入（目录不存在时由 AI 创建，首次录入同样适用，不因「尚无知识」被跳过）；或放进 `openlogos knowledge apply` 候选目录的 `sources/` 下，由 apply 校验通过后复制（显式 `guard.exempt` 不含 `reference/` 的项目只能用此方式）
 
 #### S45-AC-03 正常：场景按条目或规则引用
 - **GIVEN** 有效知识视图中存在规则条目 K03（含 K03-R1）与无规则列表的术语条目 K05
@@ -4054,23 +4055,71 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 - **GIVEN** 分支 A 把最高号 K01（退款规则）改为 `deprecated`，分支 B 基于旧版本新增引用 K01 的退款场景
 - **THEN** 合并后 K01 仍是原退款条目，B 的引用解析到原条目并告警 deprecated；A 新增的客户编号规则只能取 K02
 
-#### S45-AC-12 边界：原子合并与场景登记
-- **THEN** 知识条目经现行 `openlogos merge` 与场景、`resource_index` 登记、`SPEC_MERGED` 同批原子落盘，不新增落盘事务、不新增 `openlogos knowledge` 命令；新场景 S45 在规格合并提交时登记进 `logos-project.yaml` 的 `scenarios[]`（module `core`、feature `F04`），`scenario_counter.next_id` 推进到 46
+#### S45-AC-12 边界：提案通道的原子合并与场景登记
+- **THEN** 经提案通道（`deltas/knowledge/`）录入的知识条目，经现行 `openlogos merge` 与场景、`resource_index` 登记、`SPEC_MERGED` 同批原子落盘，不新增落盘事务；新场景 S45 在规格合并提交时登记进 `logos-project.yaml` 的 `scenarios[]`（module `core`、feature `F04`），`scenario_counter.next_id` 推进到 46。不经提案的直接录入走 `openlogos knowledge apply`（S45-AC-14），两条通道并存（来源变更 knowledge-direct-intake 修订：原「不新增 `openlogos knowledge` 命令」由决策 C04 推翻）
 
 #### S45-AC-13 边界：零回归
 - **THEN** 没有 `logos/resources/knowledge/` 目录、场景不写「适用业务约束」章节的项目，各命令输出与 Skill 行为与升级前一致
 
+#### S45-AC-14 正常：无提案直接录入（knowledge-direct-intake）
+- **GIVEN** launched 项目没有活跃提案，用户只提供一份退款制度、没有提出需求变更
+- **WHEN** AI 把候选条目（完整条目文件）、需要新增的标签（完整 `TAGS.md`）与原文（`sources/` 下）写到项目根之外的一次性临时目录，运行 `openlogos knowledge apply <候选目录>`
+- **THEN** 不需要立案、不需要修改 `guard.exempt`：apply 校验通过后把原文复制到 `logos/resources/reference/knowledge/`、条目写入 `logos/resources/knowledge/`，并同批写入 `TAGS.md` 与重新生成的 `INDEX.md`；新条目立即对后续设计加载与场景引用生效。显式配置 `guard.exempt: []` 的项目结论相同（候选位于项目根之外，不受 guard 管辖）；initial 项目同样可用
+
+#### S45-AC-15 正常：录入批次整体校验，不通过零写入（强拦截）
+- **GIVEN** 候选批次中任一条目结构无效、编号重复、删除或改写了已退役内容、使用了标签表之外的标签，或会让某个场景引用变得无法解析
+- **THEN** apply 拒绝整个批次，知识目录、原文目录、`TAGS.md` 与 `INDEX.md` 一个字节都不写，逐条输出原因（沿用 S45 的 `knowledge_entry_invalid`、`knowledge_id_duplicate`、`knowledge_removal_forbidden`、`knowledge_retired_id_mutated`、`knowledge_reference_unknown`，以及新增的 `knowledge_tag_unknown` 等），退出码 1；拦截发生在写入之前，任何宿主上的结论相同，不依赖宿主的写后回滚能力。候选条目与未合并活跃提案的知识 delta 同名、或占用了该提案已使用的 KXX / `KXX-Rn` 时同样整批拒绝（`knowledge_apply_conflict`）。录入、索引刷新与恢复在项目级排他锁内进行：另一个录入正在提交时，后来者等待，仍忙则报 `knowledge_apply_busy` 且不触碰前者的事务；校验通过后的写入以事务提交：写入中途失败整批回滚并如实报告回滚是否成功；进程中断后由下一次录入（或 `knowledge apply --recover`）整批回滚，回滚完成前各读取命令与 change-lint 报 `knowledge_apply_incomplete`，不把半写入状态当作已接受内容；各读取命令与 change-lint 在同一把锁内取得知识快照，一次读取要么完全看到某次录入之前的内容、要么完全看到之后的内容，取不到锁时要求稍后重试
+
+#### S45-AC-16 正常：退役与删除以本次写入前的已接受内容为基准
+- **GIVEN** `K03-R1` 在 git 上一次提交中为 `active`；第一次 apply 把它改为 `deprecated` 并成功；两次 apply 之间没有提交
+- **WHEN** 第二次 apply 把 `K03-R1` 改回 `active` 或改写其正文
+- **THEN** 第二次 apply 以 `knowledge_retired_id_mutated` 拒绝且零写入，磁盘上保留第一次生效的退役内容；禁止删除与退役冻结的比较对象始终是本次 apply 前 `logos/resources/knowledge/` 中已接受的内容，而不是 git HEAD
+
+#### S45-AC-17 正常：标签表与别名
+- **THEN** `logos/resources/knowledge/TAGS.md` 维护标签、别名与说明，由 AI 起草与日常补充、人类负责人把关；条目的每个标签必须等于表中某个标签或其别名，或在同一批次的 `TAGS.md` 中加入；仍被条目使用的标签不能从表中移除；疑似同义标签（规范化后相同）只给 warning `knowledge_tag_synonym`，不自动合并
+
+#### S45-AC-18 边界：标签表三态与启用
+- **THEN** 标签表状态由 apply、`knowledge check`、`knowledge list`、`knowledge index` 与 change-lint L10 共用同一判据：①「从未启用」——`TAGS.md`、启用标记 `logos/resources/knowledge/.tags-enabled` 与 git HEAD 中的 `TAGS.md` 都不存在，沿用 S45 原有效性判定，升级前的合法条目照常可被新场景引用；②「已启用」——`TAGS.md` 存在，一律套用标签判据；③「已启用但词表丢失」——`TAGS.md` 不存在而启用标记或 HEAD 中的 `TAGS.md` 仍在，apply 与 `knowledge index` 拒绝、`knowledge check` 报 error、L10 拒绝本提案对知识的引用，直到恢复。恢复只有两种：`apply --init-tags` 由现存条目（含只存在于活跃提案知识 delta 中的条目）生成词表；或提交完整 `TAGS.md`，它必须覆盖这些条目中全部结构有效条目的标签，并让词表丢失前可解析的引用——包括活跃提案场景对其知识 delta 的引用——重新有效，否则整批拒绝、零写入。首次 apply（或 `apply --init-tags`）从当前全部有效条目与本批候选的标签生成初始 `TAGS.md` 并写入启用标记，启用那一刻没有任何既有条目失效；刷新派生索引不能把状态变回「从未启用」
+
+#### S45-AC-19 正常：总索引同批生成，过期只提示
+- **THEN** `logos/resources/knowledge/INDEX.md` 是落盘条目的派生视图（编号、标题、type、scope、module、tags、status、规则数、文件），由 apply 与条目同批生成，也可用 `openlogos knowledge index` 单独刷新；合规新增条目不会因为旧索引落后一版而被拒；人工改动导致索引过期时，`knowledge check` 只给 warning `knowledge_index_stale` 并提示刷新，不作为任何写入的拦截条件
+
+#### S45-AC-20 正常：设计时按有效元数据筛选（knowledge list）
+- **GIVEN** ① 退款规则 K12 只存在于本提案的 `deltas/knowledge/`，`INDEX.md` 中没有；② 本提案的知识 delta 把已落盘条目 K04 的 `scope` 或 `tags` 改为首次命中当前模块
+- **THEN** `openlogos knowledge list` 输出落盘条目叠加活跃提案知识 delta（按 S45 有效知识视图的阶段规则）后的有效元数据，两种情况下 K12 与 K04 都在按模块 / 标签筛选的结果中；Skill 设计时用它筛选，再用 `openlogos knowledge show <KXX>` 读取同一视图中的合成后全文——K04 的 delta 只修改了「元数据」时，`show` 仍给出 K04 原有的全部规则；`INDEX.md` 只供人阅读与无提案时的快速查阅
+
+#### S45-AC-21 正常：反查引用（knowledge refs）
+- **THEN** `openlogos knowledge refs K03` 列出引用 `K03` 或其任一规则的场景，`openlogos knowledge refs K03-R1` 列出引用该规则的场景；每条结果含场景文件、行号、作用位置、例外与引用级别（条目级 / 规则级）；结果实时扫描有效场景视图计算，不持久化反向索引
+
+#### S45-AC-22 正常：全库诊断（knowledge check）
+- **THEN** `openlogos knowledge check` 只读地检查全部落盘条目与全部场景：结构有效性、重号、标签判据与标签表格式、标签表三态、全部场景中的悬空引用（error）与对退役内容的引用（warning）、索引过期与疑似同义标签（warning）；git 项目另以 HEAD 为辅助基准报出人工编辑造成的删除与退役改写，非 git 项目跳过并注明；有 error 时退出码 1。它不拦截与本次无关的提案
+
+#### S45-AC-23 异常：用文件工具直接改知识目录
+- **GIVEN** launched 项目没有活跃提案
+- **WHEN** AI 用 Edit / Write 等文件工具或 shell 重定向直接写 `logos/resources/knowledge/`
+- **THEN** 知识目录保持受保护，guard 照常拦截并提示改用 `openlogos knowledge apply`；`knowledge apply` / `knowledge index` 作为独立的 openlogos 调用写入知识目录，不被事后检查报告为越界
+
+#### S45-AC-24 异常：人工编辑留下的问题在引用处被拦截
+- **GIVEN** 标签表已启用，有人在编辑器里把结构完整的 K03 的标签改成表外标签（或已启用后删掉了 `TAGS.md`，即使随后刷新了索引）
+- **WHEN** 一个场景提案首次引用 `K03`
+- **THEN** change-lint L10 拒绝该引用（表外标签：`knowledge_reference_unknown`，注明「目标条目标签不在标签表」；词表丢失：`knowledge_tags_missing`），merge 准入拒绝；L10 只检查本提案触及的知识与场景，全库问题由 `knowledge check` 报告
+
+#### S45-AC-25 边界：状态提示、提案骨架与零回归
+- **THEN** `openlogos status` / `openlogos next` 的文本输出在知识检查有 error、标签表处于「已启用但词表丢失」或索引过期时追加一行提示与 `openlogos knowledge check` 指引，JSON 输出不变；`openlogos change <slug>` 生成的提案骨架包含 `deltas/knowledge/`；没有知识条目且从未启用标签表的项目，change-lint、merge、status、next 与各 Skill 的行为与升级前一致
+
 ### 非目标
 
 - 不做语义检索 / 向量库，不接入外部知识源（Confluence、MCP 等）。
-- 不做 `openlogos impact` 按规则反查，不持久化规则 → 场景的反向索引。
-- 不提供 knowledge-curator 自动提炼 Skill（MVP 由现有 Skill 按条目模板提炼）。
-- 不支持物理删除已合并的知识条目或规则；不做保密分级与加密存储。
+- 不持久化规则 → 场景的反向索引（`knowledge refs` 实时计算）；不做 `openlogos impact` 按规则反查。
+- 不提供 knowledge-curator 自动提炼 Skill（由现有 Skill 按条目模板提炼）。
+- 不支持物理删除已合并或已录入的知识条目与规则；不做保密分级与加密存储。
+- 不自动合并同义标签；不提供 git pre-commit 钩子。
+- 不把知识目录加入 guard 豁免，不支持用文件工具直接写知识目录。
 - 不修正 S41～S44 的场景登记补录与 `decision_counter` 漂移。
 
 ### 追溯
 
-- 功能规格：§2.102；架构：「五十七、企业知识资源：类别注册、有效知识视图与引用校验」。
-- 场景：`core-S45-enterprise-knowledge.md`；相关场景 S09（变更提案与原子合并）、S18（资源索引补录）、S35（change-lint）、S37（条目守恒门）。
-- 规范：`spec/directory-convention.md`、`spec/change-management.md`、`spec/cli-json-output.md` §3.15。
-- 测试：`core-S45-test-cases.md`；安装态 smoke：`core-smoke-test-cases.md`「OpenLogos 0.16.17 企业知识安装态 smoke（SMOKE-core-318～320）」。
+- 功能规格：§2.102、§2.103；架构：「五十七、企业知识资源：类别注册、有效知识视图与引用校验」（含 57.6）。
+- 场景：`core-S45-enterprise-knowledge.md`；相关场景 S09（变更提案与原子合并）、S11（状态）、S05（下一步）、S18（资源索引补录）、S35（change-lint）、S37（条目守恒门）。
+- 规范：`spec/directory-convention.md`、`spec/change-management.md`、`spec/cli-json-output.md` §3.15 与「`openlogos knowledge` 命令组」、`spec/pretooluse-guard.md`「企业知识目录的免立案录入」。
+- 测试：`core-S45-test-cases.md`；安装态 smoke：`core-smoke-test-cases.md`「OpenLogos 0.16.17 企业知识安装态 smoke（SMOKE-core-318～320）」与「OpenLogos 0.16.18 企业知识直接录入安装态 smoke（SMOKE-core-321～323）」。

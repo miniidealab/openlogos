@@ -1355,3 +1355,37 @@ Cursor 侧同一张表写作 `/\| tee /`（`plugin-cursor/hooks/runtime.cjs`）�
 - `plugin/bin/openlogos-phase`、`plugin-codex/session-start.sh`：按模块提示。
 - `plugin/test-vectors/guard-module-lifecycle.json` 及其随包登记。
 - 托管副本经 init / sync 分发，不手改。
+
+## 企业知识目录的免立案录入（knowledge-direct-intake，规范性）
+
+来源变更 knowledge-direct-intake（决策 C01、C02、C06；proposal-r1 F2、r2 F2）。本节说明 launched 项目在**无活跃提案**时录入企业知识（`logos/resources/knowledge/`）的 guard 边界。结论：**不新增引擎规则、不新增内置默认豁免**，复用既有「独立 git / openlogos 调用豁免」与「管辖边界」。规则权威：功能规格 §2.103.12。
+
+### 保护范围不变
+
+- `logos/resources/knowledge/` 不加入 `guard.exempt` 内置默认；在 launched、无活跃提案时是受保护内容。Edit / Write / MultiEdit / NotebookEdit 的事前判定、Bash / PowerShell 的事前轻判与事后检查，对该目录的结论与其他规格目录相同。
+- **原因（规范性记录）**：Claude 托管的 PostToolUse / PostToolUseFailure 匹配器只覆盖 shell 类工具，不含 Write / Edit；Edit / Write 的事前判定命中豁免即放行、不建本次快照；事后引擎的 `restore` 依赖受保护路径的快照与报告；Cursor `afterFileEdit` 只能事后报告。若把知识目录加入豁免并让文件工具直写，「检查不通过即回滚」在多数宿主上拿不到回滚证据。录入因此集中到在写入前校验的 CLI 命令。
+- 阻断文件工具写知识目录时，reason 在既有「下一步为 `openlogos change <slug>` 立案」之前增加一句：「录入企业知识请使用 `openlogos knowledge apply <候选目录>`（无需立案），见 `spec/directory-convention.md`」。只改提示文字，不改判定。
+
+### 录入命令的写入归属
+
+- `openlogos knowledge apply …` 与 `openlogos knowledge index` 以独立调用形态执行（允许 `cd` 前缀段，见「独立 git / openlogos 调用豁免」的切段规则）时，其对 `logos/resources/knowledge/` 与 `logos/resources/reference/knowledge/` 的写入归属该调用，不报告变化；存在未关闭执行记录时按既有 `--rebase-only` 规则更新被改动路径的基线。
+- 与其他命令组成复合调用（如 `openlogos knowledge apply x && echo y > src/a.ts`）时不享受豁免，按普通调用拍快照并对比，反馈提示拆分调用。
+- `openlogos knowledge check`、`list`、`refs` 只读，不产生写入。
+- `knowledge` 子命令都不是受限命令，不触发「保护范围变更的宿主原生审批」；它们不修改 `logos/logos.config.json`、忽略规则来源或任何不可豁免项。
+
+### 候选目录的位置
+
+- Skill 把候选批次写到项目根之外的一次性临时目录。按「管辖边界（项目根之外路径放行，规范性）」，项目根之外的写入由宿主自身权限系统裁决，guard 不拦截、不告警；因此显式 `guard.exempt: []` 的项目同样能准备候选，无需修改保护配置。
+- 候选目录位于项目内时按现行规则判定：在 `guard.exempt` 覆盖的路径（如内置默认的 `logos/resources/reference/`）下可写，否则受保护。apply 拒绝位于 `logos/resources/knowledge/` 之内的候选目录。
+
+### 宿主一致性
+
+- 拦截发生在 `knowledge apply` 写入之前（校验不通过即零写入），不依赖宿主的写后回滚能力；Claude Code、Cursor 与其他宿主的结论一致。
+- 人工在编辑器中直接改知识目录（不经 AI 工具调用）不在 guard 覆盖范围内；由 `openlogos knowledge check` 诊断、change-lint L10 在引用处拦截（功能规格 §2.103.10、§2.103.11）。
+- `openlogos next --auto` 的 standing 授权与本节无关：`knowledge apply` 不是人类确认点，也不越过任何硬红线。
+
+### 实现落点
+
+- `plugin/bin/guard-check`（及 Cursor / Qoder runtime 的同源阻断文案）：知识目录阻断 reason 增加上述提示。
+- `plugin/bin/guard-post-check.cjs`：无改动（独立 openlogos 调用豁免已覆盖）。
+- 托管副本经 init / sync 分发，不手改。

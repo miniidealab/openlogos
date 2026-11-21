@@ -929,40 +929,64 @@ required 分支引用稳定 `fact_id` 和 Registry/当前 CREATE authority targe
 
 ## 加载相关企业知识（S45）
 
-> 来源变更：enterprise-knowledge-base（S45）。规则权威：功能规格 §2.102；目录约定：`spec/directory-convention.md`「logos/resources/knowledge/」。跳过条件只有一种：项目没有任何知识条目、本提案没有 `deltas/knowledge/`，**并且本轮用户没有提供企业资料**——此时跳过本节，其余步骤不变。
+> 来源变更：enterprise-knowledge-base（S45）；knowledge-direct-intake（直接录入、标签表、索引与检索）。规则权威：功能规格 §2.102、§2.103；目录约定：`spec/directory-convention.md`「logos/resources/knowledge/」。跳过条件只有一种：项目没有任何知识条目、本提案没有 `deltas/knowledge/`，**并且本轮用户没有提供企业资料**——此时跳过本节，其余步骤不变。
 
 ### 录入入口（先于加载，不受跳过条件影响）
 
 本轮用户提供了待沉淀的企业资料（制度原文、接口说明、术语表等）时，先录入再加载，即使项目还没有 `logos/resources/knowledge/`、`logos/resources/reference/knowledge/` 与 `deltas/knowledge/`（例如升级前就已 launched 的存量项目第一次录入）：
 
-1. `logos/resources/reference/knowledge/` 不存在时直接创建，把原文写入其中（guard 默认豁免，不经 delta），并提示用户：「原文将随仓库 push 扩散，push 前请确认可公开范围」。
-2. launched 项目：交由 change-writer 在 `tasks.md` 的 `[delta]` 中规划 `deltas/knowledge/<module>-KXX-<slug>.md` 并预定 KXX（有效知识视图中最大 KXX（含 `deprecated`）+ 1；视图为空时首个条目为 K01），产出知识 delta；`logos/resources/knowledge/` 由合并时创建。initial 项目：按条目模板直接写 `logos/resources/knowledge/<module>-KXX-<slug>.md`（目录不存在时创建）。
-3. 条目必须结构有效：H1 以 KXX 开头；「元数据」YAML 含合法的 `type`、`scope`、`status`（`scope: module` 时含 `module`）、非空 `tags`，以及非空 `source`——每项写原文的仓库相对 `path`（即第 1 步写入 `logos/resources/reference/knowledge/` 的文件，必须存在；指向该目录之外的仓库文件如 `README.md` 视为无效）与非空 `version`；`type: rule` 时有「规则」表，表中每一行首列都是本条目的 `KXX-Rn`、「状态」为 `active` 或 `deprecated`。缺项或混入格式不符的规则行，条目会被 change-lint 以 `knowledge_entry_invalid` 拒绝。
-4. 录入完成后，按下文在有效知识视图上加载；同一提案新录入的条目立即可被引用。
+1. **选择通道**：只提供资料、没有需求变更（或新知识可以先于需求生效）→ **直接录入，不立案**（第 2～5 步）。知识修订必须与场景修改同批生效（如退役旧规则的同时改写引用它的场景）→ 走提案通道（第 7 步）。
+2. **取号与标签**：运行 `openlogos knowledge list --format json`，读取有效知识视图中的条目与 `tag_state`。新条目编号取最大 KXX（含 `deprecated`）+ 1，视图为空时为 K01；修订既有条目时新规则取该条目最大 Rn（含 `deprecated`）+ 1。标签优先使用 `logos/resources/knowledge/TAGS.md` 中已有的标签或别名。
+3. **准备候选目录**：在**项目根之外**新建一次性目录（如 `mktemp -d` 的结果），写入：
+   - 完整条目文件 `<module>-KXX-<slug>.md`：新建；或修订时整文件替换——必须保留原有全部规则行，退役只改状态，已退役的内容逐字不动；
+   - 需要新增标签时，写完整的 `TAGS.md`：复制现有全部行再追加，表头为「标签 | 别名 | 说明」；
+   - 原文放在 `sources/<文件名>`；同名原文已存在且内容不同时改用新文件名（如 `-v4`）。条目 `source.path` 写 `logos/resources/reference/knowledge/<文件名>`。
+
+   不要用文件工具直接写 `logos/resources/knowledge/`——该目录受 guard 保护，会被拦截。候选目录放在项目根之外，因此不受项目 `guard.exempt` 配置影响。
+4. **录入**：在项目根**单独**运行 `openlogos knowledge apply <候选目录> --format json`，不要与其他命令用 `&&` 组合。
+5. **按结果处理**：
+   - 退出码 1：整批被拒，项目里没有写入任何文件。按 `errors[]` 逐条修正候选后重跑第 4 步。
+   - 退出码 0：读回 `written[]` 中的条目，并提示用户：「原文将随仓库 push 扩散，push 前请确认可公开范围」。`warnings[]` 中的 `knowledge_tag_synonym`（疑似同义标签）转告用户，由人类负责人决定是否合并，不要自行合并。
+   - 项目第一次 apply 时会自动从已有条目生成 `TAGS.md`，不会让既有条目失效。
+   - 退出码 2 且 `rolled_back=false`，或任何命令报 `knowledge_apply_incomplete`：上一次录入被中断或回滚失败。先运行 `openlogos knowledge apply --recover`，成功后再继续；仍失败时把输出交给用户处理。
+   - 报 `knowledge_apply_busy`：另一个录入正在进行，稍后重跑第 4 步；不要删除 `logos/.openlogos-runtime/` 下的锁或事务文件。
+   - 报 `knowledge_apply_conflict`：候选与活跃提案的知识 delta 同名或同编号，改用其他编号，或改在提案内修改。
+6. **条目必须结构有效**：H1 以 KXX 开头；「元数据」YAML 含合法的 `type`、`scope`、`status`（`scope: module` 时含 `module`）、非空 `tags`，以及非空 `source`——每项写原文的仓库相对 `path`（必须指向 `logos/resources/reference/knowledge/` 内存在的文件，或本批 `sources/` 中的文件；指向该目录之外的仓库文件如 `README.md` 视为无效）与非空 `version`；`type: rule` 时有「规则」表，表中每一行首列都是本条目的 `KXX-Rn`、「状态」为 `active` 或 `deprecated`；标签表已启用时，每个标签都必须是 `TAGS.md` 中的标签或别名（或在同批 `TAGS.md` 中加入）。不满足时 apply 以 `knowledge_entry_invalid` / `knowledge_tag_unknown` 整批拒绝，提案通道中 change-lint 同样拒绝。
+7. **提案通道**：由 change-writer 在 `tasks.md` 的 `[delta]` 中规划 `deltas/knowledge/<module>-KXX-<slug>.md` 并预定 KXX（取号同第 2 步），产出知识 delta，合并时落盘。原文：项目 `guard.exempt` 仍含 `logos/resources/reference/` 时直接写入 `reference/knowledge/`；不含时（如显式 `guard.exempt: []`），在项目根之外建一个**只含 `sources/`** 的候选目录，运行 `openlogos knowledge apply <候选目录>` 写入原文（不写条目），条目仍经 delta 与场景同批合并。`deltas/knowledge/` 只放条目文件；需要的新标签先按第 3～5 步经 apply 加入 `TAGS.md`。initial 项目也默认使用直接录入。
+8. 录入完成后，按下文在有效知识视图上加载；刚录入或同一提案新录入的条目立即可被引用。
 
 ### 有效知识视图
 
-加载对象是**有效知识视图**：当前提案视角下知识条目的候选后态。提案尚未合并时，是磁盘上的 `logos/resources/knowledge/*.md` 叠加本提案 `deltas/knowledge/` 后的结果；提案已合并且没有待应用的修正时，直接读磁盘上的条目（delta 已应用，不再叠加）；有待应用的修正时，以合并基线叠加修正后的 delta。只看当前提案，不读其他提案或 archive。同一提案新录入、尚未合并的条目同样生效。
+加载对象是**有效知识视图**：当前提案视角下知识条目的候选后态。提案尚未合并时，是磁盘上的 `logos/resources/knowledge/` 条目叠加本提案 `deltas/knowledge/` 后的结果；提案已合并且没有待应用的修正时，直接读磁盘上的条目（delta 已应用，不再叠加）；有待应用的修正时，以合并基线叠加修正后的 delta。没有活跃提案时就是磁盘上的条目。只看当前提案，不读其他提案或 archive。`openlogos knowledge list` 输出的就是这一视图的元数据。
+
+标签表状态（`knowledge list` 的 `tag_state`）：
+
+- `never`：从未启用标签表，条目有效性沿用原判据；
+- `enabled`：条目的每个标签都必须在 `TAGS.md` 中（含别名），标签不在表中的条目不能作为依据或引用目标；
+- `missing`：已启用但 `TAGS.md` 丢失——停止录入与引用，请用户从 git 恢复 `TAGS.md`，或运行 `openlogos knowledge apply --init-tags` 重新初始化。
 
 ### 加载步骤
 
-1. 列出视图中的全部条目，只读取每个条目的「元数据」节（YAML：`type`、`scope`、`module`、`tags`、`status`、`source`）。
-2. 按以下条件筛选：`scope: global` 的条目一律命中；`scope: module` 的条目只在 `module` 等于当前模块时命中；再按与当前需求 / 场景相关的 `tags` 收窄。不依赖 `resource_index` 的描述，不做语义检索。
-3. 读取命中条目全文。`type: rule` 的条目以「规则」表中状态为 `active` 的 `KXX-Rn` 为约束；`deprecated` 的条目或规则只作背景，不作为新设计的依据。
-4. 视图中同一 KXX 出现在两个文件、或同一条目内重复 Rn 时，不得解析该 ID，先提示用户修复重号（change-lint 会报 `knowledge_id_duplicate`）。
-5. 结构无效的条目（缺 H1、元数据或必填字段）不作为依据，先提示用户补齐（change-lint 会报 `knowledge_entry_invalid`，引用它会报 `knowledge_reference_unknown`）。
+1. 运行 `openlogos knowledge list --module <当前模块> --format json`（需要时加 `--tag <标签>`，按标签表的行匹配别名），得到有效元数据（含本提案知识 delta）。不要以 `INDEX.md` 作为筛选依据——它只是已落盘条目的总索引，不含本提案的知识 delta。
+2. 在结果中按 `scope`（`global` 一律命中）与 `tags` 收窄到与当前需求 / 场景相关的条目。不依赖 `resource_index` 的描述，不做语义检索。
+3. 对每个命中条目运行 `openlogos knowledge show <KXX> --format json`，读取它在同一有效知识视图中的**合成后全文**（`content`）与规则（`rules`）。不要沿 `list` 返回的 `path` 直接读 delta 文件——只修改了「元数据」的 delta 不含原有规则。`type: rule` 的条目以「规则」表中状态为 `active` 的 `KXX-Rn` 为约束；`deprecated` 的条目或规则只作背景，不作为新设计的依据。
+4. 同一 KXX 出现在两个文件、或同一条目内重复 Rn 时，不得解析该 ID，先提示用户修复重号（会被报 `knowledge_id_duplicate`）。
+5. `valid=false` 的条目（`problems` 说明原因：结构无效或标签不在表中）不作为依据，先提示用户经录入入口修正（引用它会被 change-lint 报 `knowledge_reference_unknown`）。
+6. 需要知道某个条目或规则被哪些场景使用时（退役、修订、评估影响面），运行 `openlogos knowledge refs <KXX|KXX-Rn>`。
 
 ### 写明依据与冲突处理
 
 - 产出中凡受企业知识约束的内容，写明依据的 `KXX` 或 `KXX-Rn`。
-- 发现需求或设计与某条 `active` 规则冲突时，**不硬阻断、不静默取舍**：列出冲突（规则 ID、冲突点、可选处理：遵守 / 本次例外 / 规则需更新）并停下询问用户，一次只问一个决定。用户裁决「本次例外」时，在场景「适用业务约束」的「例外」列记录理由；裁决「规则需更新」时，交由 change-writer 规划知识 delta。
+- 发现需求或设计与某条 `active` 规则冲突时，**不硬阻断、不静默取舍**：列出冲突（规则 ID、冲突点、可选处理：遵守 / 本次例外 / 规则需更新）并停下询问用户，一次只问一个决定。用户裁决「本次例外」时，在场景「适用业务约束」的「例外」列记录理由；裁决「规则需更新」时，按录入入口修订规则（只改知识时直接录入；须与场景同批生效时交由 change-writer 规划知识 delta）。
 
 ### 本 Skill 的加载时机与产出
 
 - **事实扫描**：Step 1「先查事实」时把有效知识视图纳入扫描；需求与 `active` 规则冲突时，在 proposal 的 `clarification@1` 中新增一个 `category: product` 的未决项（question 写明规则 ID 与冲突点，options 为「遵守」「本次例外」「规则需更新」中的真实选项），按队列一次只问一个。
 - **用户提供新资料时**：
-  1. 原始资料写入 `logos/resources/reference/knowledge/`（目录不存在时先创建；guard 默认豁免，不经 delta），并提示用户：「原文将随仓库 push 扩散，push 前请确认可公开范围」。
-  2. 在 `tasks.md` 的 `[delta]` 中为每个新条目规划一条 `deltas/knowledge/<module>-KXX-<slug>.md` 任务并**预定 KXX**：取有效知识视图中最大 KXX（含 `deprecated` 条目）+ 1，视图为空（项目首次录入）时为 K01；同批多个新条目依次递增。场景设计按预定的 ID 引用。
-  3. 产出知识 delta 时：新条目用 `## ADDED — logos/resources/knowledge/<module>-KXX-<slug>.md（新文件，整文件）`；修订既有条目用 `MODIFIED` 携带整节全量内容，新规则取该条目最大 Rn（含 `deprecated`）+ 1。
+  1. **只提供资料时不立案**：用户只是交来资料、没有需求变更时，按上文录入入口第 2～5 步经 `openlogos knowledge apply` 直接录入，不运行 `openlogos change`；用户为录入资料主动要求立案时，说明无需立案并直接录入。
+  2. **资料引出需求变更时**：新知识可以先于需求生效的，先直接录入，再立案并在场景中引用已生效的 ID；只有知识修订必须与场景修改同批生效（如退役旧规则的同时改写引用它的场景）时，才在 `tasks.md` 的 `[delta]` 中为每个条目规划一条 `deltas/knowledge/<module>-KXX-<slug>.md` 任务并**预定 KXX**：取 `openlogos knowledge list` 中最大 KXX（含 `deprecated` 条目）+ 1，视图为空（项目首次录入）时为 K01；同批多个新条目依次递增。场景设计按预定的 ID 引用。
+  3. 两种通道下原文都进入 `logos/resources/reference/knowledge/`（直接录入时放候选目录 `sources/`，由 apply 复制；提案通道下 `reference/` 仍豁免时直接写入，不豁免时用只含 `sources/` 的候选目录运行 `openlogos knowledge apply`，见上文录入入口第 7 步），并提示用户：「原文将随仓库 push 扩散，push 前请确认可公开范围」。
+  4. 产出知识 delta 时：新条目用 `## ADDED — logos/resources/knowledge/<module>-KXX-<slug>.md（新文件，整文件）`；修订既有条目用 `MODIFIED` 携带整节全量内容，新规则取该条目最大 Rn（含 `deprecated`）+ 1。`deltas/knowledge/` 只放条目文件，`TAGS.md` / `INDEX.md` 不经 delta——条目需要的新标签先经 apply 加入 `TAGS.md`。合并后运行 `openlogos knowledge index` 刷新总索引。
+- **影响面**：退役或修订规则前运行 `openlogos knowledge refs <KXX|KXX-Rn>`，把引用它的场景写进 proposal 的影响范围。
 - **退役而非删除**：已合并的条目或规则不得写 `REMOVED` / `REMOVED-ITEMS`、不得改文件名中的 KXX（`knowledge_removal_forbidden`）；退役只把状态改为 `deprecated`。已退役的内容不得改回 `active` 或改写正文（`knowledge_retired_id_mutated`）。仍为 `active` 的规则可以用 `MODIFIED` 修订（如阈值调整）；语义已变成另一条规则时，必须新开 ID 并退役旧 ID。
-- **重号修复**：change-lint 报 `knowledge_id_duplicate` 时，把本提案新增的条目重编号为当前最大 KXX + 1，并同步改写本提案内所有引用后重跑。
+- **重号修复**：change-lint 或 apply 报 `knowledge_id_duplicate` 时，把本提案新增（或本批候选中）的条目重编号为当前最大 KXX + 1，并同步改写本提案内所有引用后重跑。

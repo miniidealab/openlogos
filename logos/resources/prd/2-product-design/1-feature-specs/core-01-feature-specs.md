@@ -5795,12 +5795,16 @@ manifest 判定实质身份（`spec/test-slice-manifest.md` §6.1）只在 `veri
 
 | 位置 | 内容 | 写入方式 |
 |---|---|---|
-| `logos/resources/knowledge/<module>-KXX-<slug>.md` | 提炼后的知识条目（规格资源，受 guard 保护） | launched 项目经 `deltas/knowledge/` → `openlogos merge`；initial 项目可直接写 |
-| `logos/resources/reference/knowledge/` | 企业原始资料（制度原文、接口说明等） | 直接写入（`reference/` 为 guard 默认豁免目录，不经 delta） |
+| `logos/resources/knowledge/<module>-KXX-<slug>.md` | 提炼后的知识条目（规格资源，受 guard 保护） | `openlogos knowledge apply`（无需活跃提案，§2.103）；或提案内 `deltas/knowledge/` → `openlogos merge`；initial 项目也可直接写 |
+| `logos/resources/knowledge/TAGS.md` | 标签表（标签、别名、说明；§2.103.6） | 只经 `openlogos knowledge apply` |
+| `logos/resources/knowledge/.tags-enabled` | 标签表启用标记（§2.103.6） | 只经 `openlogos knowledge apply`，此后不删除 |
+| `logos/resources/knowledge/INDEX.md` | 总索引，落盘条目的派生视图（§2.103.7） | `openlogos knowledge apply` / `openlogos knowledge index` |
+| `logos/resources/reference/knowledge/` | 企业原始资料（制度原文、接口说明等） | 直接写入（`reference/` 为 guard 默认豁免目录，不经 delta）；或经 `openlogos knowledge apply` 候选目录的 `sources/` 复制（显式 `guard.exempt` 不含 `reference/` 的项目只能用此方式） |
 
 - 新 delta 类别 `knowledge` 映射 `deltas/knowledge/ → logos/resources/knowledge/`，与既有类别一起维护在 `DELTA_TO_RESOURCE`、两处合并类别白名单与 `classifyCanonicalTargetCategory`（类别名 `knowledge`）中。
 - 原始资料与条目都进入 git 仓库（决策 C05）。AI 写入原文时必须提示「原文将随仓库 push 扩散，push 前请确认可公开范围」。
 - `openlogos init` 创建 `logos/resources/knowledge/` 与 `logos/resources/reference/knowledge/` 两个空目录。
+- `TAGS.md`、`.tags-enabled`、`INDEX.md` 不是知识条目，不参与 KXX 编号、条目结构校验与 S37 守恒注册，不进入有效知识视图与 `resource_index`（来源变更 knowledge-direct-intake）。
 
 ### 2.102.3 条目结构
 
@@ -5894,11 +5898,11 @@ source:
 | prd-writer | 写需求与验收条件前 | 验收条件涉及规则时写明依据的 `KXX` / `KXX-Rn` |
 | product-designer | 写功能规格与交互前 | 交互与规则冲突时列出冲突并停下询问 |
 | scenario-architect | Step 1 加载场景上下文时 | 场景文档写「适用业务约束」章节；时序与异常分支体现被引用规则 |
-| change-writer | 事实扫描时；用户提供新资料时 | 冲突写入 `clarification@1` 未决队列；新资料规划 `deltas/knowledge/` 任务并预定 KXX；原文写入 `reference/knowledge/` 并提示扩散风险 |
+| change-writer | 事实扫描时；用户提供新资料时 | 冲突写入 `clarification@1` 未决队列；只提供资料时经 `knowledge apply` 直接录入、不立案；知识修订须与场景同批生效时规划 `deltas/knowledge/` 任务并预定 KXX；原文写入 `reference/knowledge/`（或候选 `sources/`）并提示扩散风险；退役或修订规则前用 `knowledge refs` 查看影响面 |
 | test-writer | 设计 UT / ST 前 | 从场景引用的 `KXX-Rn` / `KXX` 派生用例，在用例描述中标注知识来源 |
 
-- **录入入口不受「无知识则跳过」影响**：Skill 先判断本轮用户是否提供了待沉淀的企业资料。提供了就进入录入分支——即使项目还没有 `logos/resources/knowledge/`、`logos/resources/reference/knowledge/` 与 `deltas/knowledge/`（如升级前就已 launched 的存量项目首次录入）：缺失的原文目录直接创建并写入原文、提示扩散风险；launched 项目由 change-writer 规划知识 delta 并预定编号（首个条目为 K01），initial 项目直接按模板写 `logos/resources/knowledge/`；录入完成后再加载。只有「项目没有任何知识条目、本提案没有知识 delta、且本轮用户没有提供资料」时才跳过加载。
-- 加载方式：在有效知识视图上读取每个条目的「元数据」，按当前模块、`scope` 与 `tags` 筛选，再读取命中条目全文。不依赖 `resource_index` 的 desc（现行合并对 CREATE 目标写通用描述），不引入语义检索。
+- **录入入口不受「无知识则跳过」影响**：Skill 先判断本轮用户是否提供了待沉淀的企业资料。提供了就进入录入分支——即使项目还没有 `logos/resources/knowledge/`、`logos/resources/reference/knowledge/` 与 `deltas/knowledge/`（如升级前就已 launched 的存量项目首次录入）。默认走直接录入（§2.103）：在项目根之外新建一次性候选目录，写入完整条目、需要变更的 `TAGS.md` 与原文（`sources/`），运行 `openlogos knowledge apply <候选目录>`，按输出逐条修正后重跑直到通过；新编号取 `openlogos knowledge list` 中最大 KXX（含 `deprecated`）+ 1，视图为空时为 K01。只有知识修订必须与场景修改同批生效时，才由 change-writer 规划知识 delta 并预定编号（§2.103.5）。initial 项目也默认使用 apply。录入完成后再加载。只有「项目没有任何知识条目、本提案没有知识 delta、且本轮用户没有提供资料」时才跳过加载。
+- 加载方式：运行 `openlogos knowledge list --module <当前模块> [--tag <标签>]`（有效知识视图的元数据，含活跃提案知识 delta，§2.103.8），按 `scope` 与 `tags` 筛选，再用 `openlogos knowledge show <KXX>` 读取命中条目的合成后全文（§2.103.8；不沿 `list` 返回的 `path` 直接读 delta）。标签取自 `TAGS.md`（含别名）。`INDEX.md` 只供人阅读，不作为设计时的筛选依据（它不含活跃提案的知识 delta）。不依赖 `resource_index` 的 desc，不引入语义检索。
 - 视图中存在 `knowledge_id_duplicate` 时，Skill 不得解析该 ID，先提示用户修复重号；结构无效的条目不作为依据，先提示用户补齐元数据。
 
 ### 2.102.9 冲突裁决
@@ -5920,30 +5924,273 @@ source:
 | 编号重复 | 本提案触及知识时的完整有效知识集合；以及本提案场景引用到的 ID | violation `knowledge_id_duplicate` |
 | 删除已合并条目 / 规则 | 本提案 `deltas/knowledge/` | violation `knowledge_removal_forbidden` |
 | 退役 ID 被改写 | 本提案 `deltas/knowledge/` 的候选后态对照已生效版本 | violation `knowledge_retired_id_mutated` |
-| 条目结构无效 | 本提案新增或修改的条目 | violation `knowledge_entry_invalid` |
+| 条目结构无效 | 本提案新增或修改的条目；`deltas/knowledge/` 下的 `TAGS.md` / `INDEX.md` / `.tags-enabled` | violation `knowledge_entry_invalid` |
+| 条目标签不在标签表（标签表已启用，§2.103.6） | 本提案新增或修改的条目 | violation `knowledge_tag_unknown`；被引用的目标条目标签不在表中时按引用不存在报 `knowledge_reference_unknown` |
+| 标签表已启用但词表丢失（§2.103.6） | 本提案场景中的每一处知识引用；本提案每个知识 delta | violation `knowledge_tags_missing` |
+| 存在未完成的知识录入事务（§2.103.4） | L10 启用时 | violation `knowledge_apply_incomplete` |
 
 - 各检查的前态与候选后态按 §2.102.6 的阶段规则计算；「已合并、无待应用修正」阶段只做引用解析与重号，不比较删除与冻结。
 - L10 的启用条件：本提案有 `deltas/knowledge/`，或本提案场景 delta 含「适用业务约束」章节，或提案处于待应用修正阶段且修正目标集合（`merge-amend` 的重组 / 新增 / 恢复三类）含 `logos/resources/knowledge/` 下的目标——撤回最后一个知识 delta、删除空的 `deltas/knowledge/` 目录后，被恢复为合并基线内容的知识目标仍在恢复集合中，照常比较当前已生效版本与候选后态。三者都不满足时 L10 不执行，change-lint 输出与升级前一致。
 - 恢复目标没有对应的 delta 文件，其诊断的 `path` 使用实际恢复的规范目标路径（`logos/resources/knowledge/<module>-KXX-<slug>.md`）。
 - KXX 与 KXX-Rn 纳入 S37 条目守恒 ID 注册表，作用范围限 `logos/resources/knowledge/` 下的文档；场景文档中引用表首列的 KXX 不作为场景文档自身的条目 ID。
+- 条目有效性与标签表三态与 `openlogos knowledge apply` 共用同一判据（§2.103.11，来源变更 knowledge-direct-intake）；L10 的启用条件与检查范围不因此扩大。
 
 ### 2.102.11 合并与登记
 
-- 知识条目经现行 `openlogos merge`（`mergeDirect`）与场景、`resource_index` 的 CREATE 登记、`SPEC_MERGED` 同批一次原子提交；不新增落盘事务，不新增 `openlogos knowledge` 命令，merge-executor 职责不变（只读复核与交接）。
-- `openlogos sync` / `openlogos index` 的资源索引扫描纳入 `logos/resources/knowledge/`，使 initial 阶段直接写入的条目也能补录进 `resource_index`。
+- 提案通道：知识条目经现行 `openlogos merge`（`mergeDirect`）与场景、`resource_index` 的 CREATE 登记、`SPEC_MERGED` 同批一次原子提交；不新增落盘事务，merge-executor 职责不变（只读复核与交接）。合并后 `INDEX.md` 不自动刷新，由 `openlogos knowledge index` 刷新（§2.103.5）。
+- 直接录入通道：`openlogos knowledge apply` 自身完成校验与原子写入（§2.103.4），不经 merge、不写 `SPEC_MERGED`；录入的条目由 `openlogos sync` / `index` 补录进 `resource_index`（来源变更 knowledge-direct-intake 修订：原「不新增 `openlogos knowledge` 命令」由其决策 C04 推翻）。
+- `openlogos sync` / `openlogos index` 的资源索引扫描纳入 `logos/resources/knowledge/`，使 initial 阶段直接写入与 apply 录入的条目也能补录进 `resource_index`；只收录规范命名的条目文件，不收录 `TAGS.md`、`INDEX.md`、`.tags-enabled`。
 - 新场景 S45 在规格合并提交时登记进 `logos/logos-project.yaml` 的 `scenarios[]`（module `core`、feature `F04`），`scenario_counter.next_id` 推进到 46。
 
 ### 2.102.12 非目标
 
 - 不做语义检索 / 向量库，不接入外部知识源。
-- 不做 `openlogos impact` 按规则反查，不持久化规则 → 场景反向索引。
+- 不持久化规则 → 场景反向索引（`openlogos knowledge refs` 实时计算，§2.103.9）；不做 `openlogos impact` 按规则反查。
 - 不提供 knowledge-curator 自动提炼 Skill。
 - 不支持物理删除已合并的知识条目或规则；不做保密分级与加密存储。
-- 不对全仓既有场景做引用全量扫描，只校验本提案触及的范围（§2.102.10）。
+- change-lint 不对全仓既有场景做引用全量扫描，只校验本提案触及的范围（§2.102.10）；全库扫描由只读的 `openlogos knowledge check` 承担（§2.103.10）。
+- 不把知识目录加入 guard 豁免、不支持文件工具直写；不自动合并同义标签；不提供 git pre-commit 钩子（来源变更 knowledge-direct-intake）。
 
 ### 2.102.13 追溯
 
-- 需求：「S45: 企业知识沉淀与场景引用」S45-AC-01～S45-AC-13。
+- 需求：「S45: 企业知识沉淀与场景引用」S45-AC-01～S45-AC-25（S45-AC-14～S45-AC-25 的增量规则见 §2.103）。
 - 场景：`core-S45-enterprise-knowledge.md`。
 - 架构：「五十七、企业知识资源：类别注册、有效知识视图与引用校验」。
-- 测试：`core-S45-test-cases.md`；安装态 smoke：SMOKE-core-318～SMOKE-core-320。
+- 测试：`core-S45-test-cases.md`；安装态 smoke：SMOKE-core-318～SMOKE-core-320、SMOKE-core-321～SMOKE-core-323。
+
+## 2.103 企业知识直接录入、强拦截与检索辅助（S45 增量，knowledge-direct-intake）
+
+> 来源变更：knowledge-direct-intake（决策 C01～C06；proposal-r1 F1～F5、r2 F2/F3、r3 F3 处置）。需求见 `core-01-requirements.md`「S45: 企业知识沉淀与场景引用」S45-AC-14～S45-AC-25；场景见 `core-S45-enterprise-knowledge.md` Step 12～19；JSON 契约见 `spec/cli-json-output.md`「`openlogos knowledge` 命令组」。本节是 §2.102 的增量：条目结构、编号、退役与引用语义不变，只新增不经提案的录入通道、标签表、总索引与检索辅助。
+
+### 2.103.1 问题与边界
+
+S45 首版只能经提案链（立案 → 决策澄清 → delta → merge → verify → archive）录入知识。知识条目是设计输入资料，录入本身不改变任何场景、接口或代码，却与业务规格变更承担同样的流程成本；条目增多后也只能逐个读元数据筛选，没有总索引、没有反查，`tags` 是自由文本。
+
+本节的边界：
+
+- **知识目录保持受保护**。不把 `logos/resources/knowledge/` 加入 guard 豁免，不支持用文件工具直写；唯一免立案写入口是 `openlogos knowledge apply`（决策 C01，review r1 F2）。
+- **写入前强拦截**。apply 在落盘前校验整个候选批次，任一判据不通过即零写入（决策 C02）；所有宿主结论一致，不依赖宿主的写后回滚能力（决策 C06 的宿主差异因此消失，其兜底部分适用于人工编辑）。
+- **提案通道保留**。`deltas/knowledge/` 与 change-lint L10 照常可用，用于「知识修订必须与场景修改同批生效」。
+
+### 2.103.2 命令总览
+
+| 命令 | 作用 | 写入 | 需要活跃提案 |
+|---|---|---|---|
+| `openlogos knowledge apply <候选目录> [--format json]` | 校验并录入一批条目、标签表与原文 | 是（知识目录、原文目录） | 否 |
+| `openlogos knowledge apply --init-tags [--format json]` | 不带新条目，只启用（或重新初始化）标签表 | 是 | 否 |
+| `openlogos knowledge apply --recover [--format json]` | 只恢复上一次被中断的录入事务（§2.103.4「事务」），不录入新内容 | 是（回滚未完成的事务） | 否 |
+| `openlogos knowledge index [--format json]` | 重新生成 `INDEX.md` | 是（仅 `INDEX.md`） | 否 |
+| `openlogos knowledge check [--format json]` | 全库诊断 | 否 | 否 |
+| `openlogos knowledge list [--module <m>] [--tag <t>] [--format json]` | 输出有效元数据（含活跃提案知识 delta） | 否 | 否 |
+| `openlogos knowledge show <KXX> [--format json]` | 输出一个条目在有效知识视图中的合成后全文（含活跃提案知识 delta） | 否 | 否 |
+| `openlogos knowledge refs <KXX|KXX-Rn> [--format json]` | 反查引用 | 否 | 否 |
+
+- 各命令须在项目根执行（与其他 openlogos 命令相同）；`logos/logos.config.json` 不存在时退出码 2。
+- initial 与 launched 项目都可用；initial 项目仍可直接写知识目录（§2.102.2），但 Skill 默认使用 apply。
+
+### 2.103.3 候选目录
+
+```text
+<候选目录>/
+├── <module>-KXX-<slug>.md     # 0～n 个完整条目文件：新建，或整文件替换同名已录入条目
+├── TAGS.md                    # 可选：完整标签表，整文件替换
+└── sources/                   # 可选：原文，复制到 logos/resources/reference/knowledge/<同名文件>
+    └── <文件名>
+```
+
+- **位置**：Skill 默认在项目根之外新建一次性临时目录（如系统临时目录下 `mktemp -d` 的结果）。guard 规范「管辖边界」规定项目根之外的写入不受 guard 管辖，因此任何 `guard.exempt` 配置（包括显式 `[]`）下都能写入候选（review r2 F2）。apply 也接受项目内路径（如 `reference/` 仍豁免时），但不接受位于 `logos/resources/knowledge/` 之内的路径。
+- **允许的内容**：只有上述三类。条目文件名必须满足 §2.102.3 的规范命名（`^[a-z][a-z0-9-]*-K\d+-[^/]+\.md$`）；`sources/` 下只允许普通文件、不含子目录。出现其他文件或目录、symlink、`INDEX.md`、`.tags-enabled`，或既无条目、无 `TAGS.md`、无原文又未带 `--init-tags` → `knowledge_apply_input_invalid`。
+- **原文**：目标 `logos/resources/reference/knowledge/<文件名>` 已存在且字节相同 → 视为无变化；已存在而字节不同 → `knowledge_apply_input_invalid`（提示用新文件名，如 `-v4`，旧版原文继续被旧条目的 `source` 指向）。
+- **与活跃提案的冲突**（review delta-r1 F2）：存在活跃提案，且该提案尚未合并或处于待应用修正阶段（§2.102.6）时，以下任一情况 → `knowledge_apply_conflict`，提示改在提案内修改、改用其他编号，或等提案合并后再录入：
+  - 其 `deltas/knowledge/`（含待应用修正的恢复集合）中有与某个候选条目同名的目标；
+  - 候选条目的 KXX 已被该提案有效知识视图中另一个文件名的条目占用，或某条候选规则的 `KXX-Rn` 在该视图中属于另一个文件——即在「apply 后的磁盘条目 + 该提案知识 delta」（按 §2.102.6 阶段规则合成，见判据 6）上出现重号。
+  没有活跃提案，或提案已合并且无待应用修正时，提案视图等于磁盘，不另行检查。
+- apply 不删除候选目录；清理由调用方负责。
+
+### 2.103.4 apply 的校验与写入
+
+**前态与候选后态**：
+
+```text
+before        = 当前磁盘 logos/resources/knowledge/ 中的条目、TAGS.md 与 .tags-enabled（已接受内容）
+before_state  = 标签表三态(before)                                    # §2.103.6
+after_entries = before 的条目按文件名用候选条目新增或整文件替换
+after_tags    = 候选 TAGS.md                                           # 显式提供时整表替换
+                ?? 磁盘 TAGS.md                                         # enabled
+                ?? (before_state ∈ {从未启用, 已启用但词表丢失} 且（首次启用或带 --init-tags）时，按 §2.103.6 由 after_entries 与 proposal_view 中的条目生成的表)
+                # before_state = 已启用但词表丢失、既无候选 TAGS.md 又无 --init-tags → 判据 2 拒绝，不计算后态
+after_sources = 磁盘 logos/resources/reference/knowledge/ ∪ 候选 sources/
+proposal_view = 活跃提案尚未合并或待应用修正时：after_entries 按 §2.102.6 叠加该提案 deltas/knowledge/；否则等于 after_entries
+```
+
+**判据**（全部在写入前执行，任一不通过即整批拒绝）：
+
+| # | 检查 | 范围 | 不通过时的 code |
+|---|---|---|---|
+| 1 | 输入合法 | 候选目录（§2.103.3） | `knowledge_apply_input_invalid` / `knowledge_apply_conflict` |
+| 2 | 词表可用 | `before_state = 已启用但词表丢失` 且候选不含 `TAGS.md`、也未带 `--init-tags` | `knowledge_tags_missing` |
+| 3 | 结构有效 | 每个候选条目，按 §2.102.3 六条判据；`source.path` 在 `after_sources` 上判定存在与归属 | `knowledge_entry_invalid` |
+| 4 | 标签表格式 | `after_tags`（§2.103.6） | `knowledge_tags_invalid` |
+| 5 | 标签判据 | ① 每个候选条目的每个标签都在 `after_tags` 中；② `after_tags` 与前态词表不同时（含 `never` / `missing` 恢复到 `enabled`），每个**应保留**的非候选条目——范围是 `after_entries` 与 `proposal_view`（含只存在于活跃提案知识 delta 中的条目）；前态为 `enabled` 时指标签原本都被旧表覆盖的条目，前态为 `never` / `missing` 时指全部结构有效的条目——的每个标签仍在 `after_tags` 中 | `knowledge_tag_unknown`（`path` 为未被覆盖的条目） |
+| 6 | 编号唯一 | `after_entries` 全集：同一 KXX 对应两个文件，或同一条目内重复 Rn；另在 `proposal_view` 上执行同一检查，只由提案 delta 引起的重号按判据 1 报 `knowledge_apply_conflict` | `knowledge_id_duplicate` / `knowledge_apply_conflict` |
+| 7 | 禁止删除 | 被替换的已录入条目：`before` 中存在的 `KXX-Rn` 在候选中消失 | `knowledge_removal_forbidden` |
+| 8 | 退役冻结 | 被替换的已录入条目：`before` 中为 `deprecated` 的条目或规则，按 §2.102.5 的冻结范围逐字比较 | `knowledge_retired_id_mutated` |
+| 9 | 受影响引用 | 按**配对视图**比较（review delta-r2 F5）：① 磁盘场景文档的引用，前态在 `before` 知识上解析、后态在 `after_entries` + `after_tags` 上解析；② 有未合并或待应用修正的活跃提案时，该提案场景 delta（按 §2.102.6 合成的候选场景）的引用，前态在「`before` 叠加该提案知识 delta」上解析、后态在 `proposal_view` + `after_tags` 上解析。前态能解析到有效条目的引用，后态必须仍能解析。`before_state = 已启用但词表丢失` 时，前态的「能解析」按不含标签判据的结构有效性判定，因此恢复后的词表必须让两类引用都重新有效 | `knowledge_reference_unknown`（`path` 为磁盘场景文件或提案场景 delta） |
+
+- 判据 7、8 的比较对象是 `before`（本次 apply 前已接受的内容，即当前生效版本），**不是 git HEAD**；两次 apply 之间不需要提交（review r1 F4）。
+- 新增条目的 KXX 取 `after_entries` 中最大 KXX（含 `deprecated`）+ 1 由 Skill 负责；apply 不自动改号，只校验唯一性。
+- warning（不改结论）：`knowledge_tag_synonym`（§2.103.6）。
+- **事务**（全部判据通过后；review delta-r1 F1）：写入复用 baseline-on-touch 的批次提交与恢复原语（`cli/src/lib/baseline-apply.ts` 的 `applyBaselineClosureBatch` / `recoverBaselineClosureApply`），不另造回滚协议。原语改为接受「事务存储目录」参数，知识录入使用 `logos/.openlogos-runtime/knowledge-apply/`（不入版本控制）：
+  0. **排他边界**（review delta-r2 F1）：apply（含 `--init-tags`、`--recover`）与 index 在做任何事之前，先取得项目级排他锁 `logos/.openlogos-runtime/knowledge-apply.lock`，持有到「恢复 → 读取前态 → 校验 → 提交（或回滚）」全部结束才释放。锁复用 baseline-seed 的提交锁原语（`cli/src/lib/baseline-seed-txn.ts` 的 `acquireLock` / `releaseLock`：以 link 原子发布含 pid 与 token 的持有者身份，持有者进程仍存活时不抢占，仅在持有者进程已死时经独立 marker 仲裁回收），原语改为接受锁路径参数。锁被存活进程持有时，等待至多 30 秒（每 200 毫秒重试）；仍未取得 → 退出码 2，`knowledge_apply_busy`，不做任何恢复或写入。因此只有在持有者已退出后，事务日志才可能被恢复，正在提交的录入不会被另一进程回滚。
+  1. **恢复先行**：取得锁后，apply 与 index 先恢复上一次未完成的事务（整批回滚到执行前字节、删除新建文件与目录）；恢复失败 → 退出码 2，`knowledge_apply_recover_failed`，本次不录入。
+  2. **准备**：按「原文 → 条目 → `TAGS.md` → `.tags-enabled`（不存在时）→ `INDEX.md`」生成写入集合，逐个写入私有 staging 并持久化；已存在目标复制 backup 并核对哈希；写出 `prepared` 事务日志。
+  3. **提交**：日志切到 `committing` 后逐个目标在重命名前核对当前哈希仍等于准备时的旧哈希（防并发覆盖），重命名后核对新哈希，每个目标完成即更新日志；全部完成后日志切到 `committed` 并清理私有产物。
+  4. **失败**：提交中任一步出错立即按日志整批回滚。回滚成功 → `result="write_failed"`、`rolled_back=true`，项目文件与执行前一致；回滚本身失败 → `result="write_failed"`、`rolled_back=false`，`errors[]` 含 `knowledge_apply_recover_failed`，事务日志保留，提示运行 `openlogos knowledge apply --recover`。
+  5. **进程中断**（如在条目与 `TAGS.md` 之间被杀）：事务日志留在 `committing`，锁的持有者进程已死。下一次 apply / index / `apply --recover` 回收锁后先整批回滚；回滚完成前（以及另一进程正持锁提交期间），`knowledge check` 报 error `knowledge_apply_incomplete`，`knowledge list` / `show` / `refs` 拒绝输出（退出码 1，`knowledge_apply_incomplete`），change-lint L10 启用时报 violation `knowledge_apply_incomplete`，`status` / `next` 文本提示运行 `openlogos knowledge apply --recover`——任何读取方都不会把半写入的状态当作已接受内容。
+  6. **读取在同一排他边界内取快照**（review delta-r3 F1）：`knowledge check`、`list`、`show`、`refs`、change-lint L10（含 `openlogos merge` 写入前的准入）以及 `status` / `next` 的知识提示，在读取知识目录（条目、`TAGS.md`、`.tags-enabled`、`INDEX.md`）与原文目录**之前**取得同一把 `knowledge-apply.lock`，持有到全部知识读取完成（视图、校验与引用解析所需的内容都已读入内存）才释放——复用 baseline-seed 读锁区间的模式（`baseline-seed-txn.ts` 的 `withBaselineReadLock` / `withRecoveredReadLocks`，change-lint 已以此包裹 seed 读取），取锁用同一有界退避重试（`acquireReadLockWithRetry` 的策略），原语按锁路径参数化。因此一次读取要么完全在某次提交之前、要么完全在其之后，不会读到跨越提交的旧新混合视图。
+     - 读锁区间内发现未完成的事务日志（持有者已死）：读取方**不恢复**，保持现行只读诊断——`check` 报 error `knowledge_apply_incomplete`，`list` / `show` / `refs` 拒绝输出（退出码 1），L10 报 violation `knowledge_apply_incomplete`，`status` / `next` 提示运行 `openlogos knowledge apply --recover`；`message` 写「上一次录入被中断」。
+     - 退避预算内取不到锁（另一个录入正在提交）：同样以 `knowledge_apply_incomplete` 拒绝，`message` 写「另一个录入正在进行，请稍后重试」；不输出任何视图数据。
+     - 不触及知识的命令与提案（L10 不启用、`status` / `next` 在没有知识条目与 `TAGS.md` 时）不取该锁，行为与升级前一致。
+  7. **merge 写入知识**：`openlogos merge`（含修正合并）的写入集合包含 `logos/resources/knowledge/` 下的目标时，准入与写入同样在该锁内进行，与直接录入互斥。
+  成功后输出写入文件清单。
+- **退出码**：0 已写入（或无变化）；1 校验不通过（零写入）或存在未完成事务而命令只读；2 用法错误、项目根不正确、写入失败（`rolled_back` 区分是否已恢复）、恢复失败或排他锁忙（`knowledge_apply_busy`）。
+- `--format json` 输出见 `spec/cli-json-output.md`「`openlogos knowledge` 命令组」。
+
+### 2.103.5 与提案通道的关系
+
+| 情形 | 通道 |
+|---|---|
+| 只提供资料，没有需求变更 | `knowledge apply`（无需立案） |
+| 有需求变更，且新知识可以先于需求生效 | 先 `knowledge apply` 录入，再立案并在场景中引用（推荐） |
+| 知识修订必须与场景修改同批生效（如退役旧规则、同时改写引用它的场景） | 提案内 `deltas/knowledge/`，经 `openlogos merge` 原子落盘 |
+
+- **提案通道的原文**（review delta-r1 F4）：项目 `guard.exempt` 仍含 `logos/resources/reference/` 时，原文可直接写入 `reference/knowledge/`；不含时（如显式 `guard.exempt: []`），把原文放进一个**只含 `sources/`** 的候选目录，运行 `openlogos knowledge apply <候选目录>` 写入原文目录（不写任何条目），知识条目仍由提案的 `deltas/knowledge/` 与场景同批合并。只含 `sources/` 的批次不触发标签表启用，也不改写 `INDEX.md` 之外的知识文件（`INDEX.md` 因内容不变而不写）。
+- 提案内知识 delta 只能是条目文件；`deltas/knowledge/` 下出现 `TAGS.md`、`INDEX.md` 或 `.tags-enabled` → change-lint `knowledge_entry_invalid`（`message`：标签表与索引只能经 `openlogos knowledge apply` / `index` 维护）。提案条目需要的新标签先用 apply 加入 `TAGS.md`。
+- `openlogos merge` 合并知识 delta 后，`INDEX.md` 不自动刷新；`knowledge check` 报 `knowledge_index_stale`，由 AI 运行 `openlogos knowledge index` 刷新（不阻断合并与验收）。
+
+### 2.103.6 标签表 `TAGS.md` 与三态
+
+**格式**：
+
+```markdown
+# 知识标签表
+
+| 标签 | 别名 | 说明 |
+|---|---|---|
+| 退款 | 退货退款、refund | 订单退款与退货退款 |
+| 结算 | settlement | 结算日、对账 |
+```
+
+- 首个表格为标签表，表头首列为「标签」、第二列为「别名」；「别名」可为空，多个别名以 `、` 或 `,` 分隔。
+- **规范化**：比较前对标签与别名做首尾去空白、Unicode NFKC 与 ASCII 小写。
+- **格式错误**（`knowledge_tags_invalid`）：没有标签表或表头不符；某行「标签」为空；两行标签规范化后相同；某个别名等于另一行的标签或别名。
+- **疑似同义**（warning `knowledge_tag_synonym`）：两行标签或别名在规范化后再去除空白、`-`、`_` 后相同；只提示，由人类负责人决定是否合并（决策 C03）。
+- **标签判据**：条目的每个标签规范化后必须等于表中某行的标签或别名。条目可以直接使用别名；`knowledge list --tag` 按行（标签 + 全部别名）匹配。
+
+**三态**（apply、`knowledge check`、`knowledge list`、`knowledge index` 与 change-lint L10 共用，由 `knowledge-view.ts` 统一计算；review r2 F3、r3 F3）：
+
+| 状态 | 判定 | 有效性判据 |
+|---|---|---|
+| 从未启用（`never`） | `TAGS.md` 不存在，且启用标记 `logos/resources/knowledge/.tags-enabled` 不存在，且 git HEAD 中没有 `logos/resources/knowledge/TAGS.md`（非 git 项目只看前两项） | §2.102.3 原判据，不套用标签判据；升级前的合法条目照常可被引用 |
+| 已启用（`enabled`） | `TAGS.md` 存在（启用标记缺失时由下一次 apply 补写） | §2.102.3 判据 + 标签判据 |
+| 已启用但词表丢失（`missing`） | `TAGS.md` 不存在，但启用标记存在或 git HEAD 中有 `TAGS.md` | apply 拒绝（除非本批带 `TAGS.md` 或 `--init-tags`）；`knowledge index` 拒绝；`knowledge check` 报 error；L10 对本提案引用知识的每一处与本提案的知识 delta 报 `knowledge_tags_missing` |
+
+- **启用**：只经受控命令。`before_state = never` 时的任一次 apply（含 `--init-tags`；只含 `sources/` 的批次除外）把「全部有效条目（`after_entries` 与 `proposal_view` 中结构有效者）与候选 `TAGS.md` 中出现的标签」并集生成初始 `TAGS.md`：候选带 `TAGS.md` 时以它为基础，缺少的标签逐行补入（「说明」写「初始化自既有条目」）；不带时整表生成。同批写入启用标记 `.tags-enabled`（内容为启用时间与 CLI 版本），此后任何命令都不删除它。启用那一刻所有既有有效条目都在表内，不会失效。
+- **从 `missing` 恢复**（review delta-r1 F5）：两种方式，都在同一候选后态上执行判据 3～9，全部通过才写入并回到 `enabled`：
+  - **带 `--init-tags`**（不带候选 `TAGS.md`）：`after_tags` 由 `after_entries` 与 `proposal_view` 中全部结构有效条目的标签生成（与首次启用同一规则；只存在于活跃提案知识 delta 中的条目的标签同样入表），并以 warning 列出本次由条目反推进表的标签，提示负责人复核；
+  - **带候选 `TAGS.md`**：以候选整表为 `after_tags`，判据 5 ② 要求它覆盖 `after_entries` 与 `proposal_view` 中全部结构有效条目的标签，判据 9 要求词表丢失前可解析的磁盘引用与活跃提案引用全部重新有效；漏掉任一现存条目的标签即 `knowledge_tag_unknown`，整批拒绝、零写入。
+  - 两者都写入（必要时补写）启用标记。
+- `enabled` 状态下 `--init-tags` 不改任何文件，输出「标签表已启用」，退出码 0。
+- `TAGS.md`、`.tags-enabled`、`INDEX.md` 不是知识条目，不参与 KXX 编号、条目结构校验与 S37 守恒注册。
+
+### 2.103.7 总索引 `INDEX.md`
+
+```markdown
+<!-- 由 openlogos knowledge index 生成，请勿手工编辑 -->
+# 企业知识索引
+
+标签表：已启用（logos/resources/knowledge/TAGS.md）
+
+| ID | 标题 | type | scope | module | tags | status | 规则（active/全部） | 文件 |
+|---|---|---|---|---|---|---|---|---|
+| K01 | 退款审批规则 | rule | module | core | 退款、审批 | active | 2/2 | core-K01-refund-approval.md |
+| K02 | 结算日定义 | term | global | — | 结算 | active | 0/0 | core-K02-settle-day.md |
+```
+
+- 是落盘条目的派生视图：按 KXX 数值升序，同号按文件名；结构无效的条目照常列出，status 列写「结构无效」；标签表行写当前三态（从未启用 / 已启用 / 已启用但词表丢失）。
+- 生成内容是条目的确定性函数，不含时间戳；同一磁盘状态两次生成逐字节相同。
+- 由 apply 与条目同批生成，或由 `openlogos knowledge index` 单独刷新。`missing` 状态下 `knowledge index` 拒绝（退出码 1，`knowledge_tags_missing`），刷新索引不能把状态变回「从未启用」。
+- **过期**：`knowledge check` 在内存中重新生成并与磁盘比对，不一致或文件缺失（有条目时）→ warning `knowledge_index_stale`。过期**不**作为任何写入的拦截条件（review r1 F1）。
+- `INDEX.md` 只供人阅读与无提案时的快速查阅；设计时筛选用 `knowledge list`（§2.103.8）。
+
+### 2.103.8 有效元数据列表 `knowledge list`
+
+- 数据来源：§2.102.6 的有效知识视图——落盘条目叠加活跃提案 `deltas/knowledge/`（未合并：叠加；已合并无修正：直接读落盘；待应用修正：合并基线叠加修正后的 delta）。没有活跃提案时等于落盘条目。
+- 每个条目输出：`id`、标题、`path`、来源（`resources` / `delta`）、`type`、`scope`、`module`、`tags`、`status`、active 规则数 / 全部规则数、`valid` 与问题清单（结构无效、标签不在表中等）。
+- `--module <m>`：保留 `scope=global` 与 `module=<m>` 的条目。`--tag <t>`：保留标签（按 §2.103.6 的行，含别名）命中的条目；`t` 不在标签表中时按规范化后的字面量匹配。两者同时给出取交集。
+- 已退役条目照常列出（`status=deprecated`），由 Skill 按 §2.102.8 只作背景。
+- **读取正文用 `knowledge show`**（review delta-r1 F3）：`openlogos knowledge show <KXX>` 输出该条目在同一有效知识视图中的**合成后全文**（落盘条目叠加本提案对它的 MODIFIED 后的完整 Markdown，复用 change-lint 的 `candidateMarkdownAfter`，与合并结果逐字节一致），以及规则行解析结果、`valid`、`problems` 与来源路径。`list` 返回的 `path` 只作来源与诊断，Skill 不得沿 `path` 直接读取 delta 文件——只修改了「元数据」的 MODIFIED delta 不含原有规则。KXX 不存在 → 退出码 1（`knowledge_reference_unknown`）；重号 → 退出码 1（`knowledge_id_duplicate`，列出各来源）。
+- 这保证「只存在于本提案 delta 的 K12」与「delta 使已落盘条目首次命中当前模块或标签」两种情况都出现在筛选结果中（review r1 F5）。
+
+### 2.103.9 反查 `knowledge refs`
+
+- 参数必须匹配 `^K\d+(-R\d+)?$`，否则退出码 2。
+- 扫描有效场景视图（磁盘场景文档；有活跃提案时按 §2.102.6 叠加其场景 delta）中「适用业务约束」表的首列：
+  - 查询 `KXX`：返回引用 `KXX` 本身（条目级）与引用其任一 `KXX-Rn`（规则级）的行；
+  - 查询 `KXX-Rn`：返回引用该规则（规则级）与引用 `KXX`（条目级）的行，条目级结果单独标注。
+- 每条结果：场景文件、行号、引用文本、作用位置、例外、引用级别、来源（`resources` / `delta`）。另输出目标在有效知识视图中的解析状态（`active` / `deprecated` / `unknown` / `invalid` / `duplicate`）。
+- 实时计算，不持久化反向索引；没有引用时返回空列表，退出码 0。
+
+### 2.103.10 全库诊断 `knowledge check`
+
+只读。检查项：
+
+| 检查 | 级别 | code |
+|---|---|---|
+| 每个落盘条目的结构有效性（§2.102.3） | error | `knowledge_entry_invalid` |
+| 重号 | error | `knowledge_id_duplicate` |
+| 标签表格式（`enabled` 时） | error | `knowledge_tags_invalid` |
+| 条目标签不在表中（`enabled` 时） | error | `knowledge_tag_unknown` |
+| 标签表三态为 `missing` | error | `knowledge_tags_missing` |
+| 全部磁盘场景文档中的悬空引用（不存在、结构无效或标签不在表中的目标） | error | `knowledge_reference_unknown` |
+| 以 git HEAD 为辅助基准：HEAD 中存在的条目或规则在磁盘上消失、HEAD 中已退役的内容在磁盘上被改写（人工编辑绕过 apply 时出现） | error | `knowledge_removal_forbidden` / `knowledge_retired_id_mutated` |
+| 引用退役条目或规则 | warning | `knowledge_reference_deprecated` |
+| 索引过期或缺失 | warning | `knowledge_index_stale` |
+| 疑似同义标签 | warning | `knowledge_tag_synonym` |
+| 存在未完成的录入事务（§2.103.4「事务」第 5 条） | error | `knowledge_apply_incomplete` |
+
+- 非 git 项目跳过 HEAD 辅助比较，输出 `head_compare: unavailable` 并在文本中注明。
+- 退出码：0 无 error；1 有 error；2 用法错误或项目根不正确。
+- 只诊断，不阻断与本次无关的提案；合并准入仍只由 L10 按本提案范围判定（§2.103.11）。
+
+### 2.103.11 change-lint L10 的增量
+
+- **条目有效性**：L10 解析引用时使用与 apply 相同的条目有效性与标签表三态——`enabled` 时标签不在表中的条目不是有效引用目标（`knowledge_reference_unknown`，`message` 注明「目标条目标签不在标签表」），本提案新增或修改的条目使用表外标签报 `knowledge_tag_unknown`；`never` 时沿用 §2.102.3；`missing` 时本提案场景中每一处知识引用与本提案每个知识 delta 报 `knowledge_tags_missing`。
+- **范围不扩大**：L10 的启用条件与检查范围不变（§2.102.10），只检查本提案触及的知识与场景；全库悬空引用、过期索引、疑似同义标签由 `knowledge check` 负责。没有知识条目、从未启用标签表的项目输出不变。
+- **未完成的录入事务与读锁**：L10 启用时，知识读取在 `knowledge-apply.lock` 读锁区间内进行（§2.103.4「事务」第 6 条）；区间内有未完成的事务日志，或退避预算内取不到锁，报 `knowledge_apply_incomplete`（`path` 为事务存储目录 `logos/.openlogos-runtime/knowledge-apply/`，`message` 区分「已中断」与「正在进行」），不在半写入或跨提交的状态上解析引用。
+- **新增 violation code**：`knowledge_tag_unknown`、`knowledge_tags_missing`、`knowledge_apply_incomplete`（进入 `ChangeLintViolationCode` 闭合枚举，见 `spec/cli-json-output.md` §3.15「change-lint 企业知识检查」）。
+
+### 2.103.12 guard 边界
+
+- `logos/resources/knowledge/` 在 launched、无活跃提案时仍是受保护内容：Edit / Write / MultiEdit 与可确定目标的 shell 写入照常被拦截，阻断提示增加「录入企业知识请使用 `openlogos knowledge apply`」。
+- `openlogos knowledge apply` / `index` 以独立 openlogos 调用（允许 `cd` 前缀段）执行时，适用 `spec/pretooluse-guard.md`「独立 git / openlogos 调用豁免」：其写入不被事后检查报告。与其他命令组成复合调用时不享受豁免，按普通调用处理。不新增 guard 引擎规则，不新增内置默认豁免。
+- 候选目录位于项目根之外时不受 guard 管辖；位于项目内时按现行规则判定（`reference/` 豁免保留时可写）。
+
+### 2.103.13 状态提示与提案骨架
+
+- `openlogos status` 与 `openlogos next` 的**文本**输出：存在知识条目或 `TAGS.md` 时，按 `knowledge check` 的同一判据（不含 HEAD 辅助比较）计算；有 error、三态为 `missing`、索引过期或存在未完成的录入事务时追加一行：`企业知识：<N> 条；<问题摘要>，运行 openlogos knowledge check 查看`。没有问题时不输出该行。两者的 `--format json` 输出不变（契约版本不变、golden 零漂移），机器消费方调用 `openlogos knowledge check --format json`。
+- `openlogos change <slug>` 生成的提案骨架在既有 `deltas/prd`、`deltas/api`、`deltas/database`、`deltas/scenario` 之外新增 `deltas/knowledge/`。
+
+### 2.103.14 兼容性
+
+- 条目文件格式、S45 的 delta 通道、change-lint 既有 code 与字段均不变；新增 code 只扩充闭合枚举。
+- 升级后未运行过 apply 的项目处于 `never` 状态，行为与 0.16.17 一致（除提案骨架多一个空目录）。
+- 有效知识视图、`knowledge list` / `refs` / `check` 与资源索引扫描（`openlogos sync` / `index`，§2.102.11）都只把规范命名的条目文件当作条目：`TAGS.md`、`INDEX.md` 与 `.tags-enabled` 不进入视图、不登记 `resource_index`。
+- 回滚到 0.16.17 后：旧版视图读入 `TAGS.md`、`INDEX.md` 时取不到 KXX，不参与重号与引用解析，也不属于任何提案的新增或修改条目，因此不产生知识诊断；旧版资源索引扫描可能把这两个文件登记进 `resource_index`，重新升级后由人工删除登记即可。已录入的条目仍可被旧版校验与引用。
+
+### 2.103.15 追溯
+
+- 需求：「S45: 企业知识沉淀与场景引用」S45-AC-02、S45-AC-12、S45-AC-14～S45-AC-25。
+- 场景：`core-S45-enterprise-knowledge.md` Step 12～19、EX-45.12～EX-45.21。
+- 架构：「57.6 直接录入与强拦截」。
+- 测试：`core-S45-test-cases.md` UT-S45-21～UT-S45-43、ST-S45-06～ST-S45-10；安装态 smoke：SMOKE-core-321～SMOKE-core-323。

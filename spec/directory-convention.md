@@ -199,16 +199,25 @@ PreToolUse guard hook 脚本。在 Claude Code 调用 Edit/Write/Bash 工具前�
 
 ## logos/resources/knowledge/（S45，enterprise-knowledge-base）
 
-顶层企业知识目录（与 `prd/`、`api/`、`database/`、`test/`、`decisions/` 平级），存放从企业资料提炼出的**知识条目**：业务规则、术语、外部系统约束、合规要求与业务流程。它们不是某一次需求的内容，而是设计必须遵守或参照的既有事实；场景按 `KXX` / `KXX-Rn` 引用它们。规则权威：功能规格 §2.102。
+顶层企业知识目录（与 `prd/`、`api/`、`database/`、`test/`、`decisions/` 平级），存放从企业资料提炼出的**知识条目**：业务规则、术语、外部系统约束、合规要求与业务流程。它们不是某一次需求的内容，而是设计必须遵守或参照的既有事实；场景按 `KXX` / `KXX-Rn` 引用它们。规则权威：功能规格 §2.102（条目、引用与提案通道）、§2.103（直接录入、标签表、索引与检索，来源变更 knowledge-direct-intake）。
 
-- **文件命名**：`<module>-KXX-<slug>.md`（如 `core-K03-refund-approval.md`）。KXX 在编写 delta 时取「有效知识视图中最大 KXX（含 `deprecated` 条目）+ 1」，不设计数器；准入时校验唯一性。
+- **文件命名**：`<module>-KXX-<slug>.md`（如 `core-K03-refund-approval.md`）。KXX 在录入（准备 apply 候选或编写 delta）时取「有效知识视图中最大 KXX（含 `deprecated` 条目）+ 1」，不设计数器；apply 与准入时校验唯一性。
+- **目录内的非条目文件**（只经 `openlogos knowledge` 命令写入，不参与编号、结构校验、守恒注册与 `resource_index`）：
+  - `TAGS.md`——标签表，表头「标签 | 别名 | 说明」；AI 起草与日常补充、人类负责人把关；首次 apply 时从已有条目的标签生成。
+  - `.tags-enabled`——标签表启用标记，首次启用时写入，此后不删除；与 `TAGS.md`、git HEAD 一起决定标签表三态（从未启用 / 已启用 / 已启用但词表丢失）。
+  - `INDEX.md`——总索引，落盘条目的派生视图，文件头注明「由 openlogos knowledge index 生成，请勿手工编辑」；过期只提示刷新。
 - **文档结构**：H1 以 KXX 开头；首节「元数据」用 YAML 给出 `type`（`rule` / `term` / `external-system` / `compliance` / `process`）、`scope`（`global` / `module`）、`module`、`tags`、`status`（`active` / `deprecated`）、`source`（原文仓库相对路径与版本）；`type=rule` 的条目有「规则」表，首列为规则 ID `KXX-Rn`，另有「状态」「例外」列。
-- **产出通道**：普通规格 delta——`deltas/knowledge/` 映射到 `logos/resources/knowledge/`（`DELTA_TO_RESOURCE`、合并类别白名单与目标分类器同源维护），由 `openlogos merge` 与场景、`resource_index` 登记、`SPEC_MERGED` 同批原子落盘；**不新增 `openlogos knowledge` CLI 命令**。initial 项目可直接写入。
-- **结构有效性**：H1 以 KXX 开头、「元数据」可解析且 `type` / `scope` / `status` 合法、`tags` 非空、`source` 每项有指向 `logos/resources/reference/knowledge/` 内现存原文文件的相对 `path`（规范化与 symlink 解析后判定，目录外的仓库文件如 `README.md` 不算）与非空 `version`、`type=rule` 时规则表每一行都是本条目的 `KXX-Rn`，才是可被引用的有效条目；本提案新增或修改的条目结构无效会被 change-lint 拒绝。
+- **产出通道**：
+  - **直接录入（默认，无需活跃提案）**：AI 把完整条目文件、需要变更的 `TAGS.md` 与原文（`sources/` 下）写到**项目根之外**的一次性候选目录，运行 `openlogos knowledge apply <候选目录>`；apply 在落盘前校验整批，不通过零写入，通过则把原文、条目、`TAGS.md`、`.tags-enabled` 与 `INDEX.md` 同批写入。本目录在 launched、无活跃提案时仍受 guard 保护，**不能**用文件工具直接写。
+  - **提案通道（知识修订须与场景同批生效时）**：普通规格 delta——`deltas/knowledge/` 映射到 `logos/resources/knowledge/`（`DELTA_TO_RESOURCE`、合并类别白名单与目标分类器同源维护），由 `openlogos merge` 与场景、`resource_index` 登记、`SPEC_MERGED` 同批原子落盘。`deltas/knowledge/` 只放条目文件，`TAGS.md` / `INDEX.md` / `.tags-enabled` 不经 delta。`openlogos change` 的提案骨架包含 `deltas/knowledge/`。
+  - initial 项目也可直接写入本目录，写后运行 `openlogos knowledge check`。
+- **录入事务**：apply / index / `apply --recover` 先取得项目级排他锁 `logos/.openlogos-runtime/knowledge-apply.lock`（复用 baseline-seed 提交锁原语，存活持有者不被抢占），再复用 baseline-on-touch 的批次提交与恢复原语，事务日志、staging 与 backup 放在 `logos/.openlogos-runtime/knowledge-apply/`（运行态目录，不入版本控制）；存在未完成事务时，下一次 apply / index / `apply --recover` 先整批回滚，回滚完成前各读取命令拒绝在半写入状态上工作。各读取命令与 change-lint 在同一把锁的读锁区间内读取知识，不会读到跨越一次提交的混合内容。
+- **设计时读取**：`openlogos knowledge list` 筛选，`openlogos knowledge show <KXX>` 读取有效知识视图中的合成后全文；不要直接读提案 delta 文件当作条目全文。
+- **结构有效性**：H1 以 KXX 开头、「元数据」可解析且 `type` / `scope` / `status` 合法、`tags` 非空、`source` 每项有指向 `logos/resources/reference/knowledge/` 内现存原文文件的相对 `path`（规范化与 symlink 解析后判定，目录外的仓库文件如 `README.md` 不算）与非空 `version`、`type=rule` 时规则表每一行都是本条目的 `KXX-Rn`，才是可被引用的有效条目；标签表已启用时，条目的每个标签还必须是 `TAGS.md` 中的标签或别名。结构无效或标签不在表中的条目会被 apply 与 change-lint 拒绝，不能作为引用目标。
 - **退役而非删除**：已合并的条目与规则不允许删除，退役以把状态改为 `deprecated` 表达；文件名与 ID 原样保留、继续占号，永不重新分配；退役条目整体冻结（含「说明」中的定义），退役规则行的规则、状态与例外冻结。
-- **resource_index 收录**：`openlogos merge` 对 CREATE 的条目自动登记；`openlogos sync` / `index` 的扫描纳入 `knowledge/`，补录直接写入的条目。Skill 检索读取条目「元数据」，不依赖 `resource_index` 的描述。
+- **resource_index 收录**：`openlogos merge` 对 CREATE 的条目自动登记；`openlogos sync` / `index` 的扫描纳入 `knowledge/`，补录 apply 录入与直接写入的条目（只收录规范命名的条目文件）。Skill 设计时用 `openlogos knowledge list` 读取有效元数据（含活跃提案的知识 delta）筛选，不依赖 `resource_index` 的描述；`INDEX.md` 供人阅读。
 - **守恒保护（承 S37）**：`KXX` 与 `KXX-Rn` 纳入条目守恒 ID 注册表，作用范围限本目录；场景文档中引用表首列的 KXX 不是场景文档自身的条目 ID。
 
 ### logos/resources/reference/knowledge/（S45）
 
-企业原始资料（制度原文、接口说明、术语表等）的存放处，是 `reference/` 的子目录，沿用 `reference/` 的 guard 默认豁免：直接写入，不经 delta（`deltas/reference/` 仍为显式忽略）。原始资料与知识条目都进入 git 仓库；AI 写入原文时必须提示「原文将随仓库 push 扩散，push 前请确认可公开范围」。知识条目的 `source` 以仓库相对路径指向这里的文件并注明版本。`openlogos init` 创建本目录与 `logos/resources/knowledge/`；升级前已初始化的项目没有这两个目录时，首次录入由 AI 直接创建原文目录，`logos/resources/knowledge/` 由首次合并知识 delta 时创建。
+企业原始资料（制度原文、接口说明、术语表等）的存放处，是 `reference/` 的子目录，沿用 `reference/` 的 guard 默认豁免：直接写入，不经 delta（`deltas/reference/` 仍为显式忽略）；也可放进 `openlogos knowledge apply` 候选目录的 `sources/`，由 apply 校验通过后复制（显式 `guard.exempt` 不含 `reference/` 的项目只能用此方式；走提案通道时用只含 `sources/` 的候选目录写原文，条目仍经 delta 合并）。同名原文已存在且内容不同时 apply 拒绝，新版原文使用新文件名。原始资料与知识条目都进入 git 仓库；AI 写入原文时必须提示「原文将随仓库 push 扩散，push 前请确认可公开范围」。知识条目的 `source` 以仓库相对路径指向这里的文件并注明版本。`openlogos init` 创建本目录与 `logos/resources/knowledge/`；升级前已初始化的项目没有这两个目录时，首次录入由 AI 直接创建原文目录，`logos/resources/knowledge/` 由首次合并知识 delta 时创建。

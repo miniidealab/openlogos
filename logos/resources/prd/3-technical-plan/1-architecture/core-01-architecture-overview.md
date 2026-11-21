@@ -3194,14 +3194,14 @@ sequenceDiagram
 
 ## 五十七、企业知识资源：类别注册、有效知识视图与引用校验
 
-> 来源变更：enterprise-knowledge-base（决策 C01～C06；proposal-r1 F1～F5、r2 F1/F4、r3 F4 处置）。功能规格见 §2.102；场景见 `core-S45-enterprise-knowledge.md`。
+> 来源变更：enterprise-knowledge-base（决策 C01～C06；proposal-r1 F1～F5、r2 F1/F4、r3 F4 处置）；knowledge-direct-intake（决策 C01～C06；proposal-r1 F1～F5、r2 F2/F3、r3 F3 处置，见 57.6）。功能规格见 §2.102、§2.103；场景见 `core-S45-enterprise-knowledge.md`。
 
 ### 57.1 目标与边界
 
 - 新增一类规格资源 `logos/resources/knowledge/`（企业知识条目），让场景能按 `KXX` / `KXX-Rn` 引用企业规则，并由 change-lint 校验引用、重号、禁止删除与退役 ID 冻结。
 - **复用现行原子合并**：知识条目只作为新的 delta / 规范目标类别接入 `openlogos merge` 的 `mergeDirect`，与场景、`resource_index` CREATE 登记、`SPEC_MERGED` 同批一次原子提交。不复用 S38 `applyDecisionRecords` 的独立落盘事务（它没有现行命令调用点，且自行写 `SPEC_MERGED`），不新增第二套写入与恢复边界。
 - 不设编号计数器：编号在编写 delta 时确定，由准入在完整有效知识集合上校验唯一性。计数器在分支并行时只取较大值，防不了重号。
-- 不新增 CLI 命令，不改 merge-executor 的职责。
+- 提案通道不改 merge-executor 的职责。首版「不新增 CLI 命令」已由 knowledge-direct-intake 修订：新增 `openlogos knowledge` 命令组承担不经提案的录入与检索辅助（57.6）。
 
 ### 57.2 组件
 
@@ -3214,6 +3214,7 @@ sequenceDiagram
 | `cli/src/lib/change-lint.ts` | 新增 5 个 violation（`knowledge_reference_unknown`、`knowledge_id_duplicate`、`knowledge_removal_forbidden`、`knowledge_retired_id_mutated`、`knowledge_entry_invalid`）与 1 个 warning（`knowledge_reference_deprecated`）；S37 ID 注册表新增 `KXX` / `KXX-Rn`，作用范围限 `logos/resources/knowledge/` |
 | `cli/src/lib/sync-resource-index.ts` | 扫描范围新增 `logos/resources/knowledge/`，补录 initial 阶段直接写入的条目 |
 | `cli/src/commands/init.ts` | 脚手架新增 `logos/resources/knowledge/` 与 `logos/resources/reference/knowledge/` |
+| `cli/src/commands/knowledge.ts`（新增，knowledge-direct-intake） | `openlogos knowledge apply / index / check / list / refs` 命令组，见 57.6 |
 
 ### 57.3 有效知识视图
 
@@ -3248,3 +3249,52 @@ entries   = { KXX → [path…], valid, meta, rules: { KXX-Rn → [row…] } }
 - `DELTA_TO_RESOURCE`、两处合并白名单与 `classifyCanonicalTargetCategory` 必须同时含 `knowledge`；缺任一处由回归测试失败暴露。
 - 原始资料目录 `logos/resources/reference/knowledge/` 沿用 `reference/` 的 guard 默认豁免，不进 delta 类别（`deltas/reference/` 仍为显式忽略）。
 - 计数器与 `logos-project.yaml` 结构不变；S45 的 `scenarios[]` 登记与 `scenario_counter.next_id=46` 随规格合并提交写入。
+- 有效知识视图只读入规范命名的条目文件；`TAGS.md`、`INDEX.md`、`.tags-enabled` 不进入视图、不登记 `resource_index`（knowledge-direct-intake）。
+
+### 57.6 直接录入与强拦截（knowledge-direct-intake）
+
+**目标**：只录入资料时不立案；拦截发生在写入之前、各宿主一致；条目增多后可按标签筛选、按规则反查。功能规格 §2.103。
+
+**为什么不用「知识目录豁免 + 文件工具直写 + 事后回滚」**：Claude 托管的 PostToolUse 匹配器只覆盖 shell 类工具，不含 Write / Edit；guard-check 的文件工具分支命中豁免即放行、不建本次快照；事后引擎的 `restore` 依赖受保护路径的快照与报告；Cursor 等宿主只能事后报告。文件工具直写因此拿不到回滚证据（review r1 F2）。改为把录入集中到一个 CLI 命令，在落盘前校验整批。
+
+**组件**：
+
+| 组件 | 变化 |
+|---|---|
+| `cli/src/commands/knowledge.ts`（新增） | 子命令 `apply`（含 `--init-tags`、`--recover`）、`index`、`check`、`list`、`show`、`refs` 的参数解析、文本 / JSON 输出与退出码；在 `cli/src/index.ts` 注册 |
+| `cli/src/lib/knowledge-view.ts` | 新增：标签表解析与规范化（`parseTagTable`）、三态判定（`resolveTagState`，读 `TAGS.md`、`.tags-enabled` 与 git HEAD）、含标签判据的条目有效性（`entryValidity`，apply / check / list / index / L10 共用）、候选批次的前后态构建与判据（`planKnowledgeApply`）、索引生成（`renderKnowledgeIndex`，确定性）、有效元数据列表（`listKnowledge`）、合成后全文（`showKnowledgeEntry`，复用 change-lint 的 `candidateMarkdownAfter`）、反查（`findKnowledgeRefs`）、全库诊断（`checkKnowledge`，含 HEAD 辅助比较）；`readKnowledgeDir` 只读规范命名的条目 |
+| `cli/src/lib/baseline-apply.ts` | 批次提交与恢复原语（`applyBaselineClosureBatch` / `recoverBaselineClosureApply`：恢复先行、私有 staging 与 backup、`prepared → committing → committed` 事务日志、提交前旧哈希核对、失败整批回滚并区分回滚成功 / 失败）改为接受事务存储目录参数；baseline-on-touch 仍传提案目录，知识录入传 `logos/.openlogos-runtime/knowledge-apply/`（review delta-r1 F1，不另造第二套回滚协议） |
+| `cli/src/lib/baseline-seed-txn.ts` | 提交锁原语（`acquireLock` / `releaseLock`：link 原子发布持有者身份、存活持有者不抢占、死进程经 marker 仲裁回收）与读锁区间（`withBaselineReadLock` 模式、`acquireReadLockWithRetry` 有界退避）改为接受锁路径参数；baseline-seed 仍用 `<module>.commit.lock`，知识录入用 `logos/.openlogos-runtime/knowledge-apply.lock`（review delta-r2 F1） |
+| `cli/src/lib/knowledge-apply.ts`（新增） | 只做知识录入的输入适配：在排他锁内依次执行恢复、读取前态、校验与提交；把校验通过的写入集合（原文、条目、`TAGS.md`、`.tags-enabled`、`INDEX.md`）交给上述原语；提供「是否存在未完成事务」的只读查询，供 check / list / show / refs / L10 / status 拒绝在半写入状态上工作 |
+| `cli/src/lib/change-lint.ts` | L10 改用 `entryValidity` 与 `resolveTagState`；新增 violation `knowledge_tag_unknown`、`knowledge_tags_missing`；`deltas/knowledge/` 下的 `TAGS.md` / `INDEX.md` / `.tags-enabled` 报 `knowledge_entry_invalid` |
+| `cli/src/lib/sync-resource-index.ts` | 扫描 `knowledge/` 时只收录规范命名的条目文件 |
+| `cli/src/commands/status.ts`、`cli/src/commands/next.ts` | 文本输出追加知识检查提示行（不含 HEAD 辅助比较）；JSON 不变 |
+| `cli/src/commands/change.ts` | 提案骨架的 `deltaDirs` 新增 `deltas/knowledge` |
+| guard（`plugin/bin/guard-check`、`guard-post-check.cjs`、Cursor runtime） | **不改引擎规则**：`openlogos knowledge apply / index` 以独立 openlogos 调用写入，适用既有「独立 git / openlogos 调用豁免」；知识目录保持受保护。只在文件工具写知识目录被拦截时，阻断提示增加「录入企业知识请使用 `openlogos knowledge apply`」 |
+
+**apply 的数据流**：
+
+```text
+lock      = 取得 knowledge-apply.lock（存活持有者 → 等待至多 30 秒，仍忙 → knowledge_apply_busy 退出）；持有到本次结束
+recover   = 回滚上一次未完成的事务（持有者已死才可能遗留）
+input     = 读候选目录（条目 *.md、TAGS.md、sources/*），校验输入形态与活跃提案冲突
+before    = readKnowledgeDir(磁盘) + TAGS.md + .tags-enabled        # 已接受内容（当前生效版本）
+state     = resolveTagState(before, git HEAD)
+after     = before ⊕ input（条目按文件名新增 / 整文件替换；TAGS.md 整表替换或按三态生成初始表）
+issues    = 判据 1～9（§2.103.4），全部对 before / after 计算，不读 HEAD
+issues 非空 → 输出 issues，退出码 1，零写入
+否则      → 复用批次提交原语写入：sources → 条目 → TAGS.md → .tags-enabled → INDEX.md（恢复先行；中断后由下一次 apply / index / --recover 整批回滚）
+```
+
+- 退役冻结与禁止删除比较 `before` 与 `after`（review r1 F4）；`INDEX.md` 由 `after` 生成，与条目同批写入，过期只在 check 中提示（review r1 F1）。
+- `knowledge list` / `show` 与 L10 复用 57.3 的有效知识视图（含活跃提案知识 delta，review r1 F5）；`show` 输出合成后全文，Skill 不直接读 delta 文件（review delta-r1 F3）；`knowledge check` 只看磁盘，另以 HEAD 为辅助基准。
+- 判据 6 同时在 apply 后的磁盘条目与「apply 后磁盘 + 活跃提案知识 delta」上检查重号，后者报 `knowledge_apply_conflict`（review delta-r1 F2）。
+- `missing` 状态的恢复：`--init-tags` 由磁盘条目与活跃提案知识视图中的条目生成词表，或候选 `TAGS.md` 必须覆盖两者中全部结构有效条目的标签；判据 9 按配对视图检查磁盘场景与提案场景的引用，通过才回到 `enabled`（review delta-r1 F5、delta-r2 F5）。
+- 并发：apply / index / `--recover` 共用一把项目级排他锁，恢复只在持有者进程已退出后发生（review delta-r2 F1）。读取方（check / list / show / refs / L10 / merge 准入 / status / next 的知识提示）在同一把锁的读锁区间内完成全部知识读取，复用 baseline-seed 的 `withBaselineReadLock` 区间模式与有界退避重试；区间内遇未完成事务或取不到锁即以 `knowledge_apply_incomplete` 拒绝、不恢复，从而不会读到跨越提交的混合视图（review delta-r3 F1）。merge 写入知识目标时同样持锁。
+- 标签表三态由 `TAGS.md`、非派生的启用标记与 HEAD 三个信号确定，不读派生的 `INDEX.md`；`index` 在 `missing` 状态下拒绝，派生索引的刷新不能改变状态（review r3 F3）。
+
+**不变量**：
+
+- 没有知识条目、从未启用标签表的项目：change-lint、merge、status、next、sync 输出与 0.16.17 一致（提案骨架多一个空的 `deltas/knowledge/` 除外）。
+- apply 不通过时项目文件逐字节不变；写入中途失败时整批回滚为执行前字节，回滚失败时如实报告并保留事务日志；进程中断后，任何读取方在回滚完成前都不把半写入状态当作已接受内容。
+- apply / index 只写 `logos/resources/knowledge/`、`logos/resources/reference/knowledge/` 与事务存储目录 `logos/.openlogos-runtime/knowledge-apply/`，不写 `SPEC_MERGED`、guard 文件、`logos-project.yaml` 或 `resource_index`。
