@@ -8,7 +8,7 @@
  * L7 复用 check-ui-prototype 的纯 evaluator。
  * 只读：本文件所有函数不写任何项目文件 / marker / 哈希清单。
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   parseTaskSections,
@@ -76,12 +76,16 @@ import {
 } from './markdown-section-authority.js';
 import { ADDED_ANCHOR_FIX_HINT } from './added-anchor-outcome.js';
 import { resolvePendingAmendContext } from './merge-baseline.js';
+import {
+  CONSTRAINT_SECTION_TITLE, KNOWLEDGE_DIR, KNOWLEDGE_SOURCE_DIR, SCENARIO_DIR, buildKnowledgeView, candidateMarkdownAfter, extractConstraintReferences,
+  findDuplicateIds, hasConstraintSection, isCanonicalKnowledgePath, parseKnowledgeEntry, readKnowledgeDir, resolveKnowledgeReference,
+} from './knowledge-view.js';
 
 // 单一事实源转发：分类器与类别映射归 delta-classify.ts；既有消费方（merge/tests）从本模块继续可见。
 export { DELTA_TO_RESOURCE, classifyProposalDeltas, DeltaScanUnreadableError };
 export type { DeltaEntryClassification, MergeDisposition, LintValidity };
 
-// ── violation code 闭合注册表（50 码，spec/cli-json-output.md §3.15 为契约唯一枚举源）──
+// ── violation code 闭合注册表（55 码，spec/cli-json-output.md §3.15 为契约唯一枚举源）──
 
 export const CHANGE_LINT_VIOLATION_CODES = [
   // L0 Plan Package 统一完成合同
@@ -149,6 +153,12 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   'test-slice-manifest-unsupported',
   'test-slice-assignment-ambiguous',
   'slice-task-state-inconsistent',
+  // L10 企业知识（S45 enterprise-knowledge-base，功能规格 §2.102.10；不带 flow_reason）
+  'knowledge_entry_invalid',
+  'knowledge_reference_unknown',
+  'knowledge_id_duplicate',
+  'knowledge_removal_forbidden',
+  'knowledge_retired_id_mutated',
 ] as const;
 
 export type ChangeLintViolationCode = typeof CHANGE_LINT_VIOLATION_CODES[number];
@@ -231,7 +241,9 @@ export type ChangeLintWarningCode =
   | 'no_delta_spec_marker_missing'
   // S35「变更类型 ↔ delta 层面观测」：声明类型与实际铺开的规格层不相称。**观测启发式，非方法论违规**
   // ——传播规则给的是「最少需要更新」下界，超出不等于违规，故只走 warning、不进违规码集合。
-  | 'change_type_delta_layer_mismatch';
+  | 'change_type_delta_layer_mismatch'
+  // S45 L10：引用了 deprecated 的知识条目 / 规则——提醒、不阻断（文件与行写在 message）。
+  | 'knowledge_reference_deprecated';
 
 export interface ChangeLintWarning {
   code: ChangeLintWarningCode;
@@ -444,6 +456,14 @@ export const ID_PATTERN_REGISTRY = {
   /** 决策记录 ID：决策表行首列单元格（整格恰为 DXX，供多决策索引表结构位置识别）。 */
   decisionRow: /^D\d+$/,
   /**
+   * 企业知识条目 ID（S45 enterprise-knowledge-base，功能规格 §2.102.10）：`# KXX：` 形态条目标题。
+   * **作用范围限 `logos/resources/knowledge/` 下的文档**（由调用方以 `knowledge` 选项开启）——场景文档
+   * 「适用业务约束」表首列的 KXX 是引用、不是场景文档自身的条目 ID，不得进守恒集合。
+   */
+  knowledgeHeading: /^(K\d+)(?=$|\s|[:：])/,
+  /** 企业知识规则 ID：知识条目「规则」表首列单元格（整格恰为 KXX-Rn；同样仅在知识文档内生效）。 */
+  knowledgeRuleRow: /^K\d+-R\d+$/,
+  /**
    * 决策表首列表头语义（code-r1 F1）：首列表头须为「编号 / 决策编号」——比照 scenarioTableHeader。
    * 决策表分支与场景表分支正交分流：场景表数据行为 SXX（不命中 decisionRow）、决策表数据行为 DXX
    * （不命中 scenarioRow），故两分支可安全并跑于同一张表而互不污染。
@@ -533,7 +553,7 @@ function describeTableIdentity(identity: string, countBySubPath: Map<string, num
  *   首列恰为 DXX 的数据行 ID 进 flat（复用同一 flat 守恒机制、与决策标题同集合，见 §2.34.2）。
  * chunkRootIsFirstHeading：目标章节切片以章节标题开头时置 true——该标题是身份路径的根、不入子路径。
  */
-function extractRegistryIds(lines: string[], contextTitle = '', chunkRootIsFirstHeading = false): RegistryIdExtraction {
+function extractRegistryIds(lines: string[], contextTitle = '', chunkRootIsFirstHeading = false, knowledge = false): RegistryIdExtraction {
   const flat = new Set<string>();
   const scenarioRows = new Map<string, Set<string>>();
   const scenarioTableCount = new Map<string, number>();
@@ -550,6 +570,11 @@ function extractRegistryIds(lines: string[], contextTitle = '', chunkRootIsFirst
     // S38：决策记录 DXX 标题（结构位置 = 决策记录文档标题），复用 flat 守恒机制
     const dm = ID_PATTERN_REGISTRY.decisionHeading.exec(text);
     if (dm) flat.add(dm[1]);
+    // S45：知识条目 KXX 标题——仅知识文档内生效
+    if (knowledge) {
+      const km = ID_PATTERN_REGISTRY.knowledgeHeading.exec(text);
+      if (km) flat.add(km[1]);
+    }
     const firstToken = text.split(/\s+/)[0] ?? '';
     if (ID_PATTERN_REGISTRY.sectionNumber.test(firstToken)) flat.add(firstToken);
   }
@@ -609,6 +634,13 @@ function extractRegistryIds(lines: string[], contextTitle = '', chunkRootIsFirst
         for (const row of block.slice(2)) {
           const first = (tableRowCells(row)[0] ?? '').trim();
           if (ID_PATTERN_REGISTRY.decisionRow.test(first)) flat.add(first);
+        }
+      }
+      // S45：知识条目规则表首列的 KXX-Rn——仅知识文档内生效（场景引用表不进守恒集合）
+      if (knowledge && header.length === delimiter.length) {
+        for (const row of block.slice(2)) {
+          const first = (tableRowCells(row)[0] ?? '').trim();
+          if (ID_PATTERN_REGISTRY.knowledgeRuleRow.test(first)) flat.add(first);
         }
       }
     }
@@ -756,7 +788,17 @@ interface TestAfterState {
   target: TestChangeSetInputTarget;
 }
 
-export function evaluateDeltaConservation(deltaContent: string, targetContent: string | null): DeltaConservationViolation[] {
+export interface DeltaConservationOptions {
+  /** 目标为 `logos/resources/knowledge/` 下的知识条目时置 true：KXX / KXX-Rn 进入守恒集合（S45）。 */
+  knowledge?: boolean;
+}
+
+/** 目标路径是否为知识条目（S45 守恒注册表 KXX / KXX-Rn 的作用范围）。 */
+export function isKnowledgeTargetPath(targetPath: string | null | undefined): boolean {
+  return typeof targetPath === 'string' && targetPath.replace(/\\/g, '/').startsWith(`${KNOWLEDGE_DIR}/`);
+}
+
+export function evaluateDeltaConservation(deltaContent: string, targetContent: string | null, opts: DeltaConservationOptions = {}): DeltaConservationViolation[] {
   if (targetContent === null) return [];
   const blocks = parseDeltaBlocks(deltaContent);
   // C04：非法 RENAMED 块两侧统一为拒绝，且**先于**下方的「无物质块则提前返回」——只含一个畸形
@@ -825,7 +867,7 @@ export function evaluateDeltaConservation(deltaContent: string, targetContent: s
     const hit = resolution.hit!;
     const end = hit.endLine;
     const contextTitle = anchor.split(' > ').pop() ?? anchor;
-    const existing = extractRegistryIds(targetLines.slice(hit.line, end), contextTitle, true);
+    const existing = extractRegistryIds(targetLines.slice(hit.line, end), contextTitle, true, opts.knowledge === true);
     const existingAll = allIdsOf(existing);
 
     // code-r1 F1：同章节单写者规则（fail-closed）——merge-executor 逐块「替换同名章节」，
@@ -847,7 +889,7 @@ export function evaluateDeltaConservation(deltaContent: string, targetContent: s
       // MODIFIED 控制行只负责定位，不会写入最终文档；唯一命中的目标根标题会原位保留。
       // 因此 retained 必须按真实最终章节重建，且根标题身份只能来自解析结果，不能扫描 anchor 文本猜测。
       const effectiveLines = [`${'#'.repeat(hit.level)} ${hit.text}`, ...b.lines];
-      const r = extractRegistryIds(effectiveLines, contextTitle, true);
+      const r = extractRegistryIds(effectiveLines, contextTitle, true, opts.knowledge === true);
       for (const id of r.flat) retained.flat.add(id);
       for (const [id, idents] of r.scenarioRows) {
         const set = retained.scenarioRows.get(id) ?? new Set<string>();
@@ -1202,6 +1244,299 @@ function runChangeLintLocked(root: string, proposalDir: string, slug: string): C
     }
     throw e;
   }
+}
+
+interface KnowledgeLayerInput {
+  root: string;
+  slug: string;
+  deltaEntries: DeltaEntryClassification[];
+  deltaContents: Map<string, string>;
+  priorStateOf: (targetPath: string) => PriorTargetState;
+  specCompleteRaw: boolean;
+  amendCtx: ReturnType<typeof resolvePendingAmendContext>;
+}
+
+interface KnowledgeLayerResult {
+  enabled: boolean;
+  violations: ChangeLintViolationDraft[];
+  warnings: ChangeLintWarning[];
+}
+
+/**
+ * L10 企业知识（S45，功能规格 §2.102.6 / §2.102.10，架构 57.3～57.4 第 0/3/4 步）。
+ *
+ * 启用条件：本提案有 `deltas/knowledge/`，或场景 delta 含「适用业务约束」章节，或处于待应用修正阶段且
+ * 修正目标集合含 `logos/resources/knowledge/` 下的目标。三者都不满足时直接返回、不读任何知识文件。
+ *
+ * 候选后态按既有阶段判定计算：未合并 = 磁盘前态叠加 delta；已合并且无待应用修正 = 直接读落盘（不重放）；
+ * 待应用修正 = 合并基线（`priorStateOf` → `amendCtx.beforeOf`）叠加修正 delta，撤回的基线目标恢复为基线内容。
+ */
+function evaluateKnowledgeLayer(input: KnowledgeLayerInput): KnowledgeLayerResult {
+  const { root, slug, deltaEntries, deltaContents, priorStateOf, specCompleteRaw, amendCtx } = input;
+  const mergeable = deltaEntries.filter(e => e.mergeDisposition === 'mergeable' && e.lintValidity === 'valid');
+  const targetOf = (e: DeltaEntryClassification) => canonicalTargetFromDeltaPath(e.relativePath);
+  const categoryOf = (e: DeltaEntryClassification) => {
+    const t = targetOf(e);
+    return t === null ? null : classifyCanonicalTargetCategory(t);
+  };
+  const rel = (e: DeltaEntryClassification) => `logos/changes/${slug}/${e.relativePath}`;
+  const replay = !specCompleteRaw || amendCtx !== null;
+  // code-r1 F2：知识目标的规范形态 = 顶层 `logos/resources/knowledge/<module>-KXX-<slug>.md`——与落盘扫描
+  // （readKnowledgeDir 只读顶层 .md）同一规则。不符合的目标（非 .md、嵌套子目录、文件名不含 KXX）在准入拒绝。
+  const knowledgeAll = mergeable.filter(e => categoryOf(e) === 'knowledge');
+  const isCanonicalKnowledgeTarget = (t: string) => isCanonicalKnowledgePath(t); // code-r2 F2：与视图有效性判定同一函数
+  const knowledgeDeltas = knowledgeAll.filter(e => isCanonicalKnowledgeTarget(targetOf(e)!));
+  const malformedKnowledge = knowledgeAll.filter(e => !isCanonicalKnowledgeTarget(targetOf(e)!));
+  const scenarioDeltas = mergeable.filter(e => e.relativePath.endsWith('.md') && categoryOf(e) === 'scenario');
+  const amendKnowledgeTargets = amendCtx
+    ? amendCtx.baseline.targets.map(t => t.path).filter(p => p.startsWith(`${KNOWLEDGE_DIR}/`))
+    : [];
+
+  // —— 场景候选后态（code-r1 F1 / F4）：在合成后的候选场景上判定约束章节，而非原始 delta 文本；
+  //    待应用修正时纳入 merge-amend 恢复集合中的场景（撤回的场景目标恢复为合并基线内容）。——
+  interface ScenarioState { target: string; deltaRel: string; content: string }
+  const scenarios: ScenarioState[] = [];
+  const currentScenarioTargets = new Set<string>();
+  for (const e of scenarioDeltas) {
+    const target = targetOf(e)!;
+    currentScenarioTargets.add(target);
+    const deltaText = deltaContents.get(e.relativePath) ?? '';
+    let content: string | null = null;
+    if (replay) {
+      const prior = priorStateOf(target);
+      if (prior.frozen || !prior.readable) continue;
+      // 候选场景里的约束章节只可能来自 delta 本身（含 ADDED / MODIFIED 控制行与章节路径锚）或既有前态；
+      // 两者都不含章节标题时不合成——没有知识的提案不多调用一次合成器（零回归）。
+      if (!deltaText.includes(CONSTRAINT_SECTION_TITLE) && !(prior.content ?? '').includes(CONSTRAINT_SECTION_TITLE)) continue;
+      content = candidateMarkdownAfter(root, target, deltaText, { mode: prior.mode, content: prior.content });
+    } else {
+      try { content = readFileSync(join(root, ...target.split('/')), 'utf-8'); } catch { content = null; }
+    }
+    if (content !== null) scenarios.push({ target, deltaRel: rel(e), content });
+  }
+  const removedScenarioTargets = new Set<string>();
+  if (amendCtx) {
+    for (const t of amendCtx.baseline.targets) {
+      if (currentScenarioTargets.has(t.path) || classifyCanonicalTargetCategory(t.path) !== 'scenario') continue;
+      const state = amendCtx.beforeOf(t.path);
+      if (state === 'unknown') continue;
+      if (state.mode === 'MODIFY' && state.content !== null) scenarios.push({ target: t.path, deltaRel: t.path, content: state.content });
+      else removedScenarioTargets.add(t.path);
+    }
+  }
+  const scenarioHasSection = scenarios.some(sc => hasConstraintSection(sc.content));
+  const enabled = knowledgeAll.length > 0 || scenarioHasSection || amendKnowledgeTargets.length > 0;
+  const result: KnowledgeLayerResult = { enabled, violations: [], warnings: [] };
+  if (!enabled) return result;
+
+  for (const e of malformedKnowledge) {
+    result.violations.push({
+      code: 'knowledge_entry_invalid',
+      path: rel(e),
+      message: `知识目标 ${targetOf(e)} 不符合规范形态 ${KNOWLEDGE_DIR}/<module>-KXX-<slug>.md（只允许顶层、.md、文件名为模块前缀 + KXX + slug）`,
+      fix_hint: `把条目放到 ${KNOWLEDGE_DIR}/ 顶层并命名为 <module>-KXX-<slug>.md`,
+    });
+  }
+
+  // —— 知识候选后态 ——
+  const live = readKnowledgeDir(root);
+  const candidate = new Map(live);
+  const deltaRelByTarget = new Map<string, string>();
+  const touchedKnowledge = new Set<string>();
+  if (replay) {
+    const currentTargets = new Set<string>();
+    for (const e of knowledgeDeltas) {
+      const target = targetOf(e)!;
+      currentTargets.add(target);
+      touchedKnowledge.add(target);
+      deltaRelByTarget.set(target, rel(e));
+      const prior = priorStateOf(target);
+      if (prior.frozen || !prior.readable) continue;
+      const after = candidateMarkdownAfter(root, target, deltaContents.get(e.relativePath) ?? '', { mode: prior.mode, content: prior.content });
+      if (after === null) continue; // 合成失败归既有 L4 判据
+      candidate.set(target, after);
+    }
+    if (amendCtx) {
+      for (const path of amendKnowledgeTargets) {
+        if (currentTargets.has(path)) continue;
+        touchedKnowledge.add(path);
+        const state = amendCtx.beforeOf(path);
+        if (state === 'unknown') continue;
+        if (state.mode === 'MODIFY' && state.content !== null) candidate.set(path, state.content);
+        else candidate.delete(path);
+      }
+    }
+  } else {
+    for (const e of knowledgeDeltas) {
+      const target = targetOf(e)!;
+      touchedKnowledge.add(target);
+      deltaRelByTarget.set(target, rel(e));
+    }
+  }
+  const view = buildKnowledgeView([...candidate].map(([p, c]) => parseKnowledgeEntry(p, c, { root })));
+  const entryByPath = new Map(view.entries.map(e => [e.path, e]));
+
+  // —— 第 0 步：本提案新增 / 修改条目的结构（已合并且无待应用修正时不重放）——
+  if (replay) {
+    for (const [target, deltaRel] of [...deltaRelByTarget].sort()) {
+      const entry = entryByPath.get(target);
+      if (!entry || entry.valid) continue;
+      result.violations.push({
+        code: 'knowledge_entry_invalid',
+        path: deltaRel,
+        message: `知识条目 ${target} 结构无效：${entry.problems.join('；')}`,
+        fix_hint: '按条目模板补齐：H1 以 KXX 开头；「元数据」YAML 含合法 type / scope / status（scope=module 时 module）、非空 tags、'
+          + `source（每项 path 指向 ${KNOWLEDGE_SOURCE_DIR}/ 内现存原文、version 非空）；type=rule 时规则表每行首列为本条目 KXX-Rn、状态为 active / deprecated`,
+      });
+    }
+  }
+
+  // —— 第 1/2 步：禁止删除已生效条目 / 规则、退役 ID 冻结（比较对象 = 当前已生效版本 live，不退回合并基线）——
+  if (replay && touchedKnowledge.size > 0) {
+    const liveEntries = new Map([...live].map(([p, c]) => [p, parseKnowledgeEntry(p, c)]));
+    const pathFor = (target: string) => deltaRelByTarget.get(target) ?? target;
+    const explicitRemoval = new Set<string>();
+    for (const e of knowledgeDeltas) {
+      const target = targetOf(e)!;
+      if (!live.has(target)) continue; // 本提案新增、尚未生效的条目不受限
+      const ops = parseDeltaBlocks(deltaContents.get(e.relativePath) ?? '').map(b => b.op);
+      if (ops.includes('REMOVED') || ops.includes('REMOVED-ITEMS')) explicitRemoval.add(target);
+    }
+    const removalFix = '已生效的知识条目与规则不允许删除：退役请把条目元数据 status 或规则行「状态」改为 deprecated，文件名与编号原样保留';
+    for (const target of [...touchedKnowledge].sort()) {
+      const before = liveEntries.get(target);
+      if (!before || !before.id) continue;
+      const afterContent = candidate.get(target);
+      const after = entryByPath.get(target);
+      const problems: string[] = [];
+      if (explicitRemoval.has(target)) problems.push('delta 对已生效条目写了 REMOVED / REMOVED-ITEMS');
+      if (afterContent === undefined || !after) problems.push(`已生效条目 ${before.id} 在候选后态中消失`);
+      else {
+        if (after.id !== before.id) problems.push(`已生效条目的编号由 ${before.id} 变为 ${after.id ?? '（无）'}`);
+        const gone = before.rules.filter(r => !after.rules.some(a => a.id === r.id)).map(r => r.id);
+        if (gone.length > 0) problems.push(`已生效规则 ${[...new Set(gone)].join('、')} 在候选后态中消失`);
+      }
+      if (problems.length > 0) {
+        result.violations.push({
+          code: 'knowledge_removal_forbidden',
+          path: pathFor(target),
+          message: `知识条目 ${target}：${problems.join('；')}`,
+          fix_hint: removalFix,
+        });
+      }
+      if (afterContent === undefined || !after) continue;
+      // 退役条目整体冻结（H1、元数据、规则表全部行、「说明」正文）
+      if (before.status === 'deprecated' && afterContent.replace(/\s+$/, '') !== live.get(target)!.replace(/\s+$/, '')) {
+        result.violations.push({
+          code: 'knowledge_retired_id_mutated',
+          path: pathFor(target),
+          message: `已退役条目 ${before.id} 被重新激活或改写（已生效版本：${target}）`,
+          fix_hint: '恢复退役条目的全部内容；新的业务规则使用新 ID（最大 KXX + 1）',
+        });
+        continue;
+      }
+      // 退役规则行冻结「规则」「状态」「例外」三列
+      for (const rule of before.rules) {
+        if (rule.status !== 'deprecated') continue;
+        const now = after.rules.find(r => r.id === rule.id);
+        if (!now || now.rowText.trim() === rule.rowText.trim()) continue;
+        result.violations.push({
+          code: 'knowledge_retired_id_mutated',
+          path: pathFor(target),
+          message: `已退役规则 ${rule.id} 被重新激活或改写（已生效版本：${target}）`,
+          fix_hint: '恢复退役规则行的规则、状态与例外；新的业务规则使用新 ID（该条目最大 Rn + 1）',
+        });
+      }
+    }
+  }
+
+  // —— 第 3 步：重号 ——
+  const duplicates = findDuplicateIds(view);
+  const reportedDup = new Set<string>();
+  const reportDuplicate = (id: string, paths: string[], fallbackPath: string) => {
+    if (reportedDup.has(id)) return;
+    reportedDup.add(id);
+    const uniquePaths = [...new Set(paths)];
+    const touched = uniquePaths.find(p => deltaRelByTarget.has(p));
+    result.violations.push({
+      code: 'knowledge_id_duplicate',
+      path: touched ? deltaRelByTarget.get(touched)! : fallbackPath,
+      message: uniquePaths.length > 1
+        ? `知识编号 ${id} 重复：${uniquePaths.join('、')}`
+        : `知识规则编号 ${id} 在 ${uniquePaths[0]} 内重复出现`,
+      fix_hint: '合并前把本提案新增的条目重编号为当前最大 KXX + 1（条目内新规则取最大 Rn + 1），并同步改写本提案内的全部引用',
+    });
+  };
+  if (touchedKnowledge.size > 0) {
+    for (const d of duplicates) reportDuplicate(d.id, d.paths, d.paths[0]);
+  }
+
+  // —— 第 4 步：引用解析 ——
+  const warn = (message: string) => result.warnings.push({
+    code: 'knowledge_reference_deprecated',
+    message,
+    fix_hint: '确认是否仍应遵守已退役的知识；需要新规则时引用新 ID',
+  });
+  const warnedRefs = new Set<string>();
+  for (const sc of scenarios) {
+    for (const ref of extractConstraintReferences(sc.content)) {
+      const r = resolveKnowledgeReference(view, ref.ref);
+      if (r.kind === 'duplicate') {
+        reportDuplicate(r.id, r.paths, sc.deltaRel);
+      } else if (r.kind === 'unknown') {
+        result.violations.push({
+          code: 'knowledge_reference_unknown',
+          path: sc.deltaRel,
+          message: r.reason === 'invalid'
+            ? `${sc.target}:${ref.line} 引用的 ${ref.ref} 目标条目结构无效（${r.entryPath}）`
+            : `${sc.target}:${ref.line} 引用的 ${ref.ref} 在有效知识视图中不存在`,
+          fix_hint: '核对引用拼写；新知识先在 deltas/knowledge/ 规划对应条目；目标条目结构无效时按条目模板补齐',
+        });
+      } else if (r.deprecated) {
+        warnedRefs.add(`${sc.target}|${ref.line}|${ref.ref}`);
+        warn(`${sc.target}:${ref.line} 引用的 ${ref.ref} 已退役（deprecated）`);
+      }
+    }
+  }
+
+  // —— 本提案退役的条目 / 规则仍被有效场景视图引用 → 告警 ——
+  if (replay && touchedKnowledge.size > 0) {
+    const liveView = buildKnowledgeView([...live].map(([p, c]) => parseKnowledgeEntry(p, c)));
+    const newlyDeprecated = new Set<string>();
+    for (const target of touchedKnowledge) {
+      const after = entryByPath.get(target);
+      const before = liveView.entries.find(e => e.path === target);
+      if (!after || !before || !after.id) continue;
+      if (after.status === 'deprecated' && before.status !== 'deprecated') newlyDeprecated.add(after.id);
+      for (const rule of after.rules) {
+        const prev = before.rules.find(r => r.id === rule.id);
+        if (rule.status === 'deprecated' && prev && prev.status !== 'deprecated') newlyDeprecated.add(rule.id);
+      }
+    }
+    if (newlyDeprecated.size > 0) {
+      const effectiveScenarios = new Map<string, string>();
+      const scenarioDir = join(root, ...SCENARIO_DIR.split('/'));
+      if (existsSync(scenarioDir)) {
+        for (const name of readdirSync(scenarioDir).sort()) {
+          if (!name.endsWith('.md')) continue;
+          try { effectiveScenarios.set(`${SCENARIO_DIR}/${name}`, readFileSync(join(scenarioDir, name), 'utf-8')); } catch { /* 跳过 */ }
+        }
+      }
+      for (const sc of scenarios) effectiveScenarios.set(sc.target, sc.content);
+      for (const t of removedScenarioTargets) effectiveScenarios.delete(t);
+      for (const [target, content] of [...effectiveScenarios].sort()) {
+        for (const ref of extractConstraintReferences(content)) {
+          const entryId = ref.ref.split('-')[0];
+          if (!newlyDeprecated.has(ref.ref) && !newlyDeprecated.has(entryId)) continue;
+          const key = `${target}|${ref.line}|${ref.ref}`;
+          if (warnedRefs.has(key)) continue;
+          warnedRefs.add(key);
+          warn(`${target}:${ref.line} 引用的 ${ref.ref} 已被本提案退役（deprecated）`);
+        }
+      }
+    }
+  }
+  return result;
 }
 
 /** 依赖前态检查的输入（§2.69.4.4）：`frozen` = 合并完成后不重放。 */
@@ -1743,7 +2078,7 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
     }
     const relPath = `logos/changes/${slug}/${entry.relativePath}`;
     const content = deltaContents.get(entry.relativePath) ?? '';
-    for (const v of evaluateDeltaConservation(content, targetContent)) {
+    for (const v of evaluateDeltaConservation(content, targetContent, { knowledge: isKnowledgeTargetPath(targetRel) })) {
       // §2.73：守恒两码降级为警告；锚不可解析是**定位失败**而非守恒判断，保持违规——
       // 否则用户只会更晚在 merge 合成阶段看到同一个错误。
       // 例外（code-r1 F3）：修正待应用（§2.69.4.4）时，已合并需求「S09 增量修正与 change-lint 同判」与
@@ -1833,10 +2168,15 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
     }
   }
 
+  // L10 企业知识（S45）：启用条件不满足时不读任何知识文件、不登记检查项行（零漂移）。
+  const knowledgeLayer = evaluateKnowledgeLayer({
+    root, slug, deltaEntries, deltaContents, priorStateOf, specCompleteRaw, amendCtx,
+  });
+  for (const v of knowledgeLayer.violations) pushViolation(acc, 10, v);
+
   // 全序稳定排序：①检查项 L1→L8；②path 字典序；③源位置出现序；④code；⑤message
   const sorted = [...acc.violations].sort((a, b) => {
-    const layer = (check: number) => check === 10 ? 0.5 : check;
-    if (a.check_layer !== b.check_layer) return layer(a.check_layer) - layer(b.check_layer);
+    if (a.check_layer !== b.check_layer) return a.check_layer - b.check_layer;
     if (a.path !== b.path) return a.path < b.path ? -1 : 1;
     const sa = acc.order.get(a)!;
     const sb = acc.order.get(b)!;
@@ -1862,12 +2202,13 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
     ...(guiActive ? [{ id: 7, label: 'UI 声明结构合法', violations: countFor(7) }] : []),
     { id: 8, label: '条目守恒（ID 隐式删除拦截）', violations: countFor(8) },
     { id: 9, label: '下游阻塞理由预检（ProposalBlockReason 全覆盖）', violations: countFor(9) },
+    ...(knowledgeLayer.enabled ? [{ id: 10, label: '企业知识（结构 / 引用 / 重号）', violations: countFor(10) }] : []),
   ];
 
   // 决策记录 warning（S38，delta-r1 F4）：独立通道，不影响 pass / exit code / violations 枚举。
   // 按 §3.15 稳定排序（code 后 message）；本命令仅一种 warning code，排序为恒等。
   const hasDecisionsDeltaEntry = deltaEntries.some(e => e.category === 'decisions' && e.mergeDisposition === 'mergeable');
-  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...computeChangeTypeLayerWarnings(proposalContent, deltaEntries), ...sqlWarnings, ...conservationWarnings, ...blockWarnings, ...uiWarnings]
+  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...computeChangeTypeLayerWarnings(proposalContent, deltaEntries), ...sqlWarnings, ...conservationWarnings, ...blockWarnings, ...uiWarnings, ...knowledgeLayer.warnings]
     .sort((a, b) => (a.code !== b.code ? (a.code < b.code ? -1 : 1) : (a.message < b.message ? -1 : a.message > b.message ? 1 : 0)));
 
   return {

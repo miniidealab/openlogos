@@ -26,6 +26,8 @@ export const DELTA_TO_RESOURCE: Record<string, string> = {
   'scenario': 'logos/resources/scenario',
   'test': 'logos/resources/test',
   'decisions': 'logos/resources/decisions',
+  // S45 enterprise-knowledge-base：企业知识条目（与 MERGE_SUPPORTED_DELTA_DIRS / FOR_UI、classifyCanonicalTargetCategory 同源维护）
+  'knowledge': 'logos/resources/knowledge',
   'spec': 'spec',
   'skills': 'skills',
 };

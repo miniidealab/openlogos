@@ -123,7 +123,7 @@ export interface PlanState {
   diagnostic?: string;
 }
 
-const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario', 'test', 'decisions', 'spec', 'skills'] as const;
+export const MERGE_SUPPORTED_DELTA_DIRS = ['prd', 'api', 'database', 'scenario', 'test', 'decisions', 'knowledge', 'spec', 'skills'] as const;
 export {
   PLAN_APPROVED_MARKER, SPEC_MERGED_MARKER, LEGACY_MERGED_MARKER, VERIFY_PASS_MARKER, HISTORICAL_MARKERS,
   hasSpecCompleteMarker,

@@ -2102,6 +2102,8 @@ export const REFERENCE_SUBDIRECTORIES = [
   'image',
   'temp',
   'note',
+  // S45：企业原始资料（guard 默认豁免的 reference/ 子目录）
+  'knowledge',
 ];
 
 export const DIRECTORIES = [
@@ -2117,6 +2119,8 @@ export const DIRECTORIES = [
   'logos/resources/test/smoke',
   'logos/resources/scenario',
   'logos/resources/implementation',
+  // S45：企业知识条目
+  'logos/resources/knowledge',
   'logos/resources/verify',
   'logos/resources/reference',
   ...REFERENCE_SUBDIRECTORIES.map(dir => `logos/resources/reference/${dir}`),

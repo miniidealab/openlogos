@@ -14,7 +14,7 @@ import { expectedMarkerFor, parseWholeFileMarkerLine, type WholeFileMarker } fro
 
 export const CANONICAL_TARGET_CATEGORIES = [
   'requirement', 'feature', 'architecture', 'scenario', 'api', 'database', 'test',
-  'orchestration', 'deployment', 'smoke', 'spec', 'skill', 'decision',
+  'orchestration', 'deployment', 'smoke', 'spec', 'skill', 'decision', 'knowledge',
 ] as const;
 export type CanonicalTargetCategory = typeof CANONICAL_TARGET_CATEGORIES[number];
 
@@ -134,14 +134,14 @@ export interface CanonicalTargetResolution {
   semanticCategory: CanonicalTargetCategory | null;
 }
 
-function contained(realChild: string, realBase: string): boolean {
+export function contained(realChild: string, realBase: string): boolean {
   return realChild === realBase || realChild.startsWith(realBase + sep);
 }
 
 /**
  * 校验某一路径现存部分没有通过 symlink 逃逸 base。路径可以尚不存在；此时检查最深现存祖先。
  */
-function existingPathContained(base: string, candidate: string): boolean {
+export function existingPathContained(base: string, candidate: string): boolean {
   let realBase: string;
   try { realBase = realpathSync(base); } catch { return false; }
   let cursor = candidate;
@@ -176,6 +176,7 @@ export function classifyCanonicalTargetCategory(targetPath: string): CanonicalTa
   if (path.startsWith('logos/resources/test/')) return 'test';
   if (path.startsWith('logos/resources/scenario/')) return 'orchestration';
   if (path.startsWith('logos/resources/decisions/')) return 'decision';
+  if (path.startsWith('logos/resources/knowledge/')) return 'knowledge';
   if (path.startsWith('spec/')) return 'spec';
   if (path.startsWith('skills/')) return 'skill';
   return null;

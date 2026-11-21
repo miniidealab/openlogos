@@ -57,6 +57,8 @@ export function scanCandidateFiles(root: string): string[] {
   scanDir(join(root, 'logos/resources/test'));
   scanDir(join(root, 'logos/resources/scenario'));
   scanDir(join(root, 'logos/resources/decisions'));
+  // S45：企业知识条目（initial 阶段直接写入的条目由此补录；merge 对 CREATE 目标自行登记）
+  scanDir(join(root, 'logos/resources/knowledge'));
   // verify/ 只收顶层报告：其子目录是 baseline-seed 事务工作区、证据包与部署制品，
   // 其中 staging/ 与 resolved/ 存放主文档的**完整副本**——一旦与权威并列进索引，
   // AI 就在两个同名条目之间无从选择。`logos/spec/baseline-closure.md` 已明文禁止
@@ -130,6 +132,12 @@ const RULES: DescRule[] = [
     pattern: /^logos\/resources\/decisions\/(?:[a-z][a-z0-9-]*-)?(D\d+)-(.+)\.md$/,
     zh: (m) => `${m[1]} 决策记录（ADR 变体）。涉及该设计决策的背景 / 理由 / 备选方案 / 影响面 / 来源、或复盘为什么这样设计时必读。`,
     en: (m) => `${m[1]} decision record (ADR variant). Required when reviewing the design decision's context, rationale, alternatives, impact, or provenance.`,
+  },
+  // 3d. 企业知识条目（S45 enterprise-knowledge-base）：core-K03-<slug>.md → K03 企业知识条目
+  {
+    pattern: /^logos\/resources\/knowledge\/(?:[a-z][a-z0-9-]*?-)?(K\d+)-(.+)\.md$/,
+    zh: (m) => `${m[1]} 企业知识条目（业务规则 / 术语 / 外部系统约束 / 合规）。设计或评审引用 ${m[1]} 的场景、需求与测试时必读。`,
+    en: (m) => `${m[1]} enterprise knowledge entry (business rule / term / external-system constraint / compliance). Required when designing or reviewing scenarios, requirements or tests that cite ${m[1]}.`,
   },
   // 4. 技术架构
   {

@@ -3,7 +3,7 @@ import { dirname, join, relative } from 'node:path';
 import { readLocale, t, mergePromptTemplate, type Locale } from '../i18n.js';
 import { resetCodeSection } from '../lib/proposal-lifecycle.js';
 // S35 前置重构②③⑤：段标记/模板骨架校验、delta 分类、模块归属解析改为共享判据打包调用（严禁第二份判据）。
-import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resolveProposalModuleContext, DeltaScanUnreadableError, evaluateDeltaConservation, deltaTargetProjectPath, resolveModifiedSectionKeys, runChangeLint } from '../lib/change-lint.js';
+import { DELTA_TO_RESOURCE, validateMarkdownDelta, classifyProposalDeltas, resolveProposalModuleContext, DeltaScanUnreadableError, evaluateDeltaConservation, deltaTargetProjectPath, resolveModifiedSectionKeys, runChangeLint, isKnowledgeTargetPath } from '../lib/change-lint.js';
 import { recoverBaselineClosureApply } from '../lib/baseline-apply.js';
 import { deriveUiImpact, readUiUxDeclaration } from '../lib/ui-first.js';
 import { markAmendContext, mergeDirect, type MergeDirectHooks } from '../lib/merge-direct.js';
@@ -559,7 +559,7 @@ export function merge(slug?: string, format: OutputFormat = 'text') {
           // §2.73：条目守恒降级为警告——诊断照常逐条给出，但不再阻断合并。
           // 静默删除由 `openlogos verify` 的孤儿结果检查兜住（规格删了 ID 而测试还在跑即判不一致）。
           // 例外：锚不可解析是定位失败，`composeOpenLogosMarkdown` 在合成阶段仍会 fail-closed。
-          for (const cv of evaluateDeltaConservation(content, targetContent)) {
+          for (const cv of evaluateDeltaConservation(content, targetContent, { knowledge: isKnowledgeTargetPath(targetRel) })) {
             out(`  ⚠️  [${cv.code}] ${d.relativePath}：${cv.message}`);
           }
           // code-r1 F1：跨 delta 文件的同一目标章节多写者 fail-closed（与 lint 共享同一解析辅助）

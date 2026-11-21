@@ -12,6 +12,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { withDeployPlanCoverageCodes } from './deploy-plan-coverage-codes.js';
+import { withKnowledgeCodes } from './knowledge-lint-codes.js';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -249,7 +250,7 @@ describe('S35 违规层归属单点与人类可读输出的逐条可归因', () 
   it('UT-S35-194: 零回归锚——检查项、违规码集合、exit code 与结论文案零改动', () => {
     // ② 违规码注册表：断言集合本身（被意外扩充同样是回归）。
     // deploy-plan-gate-release-0-15-19（§2.90）有意新增四码，按登记位置插入后对照。
-    const expectedCodes = withDeployPlanCoverageCodes(GOLDEN._violation_codes as string[]);
+    const expectedCodes = withKnowledgeCodes(withDeployPlanCoverageCodes(GOLDEN._violation_codes as string[]));
     expect([...CHANGE_LINT_VIOLATION_CODES]).toEqual(expectedCodes);
     expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(expectedCodes.length);
 

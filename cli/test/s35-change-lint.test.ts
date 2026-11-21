@@ -1002,7 +1002,9 @@ describe('S35 — 同源锚与契约', () => {
     // （后态 test-change-set-duplicate-id 判据同源前移）。
     // 46 → 50：§2.90（deploy-plan-gate-release-0-15-19）L5 新增 deployment_plan_missing、
     // deployment_plan_reference_unresolved，L0 新增其 Plan Package 投影两码。
-    expect(registry.size).toBe(50);
+    // 50 → 55：§2.102.10（enterprise-knowledge-base S45）L10 新增 knowledge_entry_invalid、
+    // knowledge_reference_unknown、knowledge_id_duplicate、knowledge_removal_forbidden、knowledge_retired_id_mutated。
+    expect(registry.size).toBe(55);
     const flowReasonCodes = new Set(['tasks_code_header_missing', 'code_change_requires_real_test_ids', 'deployment_decision_conflict']);
     for (const v of violations) {
       expect(typeof v.code).toBe('string');

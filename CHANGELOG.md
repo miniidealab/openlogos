@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.17] - 2026-11-21
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- 企业知识资源。企业的业务规则、术语、外部系统约束与合规要求可沉淀为 `logos/resources/knowledge/<module>-KXX-<slug>.md` 条目（首节「元数据」YAML 给出 `type` / `scope` / `module` / `tags` / `status` / `source`，规则类条目以 `KXX-Rn` 列出规则），原始资料放 `logos/resources/reference/knowledge/`；新 delta 类别 `deltas/knowledge/` 经现行 `openlogos merge` 与场景、`resource_index` 登记、`SPEC_MERGED` 同批原子落盘；`openlogos init` 新建这两个目录，资源索引补录扫描 `knowledge/`。
+- 场景文档可在「适用业务约束」章节按 `KXX`（整个条目）或 `KXX-Rn`（单条规则）引用企业知识；设计类 Skill（prd-writer、product-designer、scenario-architect、change-writer、test-writer）新增「加载相关企业知识」步骤与录入入口，需求与规则冲突时作为待决问题交用户裁决。
+- change-lint 新增检查层 L10：`knowledge_entry_invalid`（条目结构）、`knowledge_reference_unknown`（引用不存在或目标结构无效）、`knowledge_id_duplicate`（编号重复）、`knowledge_removal_forbidden`（删除已生效条目 / 规则）、`knowledge_retired_id_mutated`（退役内容被重新激活或改写），以及 warning `knowledge_reference_deprecated`；有效知识视图按合并阶段计算（未合并叠加本提案 delta、已合并不重放、待应用修正以合并基线计算），merge 准入同判。
+
+### 升级提示
+
+- 没有知识条目、场景不写「适用业务约束」章节的项目，change-lint、merge 与 sync 的行为不变；L10 只在有 `deltas/knowledge/`、场景 delta 含该章节或待应用修正涉及知识条目时执行。
+- 已生效的知识条目与规则只能标为 `deprecated` 退役，不能删除；编号永不复用。
+- Skill 与规范副本的新口径需在各项目执行一次 `openlogos sync` 才生效。
+
 ## [0.16.16] - 2026-11-17
 
 本机全局发布（未发布到 npm）。
