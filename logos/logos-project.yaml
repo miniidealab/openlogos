@@ -24,7 +24,7 @@ tech_stack:
     source_of_truth: GitHub tag + CHANGELOG.md
     release_archive: GitHub Releases
 scenario_counter:
-  next_id: 41
+  next_id: 46
 feature_counter:
   next_id: 9
 decision_counter:
@@ -193,6 +193,10 @@ scenarios:
     feature: F04
   - id: S40
     name: 版本管理范围配置（ignore / exempt 与 .gitignore 托管区块）
+    module: core
+    feature: F04
+  - id: S45
+    name: 企业知识沉淀与场景引用
     module: core
     feature: F04
 release_workflows:
@@ -655,6 +659,10 @@ resource_index:
     desc: branch-sync-generated-files 创建的 test 基线
   - path: spec/branch-sync.md
     desc: branch-sync-generated-files 创建的 spec 基线
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S45-enterprise-knowledge.md
+    desc: enterprise-knowledge-base 创建的 scenario 基线
+  - path: logos/resources/test/core-S45-test-cases.md
+    desc: enterprise-knowledge-base 创建的 test 基线
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号
   - "存量项目接入统一写入 bootstrap: adopted，读取时兼容历史 skipped"

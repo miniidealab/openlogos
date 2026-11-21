@@ -270,3 +270,43 @@ If the project sync stamp has an older Plan contract or managed-asset hash than 
 影响分析时先判断触发：共享业务事实/完成谓词、projection、owner/writer/mutation/recovery/cutover、消费者本地重算风险。每个新或仍 writing 的提案必须有唯一 `openlogos/authority-impact@1`。required 分支引用 Registry 或当前 CREATE authority target，列出 projections、retired shadow sources、forbidden fallbacks、cutover 和真实 UT/ST/SMOKE IDs；not_applicable 分支只含非空可核验证据。
 
 任何 unresolved、未知 fact 引用、空 cutover、测试 ID 不真实或影子来源未退休都不得报告 plan 完成。Delta 仍遵守 P=T=D、一目标一文件、写后读回和逐文件勾选；`[code]` 在 merge 前保持空白。全部 Delta 完成后运行 change-lint，等待独立 merge 授权。
+
+## Load relevant enterprise knowledge (S45)
+
+> Source change: enterprise-knowledge-base (S45). Rule authority: feature spec §2.102; directory convention: `spec/directory-convention.md` "logos/resources/knowledge/". There is only one skip condition: the project has no knowledge entries, the active proposal has no `deltas/knowledge/`, **and the user has not provided enterprise material in this turn** — then skip this section; all other steps are unchanged.
+
+### Intake entry point (runs before loading, not subject to the skip condition)
+
+When the user provides enterprise material to capture in this turn (policy text, interface notes, glossaries, etc.), capture first and load afterwards, even if the project has no `logos/resources/knowledge/`, `logos/resources/reference/knowledge/` or `deltas/knowledge/` yet (for example a project launched before this upgrade, capturing knowledge for the first time):
+
+1. If `logos/resources/reference/knowledge/` does not exist, create it and write the original material there (guard-exempt by default, not via delta), and tell the user: "the original will spread with the repository on push; confirm what may be published before pushing".
+2. Launched projects: have change-writer plan `deltas/knowledge/<module>-KXX-<slug>.md` in the `[delta]` section of `tasks.md` and reserve the KXX (the highest KXX in the effective knowledge view, including `deprecated`, + 1; K01 when the view is empty), then write the knowledge delta; `logos/resources/knowledge/` is created by the merge. Initial projects: write `logos/resources/knowledge/<module>-KXX-<slug>.md` directly from the entry template (creating the directory if missing).
+3. Entries must be structurally valid: the H1 starts with the KXX; the "元数据" YAML has valid `type`, `scope`, `status` (plus `module` when `scope: module`), a non-empty `tags` list, and a non-empty `source` list whose items each give the repository-relative `path` of the original (the file written to `logos/resources/reference/knowledge/` in step 1, which must exist; a repository file outside that directory, such as `README.md`, is invalid) and a non-empty `version`; `type: rule` entries have a "规则" table in which every row's first column is this entry's `KXX-Rn` and whose "状态" is `active` or `deprecated`. change-lint rejects entries with missing items or malformed rule rows with `knowledge_entry_invalid`.
+4. After intake, load from the effective knowledge view as below; entries captured in the same proposal can be cited immediately.
+
+### Effective knowledge view
+
+Load from the **effective knowledge view**: the candidate after-state of knowledge entries from the active proposal's point of view. Before the proposal is merged, it is the on-disk `logos/resources/knowledge/*.md` with this proposal's `deltas/knowledge/` applied; once merged with no pending amendment, read the on-disk entries directly (the deltas are already applied and are not replayed); with a pending amendment, apply the amended deltas to the merge baseline. Only the current proposal counts; never other proposals or the archive. Entries added in the same proposal and not yet merged are in effect.
+
+### Loading steps
+
+1. List every entry in the view and read only its "元数据" (metadata) section (YAML: `type`, `scope`, `module`, `tags`, `status`, `source`).
+2. Filter: entries with `scope: global` always match; entries with `scope: module` match only when `module` equals the current module; then narrow by `tags` relevant to the current requirement or scenario. Do not rely on `resource_index` descriptions; no semantic search.
+3. Read the full text of matching entries. For `type: rule` entries, the `active` `KXX-Rn` rows of the rules table are binding; `deprecated` entries or rules are background only and must not justify new design.
+4. If one KXX appears in two files, or an Rn repeats within one entry, do not resolve that ID; ask the user to fix the duplicate first (change-lint reports `knowledge_id_duplicate`).
+5. Do not rely on structurally invalid entries (missing H1, metadata or required fields); ask the user to complete them first (change-lint reports `knowledge_entry_invalid`, and citing one reports `knowledge_reference_unknown`).
+
+### Cite the basis and handle conflicts
+
+- Wherever output is constrained by enterprise knowledge, cite the `KXX` or `KXX-Rn` it relies on.
+- When a requirement or design conflicts with an `active` rule, **do not hard-block and do not silently pick a side**: list the conflict (rule ID, conflicting point, options: comply / exception for this change / rule needs updating), stop and ask the user, one decision at a time. If the user rules "exception for this change", record the reason in the "例外" (exception) column of the scenario's "适用业务约束" (applicable business constraints) section; if "rule needs updating", hand it to change-writer to plan a knowledge delta.
+
+### When this Skill loads and what it outputs
+
+- **Fact scan**: include the effective knowledge view in Step 1 "check facts first". When a requirement conflicts with an `active` rule, add a `category: product` unresolved item to the proposal's `clarification@1` (the question names the rule ID and the conflict; options are the real ones among "comply", "exception for this change", "rule needs updating") and ask one at a time.
+- **When the user provides new material**:
+  1. Write the original material to `logos/resources/reference/knowledge/` (create it first if missing; guard-exempt by default, not via delta) and tell the user: "the original will spread with the repository on push; confirm what may be published before pushing".
+  2. In the `[delta]` section of `tasks.md`, plan one `deltas/knowledge/<module>-KXX-<slug>.md` task per new entry and **reserve the KXX**: the highest KXX in the effective knowledge view (including `deprecated` entries) + 1, or K01 when the view is empty (first capture in the project), incrementing for multiple new entries. Scenario design cites the reserved IDs.
+  3. When writing knowledge deltas: a new entry uses `## ADDED — logos/resources/knowledge/<module>-KXX-<slug>.md（新文件，整文件）`; revising an existing entry uses `MODIFIED` carrying the full section; a new rule takes that entry's highest Rn (including `deprecated`) + 1.
+- **Retire, never delete**: never write `REMOVED` / `REMOVED-ITEMS` against merged entries or rules, and never change the KXX in a merged entry's file name (`knowledge_removal_forbidden`); retiring only sets the status to `deprecated`. Retired content must not return to `active` or have its text rewritten (`knowledge_retired_id_mutated`). An `active` rule may be revised with `MODIFIED` (e.g. a threshold change); if its meaning becomes a different rule, open a new ID and retire the old one.
+- **Fixing duplicates**: when change-lint reports `knowledge_id_duplicate`, renumber the entry added by this proposal to the current highest KXX + 1, rewrite every reference within this proposal, and rerun.

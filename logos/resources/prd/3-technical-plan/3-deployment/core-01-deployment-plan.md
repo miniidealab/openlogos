@@ -5796,3 +5796,74 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 - 测试：UT-S13-132～UT-S13-140、ST-S13-35～ST-S13-37、UT-S32-103～UT-S32-117、ST-S32-44～ST-S32-45；安装态 smoke：SMOKE-core-315～SMOKE-core-317，以及通用的 SMOKE-core-268～SMOKE-core-271。
 - 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
 - 来源提案：slice-verify-efficient-mode；本提案：release-0-16-16（决策 C01、C02）。
+
+## OpenLogos 0.16.17 本机测试环境发布（enterprise-knowledge-base）
+
+> 本节引用「本机测试环境脚本部署（scripts/deploy-local.mjs）」通用方案，只写本次的差异：版本号、CHANGELOG、源码回归范围、本仓 `openlogos sync` 与安装态 smoke。冻结、回滚制品、构建候选、试装、全局安装、复核与回执一律按通用方案第三～七节执行，不在本节复写。
+
+### 部署目标与授权边界
+
+把本提案实现的企业知识能力（场景 S45，功能规格 §2.102）装进本机全局安装态。行为差异：
+
+- 新增 delta 类别 `knowledge`（`deltas/knowledge/ → logos/resources/knowledge/`），知识条目经现行 `openlogos merge` 与场景同批原子落盘；`openlogos init` 新建 `logos/resources/knowledge/` 与 `logos/resources/reference/knowledge/`；资源索引扫描纳入 `knowledge/`。
+- change-lint 新增 violation `knowledge_reference_unknown`、`knowledge_id_duplicate`、`knowledge_removal_forbidden`、`knowledge_retired_id_mutated`、`knowledge_entry_invalid` 与 warning `knowledge_reference_deprecated`；没有知识条目的项目输出不变。
+- 根规范 `spec/directory-convention.md`、`spec/change-management.md`、`spec/cli-json-output.md` 与 Skill prd-writer、product-designer、scenario-architect、change-writer、test-writer（中英文）新增知识加载、引用与冲突裁决口径。
+
+- **目标环境**：`test`（登记表 `proposal_default_env: test`；用户要求「部署到本机全局」，决策 C06）。登记表中 `test.deploy` 为 `mode: script`、`script: scripts/deploy-local.mjs`。
+- **入口**：提案通道 `openlogos deploy --env test`，部署请求 HEAD；由 CLI 追加部署报告、写 `DEPLOY_DONE` 并勾选 `[deploy]`。部署成功后**不再**另行执行 `openlogos deploy-done`。
+- **授权**：部署执行、smoke、archive 与 `git push` 各自为人类确认点，须用户逐次明确授权；`test` 未配置 `promote_from` / `require_approval`。
+- **版本号边界**：0.16.17 只作本机全局版本，不进入 npm registry。本方案**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`。不改写其他仓库（包括 runlogos）。
+
+### 部署前置与版本
+
+1. 本提案 delta 已 merge，`[code]` 切片实现并提交，`openlogos verify` PASS；`openlogos env check` 无 error，`openlogos deploy --env test --dry-run` 通过（通用方案第三节）。
+2. **请求提交已提交**：部署前确认 merge 后的规格、切片代码与验收报告都已提交、工作区干净；未提交时按「规格合并 → 代码 → 验收报告」的顺序补提交后再部署。
+3. **版本事实复核**：读取 `cli/package.json` 当前版本，计划时为 `0.16.16`（未发布到 npm）。候选为下一 patch `0.16.17`，执行 `npm view @miniidealab/openlogos@0.16.17 version` 应返回 E404。若实施前已有其他提案升版，或 registry 已存在候选版本号，候选改为「当时版本与 registry 最高版本中较大者的下一 patch」，并在部署记录写明实际值。
+4. **升版**：在实现中执行 `node cli/scripts/bump-version.mjs 0.16.17`，由脚本一次更新全部版本载体并重算 `cli/asset-manifest.json`，**禁止手改** manifest。`cli/src/lib/local-release-candidate.ts` 的回滚版本应为 `0.16.16`；不符时改为 `0.16.16`，并在部署记录说明。
+5. **CHANGELOG**：在 `## [Unreleased]` 之后新增 `## [0.16.17]` 条目，注明「本机全局发布（未发布到 npm）」，不改既有条目：
+   - **Added**：企业知识资源。企业的业务规则、术语、外部系统约束与合规要求可沉淀为 `logos/resources/knowledge/<module>-KXX-<slug>.md` 条目（原文放 `logos/resources/reference/knowledge/`），经 `deltas/knowledge/` 与场景同批合并；场景在「适用业务约束」章节按 `KXX` / `KXX-Rn` 引用。
+   - **Added**：change-lint 校验知识引用、编号重复、禁止删除已合并条目与退役 ID 冻结以及条目结构有效性（5 个 violation、1 个 warning）。
+   - **升级提示**：没有知识条目的项目行为不变；Skill 与规范副本的新口径需在各项目执行 `openlogos sync` 才生效。
+
+### 源码回归范围
+
+部署前的 verify 负责源码回归，脚本不跑测试（通用方案第八节）。升版后复跑以下检查，必须全绿：
+
+- `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`、`npm run build`。
+- 范围包括本提案的 UT-S45-01～UT-S45-20、ST-S45-01～ST-S45-05，既有 S35 change-lint、S37 条目守恒、S09 merge、S18 资源索引补录全部用例，以及 UT-S19-46（版本身份）、UT-S19-49（asset-manifest 自洽）。版本相关的既有用例若断言具体版本号，随升版更新期望值。
+
+### 部署、sync 与部署后检查
+
+1. 执行 `openlogos deploy --env test`（提案通道）。按通用方案第七节第 1、2 条读回回执与账本：
+   - 全局 `--version` 为 `0.16.17`；
+   - 入口 realpath 等于回执 `entry_realpath`，全局 `dist/index.js` 的 SHA-256 等于 `candidate_entry_sha256`；
+   - 记录候选 tarball 与回滚制品的路径与 SHA-256；回滚制品由脚本从当前全局安装打包，计划时应为提交 `5f230b3` 的 0.16.16 安装态；
+   - 部署前账本 `test.current_ref` 为 `5f230b3deb0da8eb693722af5f869edb13eb7a41`（0.16.16，deploy `51e480f6`），部署成功后它成为 `previous_ref`。
+2. **本仓 sync**：本提案修改了根规范 `spec/directory-convention.md`、`spec/change-management.md`、`spec/cli-json-output.md` 与 5 个 Skill 的中英文文档。在主工作树执行一次 `openlogos sync` 并读回：上述规范与 Skill 的 `logos/` 副本与全局安装包内同名文件逐字节一致；AGENTS.md / CLAUDE.md 的变化只来自托管内容与版本戳；sync 产生的托管文件变化随部署记录一起由流程提交，不 push；若 sync 再次向 `.claude/settings.json` 追加重复的 SessionStart 条目（已知缺陷），按前几版部署记录同样还原并记录。
+3. **补部署报告**：部署后追加人写的「部署报告」小节（版本、deploy_id、ref、制品哈希、sync 读回结果）并提交，然后才执行 smoke。
+4. 经授权执行 `openlogos smoke --env test`：
+   - 本次行为用例：「OpenLogos 0.16.17 企业知识安装态 smoke（SMOKE-core-318～320）」；
+   - 通用安装态用例：「本机测试环境脚本部署安装态 smoke（SMOKE-core-268～SMOKE-core-271）」。
+
+### 失败处置与回滚
+
+回滚目标是**提交 `5f230b3` 的 0.16.16 安装态**（不含企业知识能力），处置按通用方案第五节，本次差异如下：
+
+- **部署前置或 dry-run 失败**：不执行部署，修正后重试，或回流实现。
+- **脚本失败（部署未成功）**：脚本自动回装回滚制品，复核 `--version` 为 `0.16.16`；账本记 `result=failed`，不推进。
+- **成功部署后要回退**：执行 `openlogos deploy --env test --rollback`，回到 `previous_ref`（`5f230b3…`，该提交含 `scripts/deploy-local.mjs`）。回退后用回退到的版本在本仓执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件。已写入的 `logos/resources/knowledge/` 条目在 0.16.16 下不再被校验，`deltas/knowledge/` 会被判 `delta_path_invalid`。
+- **成功落账后 smoke 失败**：停止后续完成流程，保留失败证据，回流修复后以 `openlogos deploy --env test` 部署修复提交并重跑 smoke。不得手工回装旧包。
+- 本次无数据迁移：既有配置、文件格式与命令输出只增不改。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`，不部署官网。
+- 不改写其他仓库（包括 runlogos）；其他项目的 Skill 与规范副本由用户在各项目执行 `openlogos sync` 刷新。
+
+### 追溯
+
+- 场景：S45「S45：企业知识沉淀与场景引用」Step 1～11、EX-45.1～EX-45.11。
+- 需求：`core-01-requirements.md`「S45: 企业知识沉淀与场景引用」S45-AC-01～S45-AC-13。
+- 测试：UT-S45-01～UT-S45-20、ST-S45-01～ST-S45-05；安装态 smoke：SMOKE-core-318～SMOKE-core-320，以及通用的 SMOKE-core-268～SMOKE-core-271。
+- 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
+- 本提案：enterprise-knowledge-base（决策 C06）。

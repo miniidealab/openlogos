@@ -3535,3 +3535,35 @@ openlogos branch status [--base <ref>] --format json
 除 `BRANCH_SYNC_FAILED` 且 `restored: false` 外，以上错误发生时工作区、索引与分支指向均与执行前一致。
 
 文本模式：成功时逐行打印结果、主分支与共同起点、被处置的文件、登记表状态、剩余冲突与被清除的标记；错误打印 `Error: [<code>] <message>`。
+
+## change-lint 企业知识检查（L10，S45 enterprise-knowledge-base）
+
+> 归属 `## 3.15 openlogos change-lint --format json`。本子节为 change-lint 新增检查层 L10（企业知识），只扩充 `violations[].code` 闭合枚举与 `warnings[].code` 命名空间，不改 §3.15 的信封、字段（violation 仍为 `code` / `path` / `message` / `fix_hint`，不新增 `details` 等字段）、排序与 exit code 三分流；L10 码不带 `flow_reason`。采用 ADDED 子节而非 MODIFIED 既有枚举表，以免整节替换触发 L8 守恒对既有子节的携带负担。规则权威：功能规格 §2.102.10。
+
+### 新增 violation code（进入 `ChangeLintViolationCode` 闭合枚举）
+
+| 检查项 | code | 触发 | `path` | fix_hint 语义 |
+|---|---|---|---|---|
+| L10 | `knowledge_reference_unknown` | 本提案触及的场景目标中，「适用业务约束」表首列的 `KXX` / `KXX-Rn` 在有效知识视图中不存在，或目标条目结构无效 | 场景 delta 路径；`message` 含行号与引用文本，目标结构无效时注明 | 核对拼写，在 `deltas/knowledge/` 规划对应条目，或补齐目标条目的结构 |
+| L10 | `knowledge_id_duplicate` | 有效知识集合内两个文件使用同一 KXX，或同一条目内重复 Rn；本提案场景引用到重号 ID 时同样报出 | 本提案涉及的那个来源路径；`message` 同时列出两个来源路径 | 合并前把本提案新增的条目重编号，并同步改写本提案内的引用 |
+| L10 | `knowledge_removal_forbidden` | `deltas/knowledge/` 对已合并条目写 `REMOVED` / `REMOVED-ITEMS`；已合并 KXX 的文件名改变；已合并的条目或规则在合成结果中消失 | 对应知识 delta 路径；无对应 delta 的恢复目标用实际恢复的规范目标路径 | 改为把条目或规则状态标为 `deprecated` |
+| L10 | `knowledge_retired_id_mutated` | 已生效版本中为 `deprecated` 的条目，在候选后态中 H1、「元数据」、「规则」表任一行或「说明」节正文与已生效版本不逐字一致（含状态改回 `active`）；或已生效版本中为 `deprecated` 的规则行，其「规则」「状态」「例外」任一列不逐字一致（含待应用修正撤回最后一个知识 delta 后，恢复目标回到合并基线内容） | 对应知识 delta 路径；无对应 delta 的恢复目标用实际恢复的规范目标路径（`logos/resources/knowledge/…`）；`message` 含 ID 与已生效版本路径 | 恢复退役内容；新规则使用新 ID |
+| L10 | `knowledge_entry_invalid` | 本提案新增或修改的条目结构无效：H1 未以文件名中的 KXX 开头、缺「元数据」节或 YAML 不可解析、`type` / `scope` / `status` 缺失或取值非法、`scope=module` 而 `module` 为空、`tags` 缺失或为空、`source` 缺失或为空或某项缺 `path` / `version`、`source.path` 不是仓库相对路径、规范化（含 symlink 解析）后不在 `logos/resources/reference/knowledge/` 之内、或指向不存在的文件、`type=rule` 而无规则行、规则表中任一行首列不是本条目的 `KXX-Rn` 或「状态」不是 `active` / `deprecated` | 对应知识 delta 路径；`message` 点名缺失项 | 按条目模板补齐结构 |
+
+- 重号 ID 的引用只报 `knowledge_id_duplicate`，不另报 `knowledge_reference_unknown`。
+- 前态与候选后态按合并阶段计算（功能规格 §2.102.6）：首次合并前以磁盘为前态；已合并且无待应用修正时直接读落盘文档、只做引用解析与重号；待应用修正时以合并基线为前态，与 `merge-amend` 同一目标集合。
+- 下游判定只读结构化的 `code` 与 `path`；`message` 中的来源路径等供人读与诊断，不作为流程判据。
+- **排序**：L10 排在既有检查层之后，同层沿用 §3.15 的 path 字典序 → 源位置出现序 → code → message 全序。
+- **消费点同判据**：`openlogos merge` 写入前执行的 change-lint 准入调用同一判据，任一 L10 violation 即拒绝合并、不写任何文件。
+
+### 新增 warning code（`warnings[]` 命名空间）
+
+| code | 触发 | `message` |
+|---|---|---|
+| `knowledge_reference_deprecated` | 本提案触及的场景引用了 `deprecated` 的条目或规则；或本提案退役的条目 / 规则仍被有效场景视图引用 | 含场景文件路径、行号与被引用的 ID |
+
+- `warnings[]` 的出现 / 省略规则、item 闭合字段（`code`、`message`、`fix_hint`，不含 `path`）与排序沿用「change-lint warnings[]（S38 决策记录提示）」，不影响 `pass` 与 exit code。文件与行写在 `message` 中。
+
+### 零漂移
+
+L10 的启用条件：本提案有 `deltas/knowledge/`，或本提案场景 delta 含「适用业务约束」章节，或提案处于待应用修正阶段且修正目标集合（`merge-amend` 的重组 / 新增 / 恢复三类）含 `logos/resources/knowledge/` 下的目标——撤回最后一个知识 delta、删除空的 `deltas/knowledge/` 目录后，被恢复为合并基线内容的知识目标仍在恢复集合中，照常比较当前已生效版本与候选后态。三者都不满足时 L10 不执行，`change-lint --format json` 输出与本子节引入前除 `timestamp` 外逐字节一致。

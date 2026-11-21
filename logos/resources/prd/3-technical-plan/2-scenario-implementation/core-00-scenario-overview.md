@@ -345,3 +345,41 @@ flowchart LR
 ### 元数据 apply
 
 merge 时把 S44 登记进 `logos/logos-project.yaml` 的 `scenarios`（`module: core`，`feature: F04` 变更提案与切片生命周期，与 S09 同组）。登记表当前的 `scenarios` 只登记到 S40、`scenario_counter.next_id` 为 41，而场景实现目录中已有 S41～S43 的文档：本次一并补登 S41、S42、S43（`module: core`，`feature: F05` 验收与部署门禁），并把 `scenario_counter.next_id` 推进到 45。把 `core-S44-branch-sync-generated-files.md`、`core-S44-test-cases.md` 与 `spec/branch-sync.md` 纳入 `resource_index`。
+
+## S45 场景登记与依赖关系（enterprise-knowledge-base）
+
+### 场景地图增量
+
+| 编号 | 场景名称 | 主要实现 | 测试规格 | 状态 |
+|---|---|---|---|---|
+| S45 | 企业知识沉淀与场景引用 | `lib/knowledge-view.ts`（新增）/ `lib/change-lint.ts` / `lib/delta-classify.ts` / `lib/canonical-target.ts` / `lib/proposal-lifecycle.ts` / `lib/flow-derive.ts` / `lib/sync-resource-index.ts` / `commands/init.ts`；Skill：prd-writer、product-designer、scenario-architect、change-writer、test-writer | `core-S45-test-cases.md` | 进行中 |
+
+### 依赖关系
+
+```mermaid
+flowchart LR
+    U["用户提供企业资料"] -->|原文写入 reference/knowledge/| S45["S45 企业知识沉淀与场景引用"]
+    S09["S09 变更提案与原子合并（mergeDirect）"] -->|knowledge 类别同批落盘| S45
+    S35["S35 change-lint"] -->|引用 / 重号 / 禁止删除 / 退役冻结校验| S45
+    S37["S37 条目守恒门"] -->|KXX / KXX-Rn 注册| S45
+    S18["S18 资源索引补录"] -->|扫描 knowledge/| S45
+    S45 -->|有效知识视图| SK["设计类 Skill（需求 / 产品设计 / 场景 / 测试）"]
+```
+
+### 依赖说明
+
+1. S45 的知识条目经 S09 的现行 `openlogos merge`（`mergeDirect`）与场景、索引登记、`SPEC_MERGED` 同批原子落盘；S09 的合并事务与 merge-executor 职责不变。
+2. S45 的校验作为 S35 change-lint 的新检查维度执行，merge 写入前的 change-lint 准入随之覆盖；没有知识 delta、场景 delta 不含「适用业务约束」章节时，S35 输出不变。
+3. S37 的 ID 注册表新增 `KXX` / `KXX-Rn`，作用范围限 `logos/resources/knowledge/`；知识条目在 S37 之上额外禁止删除已合并条目。
+4. S18 的扫描范围新增 `logos/resources/knowledge/`，只补录遗漏条目，不改写已有描述。
+5. 不使用知识条目的项目，S09、S18、S35、S37 的既有行为不变。
+
+### 场景索引增量
+
+- [S45：企业知识沉淀与场景引用](./core-S45-enterprise-knowledge.md)
+- 对应测试：`logos/resources/test/core-S45-test-cases.md`。
+- 功能规格：§2.102；目录约定：`spec/directory-convention.md`「logos/resources/knowledge/」。
+
+### 元数据 apply
+
+规格合并提交时把 S45 登记进 `logos/logos-project.yaml` 的 `scenarios`（`name: 企业知识沉淀与场景引用`，`module: core`，`feature: F04` 变更提案与切片生命周期，与已登记的 S39、S40 同组），并把 `scenario_counter.next_id` 推进到 46。`core-S45-enterprise-knowledge.md` 与 `core-S45-test-cases.md` 的 `resource_index` 登记由 `openlogos merge` 对 CREATE 目标自动完成。S41～S44 的登记补录与 `decision_counter` 漂移另案处理。

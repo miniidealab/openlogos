@@ -54,7 +54,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 
 ## 三、场景总览
 
-37 个场景（编号跳号、最高至 S44，`scenario_counter.next_id=45`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
+38 个场景（编号跳号、最高至 S45，`scenario_counter.next_id=46`）按**能力域**分组如下。各域一行点题，说明它主要回应哪些痛点。
 
 ### ① 初始化与存量接入
 把空目录或存量代码库低摩擦纳入 OpenLogos 治理（回应 P01/P02/P03/P04）。
@@ -83,6 +83,7 @@ OpenLogos 必须让 AI 能稳定区分两类能力：
 | S39 | 提案规划时按触达目标形成规格闭包 | launched change 触达某个功能/场景、需规划 delta 目标时 | P04/P01/P03 | P0 |
 | S40 | 版本管理范围配置（ignore / exempt 与 .gitignore 托管区块） | launched 项目需调整「哪些路径不入库 / 入库但不需立案」，或 init / adopt 检测到技术栈需引导忽略依赖与产物目录时 | P01/P03 | P1 |
 | S44 | 提案分支同步主分支：生成文件与登记表 | 提案在自己的分支上推进、主分支已合入别的提案，合并回主分支前需要先同步主分支时 | P03/P06/P07 | P1 |
+| S45 | 企业知识沉淀与场景引用 | 企业有既定的业务规则、术语、外部系统约束或合规要求会影响功能设计，需要把它们沉淀为有编号的知识并在场景设计时引用、遵守时 | P01/P03 | P1 |
 
 ### ③ 验收与部署门禁
 用可追溯的验收报告与部署 / smoke 门禁守住交付质量（回应 P01/P03/P05）。
@@ -3996,3 +3997,80 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 - 功能规格：§2.100；交互设计：「S44: 提案分支同步主分支 — 交互规格」；架构：「五十六、提案分支同步：同步处置清单与登记表合并」。
 - 场景：`core-S44-branch-sync-generated-files.md`；相关场景 S13（验收产物）、S18（资源索引补录）、S33（基线事务锁与恢复门）、S09（验收与交付标记失效清单）、S16（JSON 输出）。
 - 测试：`core-S44-test-cases.md`。
+
+## S45: 企业知识沉淀与场景引用
+
+> 来源变更：enterprise-knowledge-base（决策 C01～C06；proposal-r1 F1～F5、r2 F1/F4、r3 F4 处置）。规则的权威定义见功能规格 §2.102；目录约定见 `spec/directory-convention.md`「logos/resources/knowledge/」；change-lint JSON 见 `spec/cli-json-output.md` §3.15。
+
+### 场景定义
+
+- **触发条件**：企业内部有既定的业务规则（如「单笔退款超过 5000 元需财务二审」）、术语（如「结算日」的定义）、外部系统约束（如「客户编号由主数据系统统一下发」）或合规要求，它们不是本次需求，却决定场景的主路径与异常分支；用户把这些资料交给 AI，希望 AI 在写需求、做产品设计、建场景与写测试时一并考虑。
+- **用户价值**：企业规则从「只活在某次对话或某份需求的一句话里」变成有编号、可引用、可校验的规格资源；AI 设计时按场景检索并遵守，写明依据；需求与规则冲突时由用户裁决而不是被 AI 静默取舍；规则引用写错、编号冲突或退役规则被改写时由 change-lint 拦下。
+- **优先级**：P1
+- **主路径**：用户提供企业资料 → AI 把原始资料存入 `logos/resources/reference/knowledge/`，提炼成知识条目 delta（`deltas/knowledge/<module>-KXX-<slug>.md`，编号在编写 delta 时预定）→ 场景设计时在有效知识视图（已合并条目 + 本提案知识 delta）上加载相关条目，在场景文档「适用业务约束」章节按 `KXX` / `KXX-Rn` 引用并写明作用位置 → 需求与规则冲突时作为待决问题交用户裁决 → change-lint 校验引用、重号、禁止删除与退役 ID 冻结 → `openlogos merge` 把知识条目与场景、索引登记、完成标记一次原子落盘。
+
+### 验收条件
+
+#### S45-AC-01 正常：知识条目的结构与编号
+- **GIVEN** 用户提供一份退款审批制度
+- **WHEN** AI 按条目模板提炼
+- **THEN** 产出 `logos/resources/knowledge/<module>-KXX-<slug>.md` 形态的条目：首节「元数据」用 YAML 给出 `type`（rule / term / external-system / compliance / process）、`scope`（global / module）、`module`、`tags`、`status`（active / deprecated）与 `source`（原文仓库相对路径与版本）；`type=rule` 的条目以表格列出规则，每行首列为规则 ID `KXX-Rn`，每条规则可判定；KXX 取有效知识视图中最大 KXX（含 deprecated）+ 1（视图为空时为 K01），规则取本条目最大 Rn + 1；本提案新增或修改的条目缺 H1 中的 KXX、缺元数据或必填字段（含 `tags`，以及 `source` 的仓库相对 `path` 与 `version`，`path` 须指向 `logos/resources/reference/knowledge/` 内现存的原文文件）、`type=rule` 而无规则行、或规则表任一行首列不是本条目的 `KXX-Rn` 时，change-lint violation `knowledge_entry_invalid`，结构无效的条目不能作为引用目标
+
+#### S45-AC-02 正常：原始资料同仓存放
+- **THEN** 原始资料存入 `logos/resources/reference/knowledge/`（guard 默认豁免目录，无需经 delta；目录不存在时由 AI 创建，项目首次录入时同样适用，不因「尚无知识」被跳过），条目 `source` 以仓库相对路径指向原文并注明版本；AI 写入原文时提示「原文将随仓库 push 扩散，push 前请确认可公开范围」
+
+#### S45-AC-03 正常：场景按条目或规则引用
+- **GIVEN** 有效知识视图中存在规则条目 K03（含 K03-R1）与无规则列表的术语条目 K05
+- **WHEN** 设计退款场景
+- **THEN** 场景文档的「适用业务约束」章节可用 `K03-R1` 引用单条规则、用 `K05` 引用整个条目，并写明作用于时序图的哪一步或哪个异常分支；两种引用走同一校验入口
+
+#### S45-AC-04 正常：同一提案新录入的知识可被同批场景引用
+- **GIVEN** 新规则只存在于本提案的 `deltas/knowledge/`，尚未合并
+- **THEN** Skill 设计时加载与 change-lint 引用解析都基于有效知识视图（按合并阶段计算：未合并时叠加本提案 delta，已合并后直接读落盘文档、不重放，待应用修正时以合并基线计算），同批新场景引用该规则时校验通过，merge 准入不被阻断
+
+#### S45-AC-05 正常：Skill 设计时加载并写明依据
+- **THEN** prd-writer、product-designer、scenario-architect、change-writer、test-writer 在产出前按模块、`scope` 与 `tags` 读取条目元数据筛选相关条目（`scope=global` 的条目对任意模块生效），在产出中写明依据了哪些 `KXX` / `KXX-Rn`；test-writer 可从被引用的规则派生 UT / ST 用例并标注知识来源
+
+#### S45-AC-06 正常：冲突作为待决问题交用户裁决
+- **GIVEN** 需求或设计与某条规则冲突
+- **THEN** AI 不硬阻断、不静默取舍：change-writer 写入 `clarification@1` 未决队列，其余 Skill 在产出中列出冲突并停下询问；用户裁决「本次例外」时在场景引用处记录例外理由；不新增门禁
+
+#### S45-AC-07 异常：引用不存在或已废弃
+- **THEN** 场景引用的 `KXX` / `KXX-Rn` 在有效知识视图中不存在 → change-lint violation `knowledge_reference_unknown`，诊断给出场景文件与行；引用 `deprecated` 的条目或规则 → warning `knowledge_reference_deprecated`（不改退出码）
+
+#### S45-AC-08 异常：编号重复
+- **GIVEN** 两个分支各自新增 `core-K01-refund.md` 与 `core-K01-customer-id.md`，或同一条目内两行都是 `K01-R1`
+- **THEN** change-lint violation `knowledge_id_duplicate`（`path` 为本提案涉及的来源，`message` 列出两个来源路径），该 ID 的任何引用都拒绝解析；修复方式是在合并前把本提案的条目显式重编号并同步改写本提案内的引用
+
+#### S45-AC-09 异常：已合并的条目与规则只能退役不能删除
+- **THEN** 针对已合并条目的 `REMOVED` / `REMOVED-ITEMS`，或改变已合并条目文件名中的 KXX → violation `knowledge_removal_forbidden`；退役以把条目或规则标为 `deprecated` 表达，ID 原样保留并继续占号，永不重新分配；本提案自己新增、尚未合并的条目可在合并前自由删除或重编号
+
+#### S45-AC-10 异常：退役 ID 冻结
+- **GIVEN** `K01-R2` 已合并且为 `deprecated`
+- **WHEN** 某提案用 `MODIFIED` 保留文件名、ID 与结构位置，把它改回 `active` 或改写其「规则」「例外」列；或改写已退役条目（含无规则表的术语条目）的标题、元数据、规则行或「说明」中的定义
+- **THEN** change-lint violation `knowledge_retired_id_mutated`，诊断给出 ID、已生效版本路径与 delta 路径；比较对象是当前已生效版本，撤回首次合并已生效的退役同样被拦；仍为 `active` 的规则允许 `MODIFIED` 作为同一规则的修订
+
+#### S45-AC-11 边界：跨分支引用不错绑
+- **GIVEN** 分支 A 把最高号 K01（退款规则）改为 `deprecated`，分支 B 基于旧版本新增引用 K01 的退款场景
+- **THEN** 合并后 K01 仍是原退款条目，B 的引用解析到原条目并告警 deprecated；A 新增的客户编号规则只能取 K02
+
+#### S45-AC-12 边界：原子合并与场景登记
+- **THEN** 知识条目经现行 `openlogos merge` 与场景、`resource_index` 登记、`SPEC_MERGED` 同批原子落盘，不新增落盘事务、不新增 `openlogos knowledge` 命令；新场景 S45 在规格合并提交时登记进 `logos-project.yaml` 的 `scenarios[]`（module `core`、feature `F04`），`scenario_counter.next_id` 推进到 46
+
+#### S45-AC-13 边界：零回归
+- **THEN** 没有 `logos/resources/knowledge/` 目录、场景不写「适用业务约束」章节的项目，各命令输出与 Skill 行为与升级前一致
+
+### 非目标
+
+- 不做语义检索 / 向量库，不接入外部知识源（Confluence、MCP 等）。
+- 不做 `openlogos impact` 按规则反查，不持久化规则 → 场景的反向索引。
+- 不提供 knowledge-curator 自动提炼 Skill（MVP 由现有 Skill 按条目模板提炼）。
+- 不支持物理删除已合并的知识条目或规则；不做保密分级与加密存储。
+- 不修正 S41～S44 的场景登记补录与 `decision_counter` 漂移。
+
+### 追溯
+
+- 功能规格：§2.102；架构：「五十七、企业知识资源：类别注册、有效知识视图与引用校验」。
+- 场景：`core-S45-enterprise-knowledge.md`；相关场景 S09（变更提案与原子合并）、S18（资源索引补录）、S35（change-lint）、S37（条目守恒门）。
+- 规范：`spec/directory-convention.md`、`spec/change-management.md`、`spec/cli-json-output.md` §3.15。
+- 测试：`core-S45-test-cases.md`；安装态 smoke：`core-smoke-test-cases.md`「OpenLogos 0.16.17 企业知识安装态 smoke（SMOKE-core-318～320）」。

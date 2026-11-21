@@ -3191,3 +3191,60 @@ sequenceDiagram
 - 同步对清单之外的文件不做任何取舍：要么是 git 的合并结果，要么是登记表条目合并的结果。
 - 同步不会让过期的验收或交付结论继续有效：只要引入了主分支的提交就清除标记。
 - 同步不删除、不改写任何基线运行材料与部署记录。
+
+## 五十七、企业知识资源：类别注册、有效知识视图与引用校验
+
+> 来源变更：enterprise-knowledge-base（决策 C01～C06；proposal-r1 F1～F5、r2 F1/F4、r3 F4 处置）。功能规格见 §2.102；场景见 `core-S45-enterprise-knowledge.md`。
+
+### 57.1 目标与边界
+
+- 新增一类规格资源 `logos/resources/knowledge/`（企业知识条目），让场景能按 `KXX` / `KXX-Rn` 引用企业规则，并由 change-lint 校验引用、重号、禁止删除与退役 ID 冻结。
+- **复用现行原子合并**：知识条目只作为新的 delta / 规范目标类别接入 `openlogos merge` 的 `mergeDirect`，与场景、`resource_index` CREATE 登记、`SPEC_MERGED` 同批一次原子提交。不复用 S38 `applyDecisionRecords` 的独立落盘事务（它没有现行命令调用点，且自行写 `SPEC_MERGED`），不新增第二套写入与恢复边界。
+- 不设编号计数器：编号在编写 delta 时确定，由准入在完整有效知识集合上校验唯一性。计数器在分支并行时只取较大值，防不了重号。
+- 不新增 CLI 命令，不改 merge-executor 的职责。
+
+### 57.2 组件
+
+| 组件 | 变化 |
+|---|---|
+| `cli/src/lib/delta-classify.ts` | `DELTA_TO_RESOURCE` 新增 `knowledge → logos/resources/knowledge` |
+| `cli/src/lib/proposal-lifecycle.ts` 的 `MERGE_SUPPORTED_DELTA_DIRS`、`cli/src/lib/flow-derive.ts` 的 `MERGE_SUPPORTED_DELTA_DIRS_FOR_UI` | 新增 `knowledge`（与 `DELTA_TO_RESOURCE` 同源维护，一致性由回归测试锚定） |
+| `cli/src/lib/canonical-target.ts` 的 `classifyCanonicalTargetCategory` | `logos/resources/knowledge/` 归类为 `knowledge`；`mergeDirect` 对 CREATE 的知识条目照常登记 `resource_index` |
+| `cli/src/lib/knowledge-view.ts`（新增） | 有效知识视图：按 change-lint 既有阶段判定选取合成前态（磁盘 / 合并基线 / 已落盘），复用合并期同一合成器得到候选后态，解析条目结构有效性、元数据、条目 ID 与规则 ID，输出结构、重号、退役与前后态比对所需的数据 |
+| `cli/src/lib/change-lint.ts` | 新增 5 个 violation（`knowledge_reference_unknown`、`knowledge_id_duplicate`、`knowledge_removal_forbidden`、`knowledge_retired_id_mutated`、`knowledge_entry_invalid`）与 1 个 warning（`knowledge_reference_deprecated`）；S37 ID 注册表新增 `KXX` / `KXX-Rn`，作用范围限 `logos/resources/knowledge/` |
+| `cli/src/lib/sync-resource-index.ts` | 扫描范围新增 `logos/resources/knowledge/`，补录 initial 阶段直接写入的条目 |
+| `cli/src/commands/init.ts` | 脚手架新增 `logos/resources/knowledge/` 与 `logos/resources/reference/knowledge/` |
+
+### 57.3 有效知识视图
+
+```text
+phase     = priorStateOf 的既有阶段判定（change-lint.ts，与依赖前态的其他检查、merge 准入同判）
+live      = parse(当前磁盘 logos/resources/knowledge/*.md)                     # 已生效版本
+before    = 未合并 → 当前磁盘；待应用修正 → 合并基线 amendCtx.beforeOf(target)；已合并且无修正 → 不合成
+candidate = 未合并 / 待应用修正 → synthesize(before, deltas/knowledge/*)       # 与 mergeDirect / merge-amend 同一合成器与目标集合
+            已合并且无修正 → live（delta 已应用，不重放）
+entries   = { KXX → [path…], valid, meta, rules: { KXX-Rn → [row…] } }
+```
+
+- 「待应用修正」的目标集合与 `merge-amend` 的重组 / 新增 / 恢复三类一致：撤回的 MODIFY 目标以合并基线内容作为候选后态。
+- 已合并且无修正时直接读落盘文档，首次合并的整文件 ADDED 不会被当成对已存在目标的 CREATE 而判 `invalid-envelope`。
+
+- 同一 KXX 对应多个路径、同一 KXX-Rn 对应多行 → 记为重号，解析时返回「歧义」而非某一条。
+- 结构无效的条目（缺 H1 / 元数据 / 必填字段，或 `type=rule` 无规则表）`valid=false`：保留路径与 KXX 参与重号判定，解析时返回「无效」，不作为引用目标。
+- 有效场景视图按同一阶段规则计算，只从「适用业务约束」章节表格首列提取引用。
+- Skill 设计时加载与 change-lint 引用解析共用这一视图；merge 写入前执行的 change-lint 准入因此能接受同批新增条目被新场景引用。
+
+### 57.4 校验与前后态比对
+
+0. **结构**：本提案新增或修改的条目在 candidate 中结构无效 → `knowledge_entry_invalid`（点名缺失项）。判据为功能规格 §2.102.3 的穷尽清单，含 `tags`、`source` 的 `path`（仓库相对、规范化并解析 symlink 后落在 `logos/resources/reference/knowledge/` 内且文件存在，归属判定复用 `canonical-target.ts` 的 `existingPathContained` / `contained`）与 `version`，以及规则表逐行 ID 与状态格式；`knowledge-view.ts` 对设计加载与准入输出同一份有效性结论。
+1. **删除拦截**（未合并 / 待应用修正阶段）：扫描 `deltas/knowledge/` 中针对 live 已有目标的 `REMOVED` / `REMOVED-ITEMS`；并比较 live 与 candidate，live 中的 KXX 在 candidate 中路径改变或消失、live 中的 KXX-Rn 在 candidate 中消失（含 `MODIFIED` 漏抄规则行的隐式删除）→ `knowledge_removal_forbidden`。本提案 ADDED、尚未生效的目标不受限。
+2. **退役冻结**（未合并 / 待应用修正阶段）：对 live 中 `status=deprecated` 的条目，比较 live 与 candidate 中该条目的 H1、「元数据」、「规则」表全部行与「说明」节正文；对 live 中「状态」为 `deprecated` 的规则行，比较「规则」「状态」「例外」三列。任一不逐字相等 → `knowledge_retired_id_mutated`。比较对象是 live（当前已生效），不退回合并基线，故撤回首次合并已生效的退役同样被拦。不新增历史登记表。
+3. **重号**：本提案触及知识时，对 candidate 全集检查；本提案场景引用到的 ID 若在 candidate 中重号，同样报出 → `knowledge_id_duplicate`（`path` 为本提案涉及的来源，`message` 列出两个来源路径）。
+4. **引用解析**：本提案触及的场景目标中的每个引用，在 candidate 中解析：不存在或目标结构无效 → `knowledge_reference_unknown`；歧义 → 只报 `knowledge_id_duplicate`；已退役 → `knowledge_reference_deprecated`。本提案退役的条目 / 规则若仍被有效场景视图引用，同样告警。
+
+### 57.5 兼容性与不变量
+
+- L10 启用条件：有 `deltas/knowledge/`，或场景 delta 含「适用业务约束」章节，或待应用修正的目标集合（含恢复集合）含 `logos/resources/knowledge/` 下的目标。三者都不满足时 `knowledge-view.ts` 不被调用，change-lint 与 merge 的输出与升级前逐字节一致。撤回最后一个知识 delta 并删除空目录后，恢复集合中的知识目标仍触发 L10，诊断 `path` 用实际恢复的规范目标路径。
+- `DELTA_TO_RESOURCE`、两处合并白名单与 `classifyCanonicalTargetCategory` 必须同时含 `knowledge`；缺任一处由回归测试失败暴露。
+- 原始资料目录 `logos/resources/reference/knowledge/` 沿用 `reference/` 的 guard 默认豁免，不进 delta 类别（`deltas/reference/` 仍为显式忽略）。
+- 计数器与 `logos-project.yaml` 结构不变；S45 的 `scenarios[]` 登记与 `scenario_counter.next_id=46` 随规格合并提交写入。

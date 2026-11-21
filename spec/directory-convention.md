@@ -196,3 +196,19 @@ PreToolUse guard hook 脚本。在 Claude Code 调用 Edit/Write/Bash 工具前�
 | `logos/resources/context/` | 额外的 AI 上下文文件 |
 | `docs/` | 面向用户的文档（部署文档、使用手册等） |
 | `scripts/` | 开发脚本 |
+
+## logos/resources/knowledge/（S45，enterprise-knowledge-base）
+
+顶层企业知识目录（与 `prd/`、`api/`、`database/`、`test/`、`decisions/` 平级），存放从企业资料提炼出的**知识条目**：业务规则、术语、外部系统约束、合规要求与业务流程。它们不是某一次需求的内容，而是设计必须遵守或参照的既有事实；场景按 `KXX` / `KXX-Rn` 引用它们。规则权威：功能规格 §2.102。
+
+- **文件命名**：`<module>-KXX-<slug>.md`（如 `core-K03-refund-approval.md`）。KXX 在编写 delta 时取「有效知识视图中最大 KXX（含 `deprecated` 条目）+ 1」，不设计数器；准入时校验唯一性。
+- **文档结构**：H1 以 KXX 开头；首节「元数据」用 YAML 给出 `type`（`rule` / `term` / `external-system` / `compliance` / `process`）、`scope`（`global` / `module`）、`module`、`tags`、`status`（`active` / `deprecated`）、`source`（原文仓库相对路径与版本）；`type=rule` 的条目有「规则」表，首列为规则 ID `KXX-Rn`，另有「状态」「例外」列。
+- **产出通道**：普通规格 delta——`deltas/knowledge/` 映射到 `logos/resources/knowledge/`（`DELTA_TO_RESOURCE`、合并类别白名单与目标分类器同源维护），由 `openlogos merge` 与场景、`resource_index` 登记、`SPEC_MERGED` 同批原子落盘；**不新增 `openlogos knowledge` CLI 命令**。initial 项目可直接写入。
+- **结构有效性**：H1 以 KXX 开头、「元数据」可解析且 `type` / `scope` / `status` 合法、`tags` 非空、`source` 每项有指向 `logos/resources/reference/knowledge/` 内现存原文文件的相对 `path`（规范化与 symlink 解析后判定，目录外的仓库文件如 `README.md` 不算）与非空 `version`、`type=rule` 时规则表每一行都是本条目的 `KXX-Rn`，才是可被引用的有效条目；本提案新增或修改的条目结构无效会被 change-lint 拒绝。
+- **退役而非删除**：已合并的条目与规则不允许删除，退役以把状态改为 `deprecated` 表达；文件名与 ID 原样保留、继续占号，永不重新分配；退役条目整体冻结（含「说明」中的定义），退役规则行的规则、状态与例外冻结。
+- **resource_index 收录**：`openlogos merge` 对 CREATE 的条目自动登记；`openlogos sync` / `index` 的扫描纳入 `knowledge/`，补录直接写入的条目。Skill 检索读取条目「元数据」，不依赖 `resource_index` 的描述。
+- **守恒保护（承 S37）**：`KXX` 与 `KXX-Rn` 纳入条目守恒 ID 注册表，作用范围限本目录；场景文档中引用表首列的 KXX 不是场景文档自身的条目 ID。
+
+### logos/resources/reference/knowledge/（S45）
+
+企业原始资料（制度原文、接口说明、术语表等）的存放处，是 `reference/` 的子目录，沿用 `reference/` 的 guard 默认豁免：直接写入，不经 delta（`deltas/reference/` 仍为显式忽略）。原始资料与知识条目都进入 git 仓库；AI 写入原文时必须提示「原文将随仓库 push 扩散，push 前请确认可公开范围」。知识条目的 `source` 以仓库相对路径指向这里的文件并注明版本。`openlogos init` 创建本目录与 `logos/resources/knowledge/`；升级前已初始化的项目没有这两个目录时，首次录入由 AI 直接创建原文目录，`logos/resources/knowledge/` 由首次合并知识 delta 时创建。

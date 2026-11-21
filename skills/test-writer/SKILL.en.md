@@ -254,3 +254,39 @@ The following prompts can be copied directly for AI use:
 每个 fact 至少覆盖 authority happy path、stale projection、conflicting old copy、legacy/concurrent writer、response lost + new-process restart、projection rebuild、cutover rollback、forbidden reverse inference。确实不可发生的维度必须引用架构不变量给证据，不能静默省略。
 
 断言必须证明最终 decision/恢复来源是 authority identity/action；故意让投影与权威值不同，restart 必须启新进程并保留旧残留。所有自动化 UT/ST/smoke 使用真实 ID 并接入 OpenLogos reporter；漏任一 required 维度时测试规格不完成。
+
+## Load relevant enterprise knowledge (S45)
+
+> Source change: enterprise-knowledge-base (S45). Rule authority: feature spec §2.102; directory convention: `spec/directory-convention.md` "logos/resources/knowledge/". There is only one skip condition: the project has no knowledge entries, the active proposal has no `deltas/knowledge/`, **and the user has not provided enterprise material in this turn** — then skip this section; all other steps are unchanged.
+
+### Intake entry point (runs before loading, not subject to the skip condition)
+
+When the user provides enterprise material to capture in this turn (policy text, interface notes, glossaries, etc.), capture first and load afterwards, even if the project has no `logos/resources/knowledge/`, `logos/resources/reference/knowledge/` or `deltas/knowledge/` yet (for example a project launched before this upgrade, capturing knowledge for the first time):
+
+1. If `logos/resources/reference/knowledge/` does not exist, create it and write the original material there (guard-exempt by default, not via delta), and tell the user: "the original will spread with the repository on push; confirm what may be published before pushing".
+2. Launched projects: have change-writer plan `deltas/knowledge/<module>-KXX-<slug>.md` in the `[delta]` section of `tasks.md` and reserve the KXX (the highest KXX in the effective knowledge view, including `deprecated`, + 1; K01 when the view is empty), then write the knowledge delta; `logos/resources/knowledge/` is created by the merge. Initial projects: write `logos/resources/knowledge/<module>-KXX-<slug>.md` directly from the entry template (creating the directory if missing).
+3. Entries must be structurally valid: the H1 starts with the KXX; the "元数据" YAML has valid `type`, `scope`, `status` (plus `module` when `scope: module`), a non-empty `tags` list, and a non-empty `source` list whose items each give the repository-relative `path` of the original (the file written to `logos/resources/reference/knowledge/` in step 1, which must exist; a repository file outside that directory, such as `README.md`, is invalid) and a non-empty `version`; `type: rule` entries have a "规则" table in which every row's first column is this entry's `KXX-Rn` and whose "状态" is `active` or `deprecated`. change-lint rejects entries with missing items or malformed rule rows with `knowledge_entry_invalid`.
+4. After intake, load from the effective knowledge view as below; entries captured in the same proposal can be cited immediately.
+
+### Effective knowledge view
+
+Load from the **effective knowledge view**: the candidate after-state of knowledge entries from the active proposal's point of view. Before the proposal is merged, it is the on-disk `logos/resources/knowledge/*.md` with this proposal's `deltas/knowledge/` applied; once merged with no pending amendment, read the on-disk entries directly (the deltas are already applied and are not replayed); with a pending amendment, apply the amended deltas to the merge baseline. Only the current proposal counts; never other proposals or the archive. Entries added in the same proposal and not yet merged are in effect.
+
+### Loading steps
+
+1. List every entry in the view and read only its "元数据" (metadata) section (YAML: `type`, `scope`, `module`, `tags`, `status`, `source`).
+2. Filter: entries with `scope: global` always match; entries with `scope: module` match only when `module` equals the current module; then narrow by `tags` relevant to the current requirement or scenario. Do not rely on `resource_index` descriptions; no semantic search.
+3. Read the full text of matching entries. For `type: rule` entries, the `active` `KXX-Rn` rows of the rules table are binding; `deprecated` entries or rules are background only and must not justify new design.
+4. If one KXX appears in two files, or an Rn repeats within one entry, do not resolve that ID; ask the user to fix the duplicate first (change-lint reports `knowledge_id_duplicate`).
+5. Do not rely on structurally invalid entries (missing H1, metadata or required fields); ask the user to complete them first (change-lint reports `knowledge_entry_invalid`, and citing one reports `knowledge_reference_unknown`).
+
+### Cite the basis and handle conflicts
+
+- Wherever output is constrained by enterprise knowledge, cite the `KXX` or `KXX-Rn` it relies on.
+- When a requirement or design conflicts with an `active` rule, **do not hard-block and do not silently pick a side**: list the conflict (rule ID, conflicting point, options: comply / exception for this change / rule needs updating), stop and ask the user, one decision at a time. If the user rules "exception for this change", record the reason in the "例外" (exception) column of the scenario's "适用业务约束" (applicable business constraints) section; if "rule needs updating", hand it to change-writer to plan a knowledge delta.
+
+### When this Skill loads and what it outputs
+
+- **When**: before designing UT / ST cases, read the `KXX-Rn` / `KXX` cited in the scenario's "适用业务约束" section and load the corresponding entries from the effective knowledge view.
+- **Derive cases from `KXX-Rn`**: every cited `active` rule gets at least one positive case (a path satisfying the rule) and one negative case (a path where the rule must constrain, e.g. amounts above 5000 must enter second review); each item in a rule's "例外" column gets its own case. For terms or external-system entries cited as `KXX`, build test data according to their definitions.
+- **Mark the knowledge source**: note the basis in the case "描述" (e.g. "per K03-R1"); for rules with a recorded exception in the scenario, design for the post-exception behaviour and say so.

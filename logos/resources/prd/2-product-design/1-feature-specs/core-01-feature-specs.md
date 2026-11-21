@@ -5782,3 +5782,168 @@ manifest 判定实质身份（`spec/test-slice-manifest.md` §6.1）只在 `veri
 - 不按全量耗时自动判定范围（耗时随机器负载波动）；不按「触达场景的全部既有用例」划范围（大场景上等于近全量）。
 - 不新增 CLI 参数；不改 checkpoint 账本格式与采信规则。
 - 宿主侧 runner 选文件、派发提示词与代码评审顺序归 RunLogos 提案 `driver-efficient-verify-mode`。
+
+## 2.102 企业知识沉淀与场景引用（S45）
+
+> 来源变更：enterprise-knowledge-base（决策 C01～C06；proposal-r1 F1～F5、r2 F1/F4、r3 F4 处置）。需求见 `core-01-requirements.md`「S45: 企业知识沉淀与场景引用」；场景见 `core-S45-enterprise-knowledge.md`；目录约定见 `spec/directory-convention.md`「logos/resources/knowledge/」；change-lint 机器契约见 `spec/cli-json-output.md` §3.15。
+
+### 2.102.1 问题
+
+规格链（需求 → 产品设计 → 场景 → API/DB → 测试）只承载「本次要做什么」，没有承载「企业既有、必须遵守的规则」的一等资源。`logos/resources/reference/` 只是素材堆放区：无编号、不可引用、Skill 不读取；`logos/resources/decisions/` 记录的是本项目研发中的设计取舍，不是外部既定的事实与约束。结果是 AI 设计的流程「看起来对、实际违规」，规则下一次迭代即丢失，规则变化时无法反查受影响场景。
+
+### 2.102.2 资源与目录
+
+| 位置 | 内容 | 写入方式 |
+|---|---|---|
+| `logos/resources/knowledge/<module>-KXX-<slug>.md` | 提炼后的知识条目（规格资源，受 guard 保护） | launched 项目经 `deltas/knowledge/` → `openlogos merge`；initial 项目可直接写 |
+| `logos/resources/reference/knowledge/` | 企业原始资料（制度原文、接口说明等） | 直接写入（`reference/` 为 guard 默认豁免目录，不经 delta） |
+
+- 新 delta 类别 `knowledge` 映射 `deltas/knowledge/ → logos/resources/knowledge/`，与既有类别一起维护在 `DELTA_TO_RESOURCE`、两处合并类别白名单与 `classifyCanonicalTargetCategory`（类别名 `knowledge`）中。
+- 原始资料与条目都进入 git 仓库（决策 C05）。AI 写入原文时必须提示「原文将随仓库 push 扩散，push 前请确认可公开范围」。
+- `openlogos init` 创建 `logos/resources/knowledge/` 与 `logos/resources/reference/knowledge/` 两个空目录。
+
+### 2.102.3 条目结构
+
+每个条目是一份 Markdown 文档，固定结构如下：
+
+````markdown
+# K03：退款审批规则
+
+## 元数据
+
+```yaml
+type: rule                 # rule | term | external-system | compliance | process
+scope: module              # global | module
+module: core               # scope=module 时必填
+tags: [退款, 审批]
+status: active             # active | deprecated
+source:
+  - path: logos/resources/reference/knowledge/finance-refund-policy-v3.md
+    version: v3（2026-10）
+```
+
+## 规则
+
+| ID | 规则 | 状态 | 例外 |
+|---|---|---|---|
+| K03-R1 | 单笔退款金额大于 5000 元时必须经财务二审 | active | 无 |
+| K03-R2 | 退款原路返回，不得退到其他账户 | active | 原支付渠道已注销时转人工处理 |
+
+## 说明
+（背景、术语定义、外部系统现状等自由文本）
+````
+
+- **身份**：条目 ID 以文件名中的 `KXX` 为准，H1 标题以同一 `KXX` 开头；规则 ID 是「规则」表首列中以本条目 `KXX-` 为前缀的 `KXX-Rn`。
+- **type**：只有 `type=rule` 的条目要求「规则」表，且每条规则必须可判定（能回答「某个设计是否违反它」）。`term`、`external-system`、`compliance`、`process` 条目可以只有「说明」，场景用条目级 `KXX` 引用。
+- **scope**：`global` 的条目在任意模块的设计中都被加载；`module` 的条目只在 `module` 字段所指模块中加载。
+- **status**：条目级 `status` 与规则行的「状态」列取值都只有 `active` / `deprecated`。
+- 条目结构不含本体建模字段（决策 C02）。
+- **结构有效性**：条目满足以下全部条件才是**有效条目**（该清单为穷尽判据，设计加载与合并准入共用）：①H1 以文件名中的同一 KXX 开头；②有「元数据」节且其中 YAML 可解析；③`type`、`scope`、`status` 齐全且取值合法，`scope=module` 时 `module` 非空；④`tags` 是非空的字符串列表；⑤`source` 是非空列表，每项有 `path` 与 `version`：`path` 为仓库相对路径（不以 `/` 开头、不含 `..`），规范化并解析真实路径（含 symlink）后必须落在 `logos/resources/reference/knowledge/` 之内，且指向该目录下存在的普通文件（路径归属判定复用 `canonical-target.ts` 的 `existingPathContained` / `contained`），`version` 为非空字符串；⑥`type=rule` 时有「规则」表，且表中**每一行**首列都是以本条目 KXX 为前缀的 `KXX-Rn`、「状态」列为 `active` 或 `deprecated`——混入错误前缀或格式不符的行即整个条目无效（不是只忽略该行）。本提案新增或修改的条目不满足时判 violation `knowledge_entry_invalid`（诊断点名缺失项），合并被拒。已合并的存量条目不满足时，仍以文件路径与 KXX 进入视图，参与重号判定与诊断，但**不是有效引用目标**：场景引用它判 `knowledge_reference_unknown`，`message` 注明「目标条目结构无效」；Skill 加载时同样不把它作为依据。
+
+### 2.102.4 编号与唯一性
+
+- **定号时机**：KXX 在编写 delta 时由 writer 确定，写入文件名与标题，不设计数器。取「有效知识视图中最大 KXX + 1」，统计含 `deprecated` 条目；条目内新规则取「本条目最大 Rn + 1」，统计含 `deprecated` 规则。
+- **规划期预定**：用户在规划阶段已提供、尚未形成 delta 的资料，由 change-writer 在 `tasks.md` 的 `[delta]` 中规划对应 `deltas/knowledge/` 任务并预定 KXX；进入规格编写时按该 ID 引用。
+- **唯一性**：有效知识集合内两个文件使用同一 KXX，或同一条目内重复 Rn，判 violation `knowledge_id_duplicate`，列出两个来源路径，该 ID 的任何引用都拒绝解析（既不按 unknown 也不按存在处理）。修复方式：在合并前把本提案新增的条目显式重编号，并同步改写本提案内的引用。
+
+### 2.102.5 退役：不删除、不复用、不改写
+
+- **不删除**：已合并的条目与规则不允许物理删除。针对已合并条目的 `REMOVED`、`REMOVED-ITEMS`，改变已合并条目文件名中的 KXX，以及已合并的条目或规则在合成结果中消失（含 `MODIFIED` 漏抄规则行的隐式删除），判 violation `knowledge_removal_forbidden`。本提案自己新增、尚未合并的条目不受限，可在合并前自由删除或重编号。
+- **退役**：条目退役把元数据 `status` 改为 `deprecated`；规则退役把规则行「状态」列改为 `deprecated`。文件名、KXX、KXX-Rn 原样保留并继续占号，因此「最大号 + 1」永不重新分配已用编号。
+- **冻结**：合并准入时对照当前已生效版本（见 §2.102.6）与候选后态。冻结范围：
+  - **退役条目**（元数据 `status: deprecated`）：整个条目冻结——H1 标题、「元数据」、「规则」表的全部行、「说明」节正文（术语与外部系统条目被 `KXX` 引用时，其定义就在这里）都必须与已生效版本逐字一致。
+  - **退役规则**（规则行「状态」为 `deprecated`）：该规则行的「规则」「状态」「例外」三列都必须与已生效版本逐字一致；同条目其他 `active` 规则不受影响。
+  - 重新激活或改写上述任一内容判 violation `knowledge_retired_id_mutated`，诊断给出 ID、已生效版本路径与 delta 路径。新的业务规则一律使用新 ID。
+- **修订**：仍为 `active` 的规则允许 `MODIFIED` 作为同一规则的修订（如阈值 5000 → 8000）。语义已变成另一条规则时，Skill 规定必须新开 ID 并退役旧 ID。
+- 退役条目或规则仍被引用只产生 warning `knowledge_reference_deprecated`。
+
+### 2.102.6 有效知识视图
+
+有效知识视图是当前提案视角下知识条目的候选后态。它沿用 change-lint 既有的合并阶段判定（与依赖前态的其他检查同一套 `priorStateOf` 语义、与 merge 准入同判），按提案所处阶段计算，不把已应用的 delta 重放到已落盘文档上：
+
+| 阶段 | 判定 | 合成前态 | 候选后态 | 禁止删除 / 退役冻结的比较对象 |
+|---|---|---|---|---|
+| 首次合并前 | 提案无 `SPEC_MERGED` | 当前磁盘上的 `logos/resources/knowledge/` | 前态叠加 `deltas/knowledge/` 每个目标的唯一有效 delta | 当前磁盘（即已生效版本） vs 候选后态 |
+| 已合并、无待应用修正 | 有 `SPEC_MERGED`，delta 摘要与已合并摘要相同（或无合并基线） | 不合成 | 直接读已落盘文档（delta 已应用，不重放） | 不比较（无待写入内容） |
+| 待应用修正 | 有 `SPEC_MERGED`、有合并基线且 delta 摘要 ≠ 已合并摘要 | 现有合并基线（`resolvePendingAmendContext` 的 `beforeOf`） | 合并基线叠加修正后的 delta，目标集合与 `merge-amend` 的重组 / 新增 / 恢复集合一致（含撤回 MODIFY 时恢复基线内容；恢复目标即使已没有任何 delta 文件、甚至 `deltas/knowledge/` 已被删除，也纳入比较） | 当前磁盘上已生效的知识 vs 候选后态（不退回合并基线比较，避免漏掉首次合并已生效的退役） |
+
+- 首次合并时整文件 ADDED 的条目，在「已合并、无待应用修正」阶段直接读落盘文档，不会因重放从 CREATE 变成 MODIFY；同一提案后续对它的修正按「待应用修正」以合并基线计算，校验出的后态与 `merge-amend` 实际写入一致。
+
+- Skill 设计时加载与 change-lint 引用解析**共用**这一视图，所以同一提案内新录入的条目可被同批新场景引用，merge 准入（`openlogos merge` 写入前执行的 change-lint）不被阻断。
+- 有效场景视图 = 场景文档的候选后态，用于引用解析与退役告警。
+- 有效场景视图按同一阶段规则计算。
+- 视图只叠加当前提案的 delta，不叠加其他提案、archive 或 baseline staging。
+
+### 2.102.7 场景引用
+
+场景文档新增可选章节 `## 适用业务约束`，固定为表格：
+
+| 引用 | 作用位置 | 说明 | 例外 |
+|---|---|---|---|
+| K03-R1 | Step 4「提交退款」；EX-12.2 | 金额大于 5000 元时走财务二审分支 | 无 |
+| K05 | Step 2「计算结算日」 | 「结算日」按银行清算日历取值 | 无 |
+
+- 首列是 `KXX`（条目级）或 `KXX-Rn`（规则级）引用；两种引用走同一校验入口。
+- 「例外」列记录用户裁决的本次例外及理由（见 §2.102.9）；没有例外写「无」。
+- 场景与知识的关联以场景侧为唯一事实源，知识条目不反写场景列表。
+
+### 2.102.8 Skill 加载规则
+
+| Skill | 加载时机 | 产出要求 |
+|---|---|---|
+| prd-writer | 写需求与验收条件前 | 验收条件涉及规则时写明依据的 `KXX` / `KXX-Rn` |
+| product-designer | 写功能规格与交互前 | 交互与规则冲突时列出冲突并停下询问 |
+| scenario-architect | Step 1 加载场景上下文时 | 场景文档写「适用业务约束」章节；时序与异常分支体现被引用规则 |
+| change-writer | 事实扫描时；用户提供新资料时 | 冲突写入 `clarification@1` 未决队列；新资料规划 `deltas/knowledge/` 任务并预定 KXX；原文写入 `reference/knowledge/` 并提示扩散风险 |
+| test-writer | 设计 UT / ST 前 | 从场景引用的 `KXX-Rn` / `KXX` 派生用例，在用例描述中标注知识来源 |
+
+- **录入入口不受「无知识则跳过」影响**：Skill 先判断本轮用户是否提供了待沉淀的企业资料。提供了就进入录入分支——即使项目还没有 `logos/resources/knowledge/`、`logos/resources/reference/knowledge/` 与 `deltas/knowledge/`（如升级前就已 launched 的存量项目首次录入）：缺失的原文目录直接创建并写入原文、提示扩散风险；launched 项目由 change-writer 规划知识 delta 并预定编号（首个条目为 K01），initial 项目直接按模板写 `logos/resources/knowledge/`；录入完成后再加载。只有「项目没有任何知识条目、本提案没有知识 delta、且本轮用户没有提供资料」时才跳过加载。
+- 加载方式：在有效知识视图上读取每个条目的「元数据」，按当前模块、`scope` 与 `tags` 筛选，再读取命中条目全文。不依赖 `resource_index` 的 desc（现行合并对 CREATE 目标写通用描述），不引入语义检索。
+- 视图中存在 `knowledge_id_duplicate` 时，Skill 不得解析该 ID，先提示用户修复重号；结构无效的条目不作为依据，先提示用户补齐元数据。
+
+### 2.102.9 冲突裁决
+
+需求或设计与某条规则冲突时，AI 不硬阻断、不静默取舍（决策 C04）：
+
+1. change-writer 把冲突写入 proposal 的 `clarification@1` 未决队列，一次只问一个决定；
+2. prd-writer / product-designer / scenario-architect 在产出中列出冲突（规则 ID、冲突点、可选处理）并停下询问；
+3. 用户裁决「本次例外」时，在场景「适用业务约束」的「例外」列记录理由；裁决「规则已过时」时，按 §2.102.5 规划知识 delta（修订或退役后新开 ID）。
+
+不新增门禁，不新增 flow 节点。
+
+### 2.102.10 change-lint 校验
+
+| 检查 | 范围 | 结果 |
+|---|---|---|
+| 引用不存在 | 本提案触及的场景目标中「适用业务约束」的引用 | violation `knowledge_reference_unknown`（诊断给出场景文件与行） |
+| 引用已退役 | 同上，以及引用本提案退役条目 / 规则的有效场景 | warning `knowledge_reference_deprecated`（不改退出码） |
+| 编号重复 | 本提案触及知识时的完整有效知识集合；以及本提案场景引用到的 ID | violation `knowledge_id_duplicate` |
+| 删除已合并条目 / 规则 | 本提案 `deltas/knowledge/` | violation `knowledge_removal_forbidden` |
+| 退役 ID 被改写 | 本提案 `deltas/knowledge/` 的候选后态对照已生效版本 | violation `knowledge_retired_id_mutated` |
+| 条目结构无效 | 本提案新增或修改的条目 | violation `knowledge_entry_invalid` |
+
+- 各检查的前态与候选后态按 §2.102.6 的阶段规则计算；「已合并、无待应用修正」阶段只做引用解析与重号，不比较删除与冻结。
+- L10 的启用条件：本提案有 `deltas/knowledge/`，或本提案场景 delta 含「适用业务约束」章节，或提案处于待应用修正阶段且修正目标集合（`merge-amend` 的重组 / 新增 / 恢复三类）含 `logos/resources/knowledge/` 下的目标——撤回最后一个知识 delta、删除空的 `deltas/knowledge/` 目录后，被恢复为合并基线内容的知识目标仍在恢复集合中，照常比较当前已生效版本与候选后态。三者都不满足时 L10 不执行，change-lint 输出与升级前一致。
+- 恢复目标没有对应的 delta 文件，其诊断的 `path` 使用实际恢复的规范目标路径（`logos/resources/knowledge/<module>-KXX-<slug>.md`）。
+- KXX 与 KXX-Rn 纳入 S37 条目守恒 ID 注册表，作用范围限 `logos/resources/knowledge/` 下的文档；场景文档中引用表首列的 KXX 不作为场景文档自身的条目 ID。
+
+### 2.102.11 合并与登记
+
+- 知识条目经现行 `openlogos merge`（`mergeDirect`）与场景、`resource_index` 的 CREATE 登记、`SPEC_MERGED` 同批一次原子提交；不新增落盘事务，不新增 `openlogos knowledge` 命令，merge-executor 职责不变（只读复核与交接）。
+- `openlogos sync` / `openlogos index` 的资源索引扫描纳入 `logos/resources/knowledge/`，使 initial 阶段直接写入的条目也能补录进 `resource_index`。
+- 新场景 S45 在规格合并提交时登记进 `logos/logos-project.yaml` 的 `scenarios[]`（module `core`、feature `F04`），`scenario_counter.next_id` 推进到 46。
+
+### 2.102.12 非目标
+
+- 不做语义检索 / 向量库，不接入外部知识源。
+- 不做 `openlogos impact` 按规则反查，不持久化规则 → 场景反向索引。
+- 不提供 knowledge-curator 自动提炼 Skill。
+- 不支持物理删除已合并的知识条目或规则；不做保密分级与加密存储。
+- 不对全仓既有场景做引用全量扫描，只校验本提案触及的范围（§2.102.10）。
+
+### 2.102.13 追溯
+
+- 需求：「S45: 企业知识沉淀与场景引用」S45-AC-01～S45-AC-13。
+- 场景：`core-S45-enterprise-knowledge.md`。
+- 架构：「五十七、企业知识资源：类别注册、有效知识视图与引用校验」。
+- 测试：`core-S45-test-cases.md`；安装态 smoke：SMOKE-core-318～SMOKE-core-320。

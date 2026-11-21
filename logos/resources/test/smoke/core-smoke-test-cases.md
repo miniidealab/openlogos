@@ -2892,3 +2892,38 @@ SMOKE-core-21 / 23 的既有认领者是 `website/scripts/smoke-releases.mjs`（
 - 全局 CLI 子进程由 runner 设时限（不超过 120 秒）；超时判 fail 并在证据中写明，不得重试后写 pass。
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-315～SMOKE-core-317 均被 runner 覆盖。
+
+## OpenLogos 0.16.17 企业知识安装态 smoke（SMOKE-core-318～320）
+
+> 这组用例验证本提案 enterprise-knowledge-base 的能力在本机全局安装态中以 0.16.17 的身份可用：`knowledge` delta 类别注册并经 `openlogos merge` 与场景同批落盘（场景 S45「S45：企业知识沉淀与场景引用」Step 3～11，功能规格 §2.102.2、§2.102.11），以及 change-lint 的知识引用、重号与退役校验（§2.102.10）。完整行为已由仓库内 UT-S45-01～UT-S45-20、ST-S45-01～ST-S45-05 覆盖；安装态只取证三件事：装上的是本次候选且包内带着新能力、全局 CLI 能把预定编号的知识条目与场景同批合并并登记索引、全局 CLI 的 change-lint 按规则报出知识诊断。
+>
+> 用例在 `mktemp -d` 一次性 git 项目内执行：经全局 `openlogos init` 建立项目，写入夹具（单模块 `core` 为 `launched`；已合并知识条目 `core-K01-refund.md`，其中 K01-R1 为 `active`、K01-R2 为 `deprecated`）并提交，再经全局 `openlogos change` 创建一次性提案。runner 以子进程调用全局 CLI，对全局安装态**只读**，不做安装或卸载；不触碰本仓活跃提案、本仓 `logos/resources/`（结果账本除外）、本仓运行态目录与用户其他仓库（包括 runlogos）。版本以部署记录与 `cli/src/lib/local-release-candidate.ts` 的候选版本为准，断言写成关系式，不硬编码 `0.16.17`。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-318 | 安装态版本与制品身份 | 本机全局已安装本次候选；部署记录中有候选版本 | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 以 `import` 加载包内 `dist/lib/delta-classify.js` 与 `dist/lib/knowledge-view.js`；④ 读取包内 `skills/scenario-architect/SKILL.md` 与 `spec/directory-convention.md`；⑤ 在一次性目录执行全局 `openlogos init` | ① `--version` 等于部署记录候选版本，入口无 workspace link；② `payloadHash` 自洽；③ `DELTA_TO_RESOURCE.knowledge === 'logos/resources/knowledge'`，`knowledge-view.js` 可加载；④ `SKILL.md` 含「适用业务约束」，`directory-convention.md` 含「logos/resources/knowledge/」；⑤ 存在 `logos/resources/knowledge/` 与 `logos/resources/reference/knowledge/` | 保留读取结果；任一不符 → 停止后续流程，按部署方案以 `openlogos deploy --env test --rollback` 回退 |
+| SMOKE-core-319 | 全局 CLI 把预定编号的知识与场景同批合并 | 本机全局已安装本次候选；一次性项目按上述夹具建立；一次性提案含 ADDED `deltas/knowledge/core-K02-settle-day.md`（术语条目）与一个新场景 delta（「适用业务约束」引用 `K01-R1` 与 `K02`） | ① 全局 CLI `change-lint --format json`；② 全局 CLI `merge <slug>`；③ 读取 `logos/resources/knowledge/`、场景文件、`logos-project.yaml` 的 `resource_index` 与提案目录 | ① `pass=true`，不含知识相关 violation；② 退出码 0；③ `core-K02-settle-day.md` 与场景文件已落盘，`resource_index` 含两者的登记，`SPEC_MERGED` 存在 | 同上；任一不成立表示 `knowledge` 类别或有效知识视图未完整进入安装态 |
+| SMOKE-core-320 | 全局 CLI 的知识诊断 | 本机全局已安装本次候选；一次性项目按上述夹具建立；四个一次性提案分别：① 场景引用 `K01-R9`；② 场景引用 `K01-R2`；③ ADDED `core-K01-customer-id.md`；④ 用 `MODIFIED` 把 `K01-R2` 改回 `active` 并改写正文 | 对每个提案执行全局 CLI `change-lint --format json`，并记录执行前后项目文件的 SHA-256 | ① violation `knowledge_reference_unknown`，exit 2；② `warnings[]` 含 `knowledge_reference_deprecated`，`pass=true`；③ violation `knowledge_id_duplicate`，以 `code` 与 `path`（本提案的 `core-K01-customer-id.md` 来源）判定，`message` 包含两个 K01 路径；④ violation `knowledge_retired_id_mutated`；四次执行前后项目文件不变 | 同上；任一不成立表示知识校验未完整进入安装态 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目与受控临时目录内进行，结束即删除；`git` 操作只作用于这些一次性项目，不配置远端、不联网。
+- **不得**触碰本仓活跃提案、本仓 `logos/resources/`（结果账本除外）、本仓运行态目录、本仓 `.claude/` 下的托管副本、本仓的 git 分支与工作区、用户其他仓库（包括 runlogos）或本机全局 prefix。
+- 结果写入本仓 `logos/resources/verify/smoke-results.jsonl`；实际执行的结果行带 `target_environment="test"`，窗口之外的 skip 行不声明 `target_environment`。
+
+### 三、追溯与覆盖
+
+- 场景：S45「S45：企业知识沉淀与场景引用」Step 3～11（SMOKE-core-319）、Step 8 与 EX-45.1～EX-45.5（SMOKE-core-320）。需求：`core-01-requirements.md`「S45: 企业知识沉淀与场景引用」S45-AC-03、S45-AC-04、S45-AC-07、S45-AC-08、S45-AC-10、S45-AC-12。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.17 本机测试环境发布（enterprise-knowledge-base）」。
+- 仓库内对应用例：UT-S45-01、UT-S45-13（对应 SMOKE-core-318）；ST-S45-01（对应 SMOKE-core-319）；UT-S45-04、UT-S45-05、UT-S45-06、UT-S45-08（对应 SMOKE-core-320）。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-enterprise-knowledge-base.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-318～SMOKE-core-320，不得依靠通配发现后无条件 PASS。
+- 适用窗口：活跃变更为 `enterprise-knowledge-base`，或 `OPENLOGOS_EKB_SMOKE=1`；窗口之外按既有留痕机制为全部 owned ID 写 skip，skip 行不声明 `target_environment`。环境变量一律使用 `OPENLOGOS_EKB_` 前缀。
+- 只有部署记录确实缺失，或候选版本早于 0.16.17 时，才写显式 `skip` 并携带缺失项。有 skip 时不得写 `SMOKE_PASS`。
+- 全局 CLI 子进程由 runner 设时限（不超过 120 秒）；超时判 fail 并在证据中写明，不得重试后写 pass。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-318～SMOKE-core-320 均被 runner 覆盖。

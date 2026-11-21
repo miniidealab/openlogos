@@ -938,3 +938,35 @@ failed/aborted 不产生规格提交；普通 fatal failed 无自动动作；rec
 - 旧 guard（引入前创建的提案）缺这个字段。只在项目已启用模块范围时有影响：verify 回落全量，`scope.fallback_reason.code = "base_ref_missing"`。未启用模块范围的项目不读取它，行为不变。
 - `baseRef` 指向的提交已不存在（例如历史被改写）时同样回落全量，code 为 `base_ref_unreachable`。
 - 其他命令（status、next、merge、archive、guard 检查等）不读取 `baseRef`，guard 的锁语义（见「目录结构」）不变。
+
+## 企业知识 delta 类别与合并准入（S45，enterprise-knowledge-base）
+
+> 规则权威：功能规格 §2.102；机器契约：`cli-json-output.md`「change-lint 企业知识检查（L10，S45 enterprise-knowledge-base）」。
+
+### 类别与合并
+
+- `deltas/knowledge/` 是合法 delta 类别，映射 `logos/resources/knowledge/`。它与 `prd/`、`test/`、`decisions/` 等类别走同一条 `openlogos merge`（`mergeDirect`）通道：目标合成、CREATE 目标登记 `resource_index`、写 `SPEC_MERGED`，一次原子提交。知识条目与同一提案的场景、测试规格同批落盘，不存在先后两次提交。
+- 不新增落盘事务、不新增 `openlogos knowledge` 命令；merge-executor 的职责不变（授权前只读复核、失败诊断、事后点数与提交交接）。
+- 企业原始资料写入 `logos/resources/reference/knowledge/`（guard 默认豁免），不经 delta。
+
+### 编号与有效知识视图
+
+- 知识条目编号在编写 delta 时确定：取有效知识视图中最大 KXX（含 `deprecated`）+ 1；条目内新规则取该条目最大 Rn（含 `deprecated`）+ 1。规划阶段用户已提供的资料，在 `tasks.md` 的 `[delta]` 中规划知识 delta 任务并预定编号。
+- **有效知识视图**是当前提案视角下知识条目的候选后态，沿用 change-lint 既有的合并阶段判定：首次合并前 = 当前磁盘叠加 `deltas/knowledge/`；已合并且无待应用修正 = 直接读落盘文档（不重放已应用的 delta）；待应用修正 = 合并基线叠加修正后的 delta（与 `merge-amend` 同一目标集合）。只叠加当前提案，不叠加其他提案、archive 或 baseline staging。设计类 Skill 的加载与 change-lint 的引用解析共用这一视图，因此同一提案新录入的条目可被同批新场景引用。
+- **录入入口**：用户在本轮提供企业资料时，即使项目还没有任何知识目录，也先进入录入（创建原文目录、写原文、规划知识 delta 并预定编号），不因「无知识」跳过。
+
+### 合并准入
+
+`openlogos merge` 写入前执行的 change-lint 准入包含 L10 企业知识检查，任一 violation 即拒绝合并、不写任何文件：
+
+1. 场景引用的 `KXX` / `KXX-Rn` 必须在有效知识视图中存在（`knowledge_reference_unknown`）；
+2. 有效知识集合内 KXX 与条目内 Rn 必须唯一（`knowledge_id_duplicate`）；
+3. 已生效的条目与规则不得删除，包括 `REMOVED`、`REMOVED-ITEMS`、改文件名中的 KXX 与 `MODIFIED` 漏抄（`knowledge_removal_forbidden`）；
+4. 已退役的条目整体冻结（含「说明」定义），已退役的规则行冻结「规则」「状态」「例外」三列，不得重新激活或改写（`knowledge_retired_id_mutated`）；比较对象是当前已生效版本；
+5. 本提案新增或修改的条目结构必须有效（`knowledge_entry_invalid`）：含合法的 `type` / `scope` / `status`、非空 `tags`、每项带指向 `logos/resources/reference/knowledge/` 内现存原文文件的 `path`（规范化与 symlink 解析后判定归属）与非空 `version` 的 `source`，`type=rule` 时规则表每一行都是本条目的 `KXX-Rn`；结构无效的存量条目不能作为引用目标。
+
+引用 `deprecated` 的条目或规则只产生 warning `knowledge_reference_deprecated`，不阻断合并。L10 的启用条件：本提案有 `deltas/knowledge/`，或本提案场景 delta 含「适用业务约束」章节，或提案处于待应用修正阶段且修正目标集合（`merge-amend` 的重组 / 新增 / 恢复三类）含 `logos/resources/knowledge/` 下的目标——撤回最后一个知识 delta、删除空的 `deltas/knowledge/` 目录后，被恢复为合并基线内容的知识目标仍在恢复集合中，照常比较当前已生效版本与候选后态。三者都不满足时 L10 不执行，change-lint 输出与升级前一致。
+
+### 冲突裁决
+
+需求或设计与企业规则冲突时，不新增门禁：change-writer 把冲突写入 `clarification@1` 未决队列，由用户裁决「遵守 / 本次例外 / 规则需更新」；「本次例外」记录在场景「适用业务约束」的「例外」列，「规则需更新」规划知识 delta（修订仍为 `active` 的规则，或退役后新开 ID）。

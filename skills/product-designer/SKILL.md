@@ -291,3 +291,38 @@ resource_index:
 ```
 
 **不执行此步骤将导致后续 AI 无法感知已完成的产品设计文档，影响场景建模和代码生成阶段的上下文质量。**
+
+## 加载相关企业知识（S45）
+
+> 来源变更：enterprise-knowledge-base（S45）。规则权威：功能规格 §2.102；目录约定：`spec/directory-convention.md`「logos/resources/knowledge/」。跳过条件只有一种：项目没有任何知识条目、本提案没有 `deltas/knowledge/`，**并且本轮用户没有提供企业资料**——此时跳过本节，其余步骤不变。
+
+### 录入入口（先于加载，不受跳过条件影响）
+
+本轮用户提供了待沉淀的企业资料（制度原文、接口说明、术语表等）时，先录入再加载，即使项目还没有 `logos/resources/knowledge/`、`logos/resources/reference/knowledge/` 与 `deltas/knowledge/`（例如升级前就已 launched 的存量项目第一次录入）：
+
+1. `logos/resources/reference/knowledge/` 不存在时直接创建，把原文写入其中（guard 默认豁免，不经 delta），并提示用户：「原文将随仓库 push 扩散，push 前请确认可公开范围」。
+2. launched 项目：交由 change-writer 在 `tasks.md` 的 `[delta]` 中规划 `deltas/knowledge/<module>-KXX-<slug>.md` 并预定 KXX（有效知识视图中最大 KXX（含 `deprecated`）+ 1；视图为空时首个条目为 K01），产出知识 delta；`logos/resources/knowledge/` 由合并时创建。initial 项目：按条目模板直接写 `logos/resources/knowledge/<module>-KXX-<slug>.md`（目录不存在时创建）。
+3. 条目必须结构有效：H1 以 KXX 开头；「元数据」YAML 含合法的 `type`、`scope`、`status`（`scope: module` 时含 `module`）、非空 `tags`，以及非空 `source`——每项写原文的仓库相对 `path`（即第 1 步写入 `logos/resources/reference/knowledge/` 的文件，必须存在；指向该目录之外的仓库文件如 `README.md` 视为无效）与非空 `version`；`type: rule` 时有「规则」表，表中每一行首列都是本条目的 `KXX-Rn`、「状态」为 `active` 或 `deprecated`。缺项或混入格式不符的规则行，条目会被 change-lint 以 `knowledge_entry_invalid` 拒绝。
+4. 录入完成后，按下文在有效知识视图上加载；同一提案新录入的条目立即可被引用。
+
+### 有效知识视图
+
+加载对象是**有效知识视图**：当前提案视角下知识条目的候选后态。提案尚未合并时，是磁盘上的 `logos/resources/knowledge/*.md` 叠加本提案 `deltas/knowledge/` 后的结果；提案已合并且没有待应用的修正时，直接读磁盘上的条目（delta 已应用，不再叠加）；有待应用的修正时，以合并基线叠加修正后的 delta。只看当前提案，不读其他提案或 archive。同一提案新录入、尚未合并的条目同样生效。
+
+### 加载步骤
+
+1. 列出视图中的全部条目，只读取每个条目的「元数据」节（YAML：`type`、`scope`、`module`、`tags`、`status`、`source`）。
+2. 按以下条件筛选：`scope: global` 的条目一律命中；`scope: module` 的条目只在 `module` 等于当前模块时命中；再按与当前需求 / 场景相关的 `tags` 收窄。不依赖 `resource_index` 的描述，不做语义检索。
+3. 读取命中条目全文。`type: rule` 的条目以「规则」表中状态为 `active` 的 `KXX-Rn` 为约束；`deprecated` 的条目或规则只作背景，不作为新设计的依据。
+4. 视图中同一 KXX 出现在两个文件、或同一条目内重复 Rn 时，不得解析该 ID，先提示用户修复重号（change-lint 会报 `knowledge_id_duplicate`）。
+5. 结构无效的条目（缺 H1、元数据或必填字段）不作为依据，先提示用户补齐（change-lint 会报 `knowledge_entry_invalid`，引用它会报 `knowledge_reference_unknown`）。
+
+### 写明依据与冲突处理
+
+- 产出中凡受企业知识约束的内容，写明依据的 `KXX` 或 `KXX-Rn`。
+- 发现需求或设计与某条 `active` 规则冲突时，**不硬阻断、不静默取舍**：列出冲突（规则 ID、冲突点、可选处理：遵守 / 本次例外 / 规则需更新）并停下询问用户，一次只问一个决定。用户裁决「本次例外」时，在场景「适用业务约束」的「例外」列记录理由；裁决「规则需更新」时，交由 change-writer 规划知识 delta。
+
+### 本 Skill 的加载时机与产出
+
+- **时机**：编写功能规格与交互设计之前。
+- **产出**：交互流程、字段约束与提示文案受企业规则约束时写明依据；交互方案与规则冲突时按上文冲突处理停下询问，不自行改动规则或绕开规则。
