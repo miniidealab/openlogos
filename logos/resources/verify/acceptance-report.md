@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 2638 |
+| Defined cases | 2666 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 2638 |
-| Passed | 2637 |
+| Executed cases | 2666 |
+| Passed | 2665 |
 | Failed | 0 |
 | Skipped | 1 |
 | Uncovered | 0 |
@@ -21,8 +21,8 @@
 
 - Mode: `final`
 - Attempted slice: `null`
-- Confirmed slices: `slice-01-knowledge-reference`, `slice-02-retirement-and-release`
-- Eligible tests: 2638
+- Confirmed slices: `slice-01-direct-intake-strong-block`, `slice-02-design-time-lookup-and-release`
+- Eligible tests: 2666
 - Pending tests: 0
 - Final: true
 
