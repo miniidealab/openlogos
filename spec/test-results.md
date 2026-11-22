@@ -677,7 +677,7 @@ reporter 不需要感知模块范围：照常写全部执行过的用例结果�
 
 ### 适用范围
 
-只在 `logos-project.yaml` 登记了两个及以上模块的项目中、只为 `lifecycle: initial` 的模块写入。单模块项目与 launched 模块不写；共用的 `acceptance-report.md`、`smoke-report.md` 照旧写入，写入时机、内容与 Gate 判定不变。
+只在 `logos-project.yaml` 登记了两个及以上模块的项目中、只为 `lifecycle: initial` 的模块写入。单模块项目与 launched 模块不写；共用的 `acceptance-report.md`、`smoke-report.md` 照旧写入，内容与 Gate 判定不因模块报告而变化；共用报告的写入时机自 verification-history 起统一为最终门禁之后（见「验收历史留存（verification-history）」），模块报告仍在共用报告最后一次写入之后写出。
 
 ### 文件与格式
 
@@ -711,3 +711,46 @@ reporter 不需要感知模块范围：照常写全部执行过的用例结果�
 ### 写入白名单
 
 verify 与 smoke 的沙箱允许写入路径分别扩展到本次要写的 `<m>-acceptance-report.md`、`<m>-smoke-report.md`，其余规则不变。
+
+## 验收历史留存（verification-history）
+
+> 来源变更：verification-history（决策 C01～C04；proposal-r1 F1～F5、proposal-r2 F1/F2/F4、proposal-r3 F2 处置）。功能规格 §2.104；目录约定见 `spec/directory-convention.md`「验收历史目录（verification-history）」；JSON 契约见 `spec/cli-json-output.md`「`openlogos history` 命令组与 verify / smoke 的 history 字段（verification-history）」。
+
+### 与最新结果文件的关系
+
+- 最新结果文件（`verify.result_path`、两阶段的 `regression_result_path` / `incremental_result_path`、smoke 的有效 `result_path`）与共用报告照旧每次覆盖写入，供门禁判定、流程派生与宿主读取；本节不改变它们的路径、格式与 reporter 写法。
+- 历史另行写入，每次运行一条、写入后不再改写；runner 与 reporter 不感知历史，也无权写历史目录。
+
+### 一次运行的起止
+
+- 起点：命令通过用法、配置与前置拒绝检查后，在执行第一个预跑 / 两阶段命令、运行 smoke 命令或开始读取结果文件之前。
+- 终点：同一次调用的最终门禁处（verify 在 smoke 覆盖预检与沙箱裁决之后；smoke 在沙箱失败改判与环境证据改判之后），或进入执行后的既有错误早退处（`NO_TEST_RESULTS`、`NO_TEST_CASES`、`NO_SMOKE_RESULTS`、`NO_SMOKE_CASES`；`outcome: "aborted"`，沿用既有错误信封、错误码与退出码，报告字段缺省）。结果文件存在但为空不属于早退，照常判定。
+- 进入执行前的拒绝（用法错误、配置缺失、guard 拒绝、结果路径运行锁冲突 `RESULT_PATH_BUSY`）不记录。
+- 共用 `acceptance-report.md` 与共用 smoke 报告在最终门禁之后由同一份最终数据渲染一次，字节保留在进程内存中，分别写入共用报告路径与报告快照；不得从共用报告路径回读快照（该路径不在运行锁集合内，可能已被另一次运行覆盖）。
+
+### 三层数据与字段边界
+
+| 层 | 位置 | 内容 |
+|---|---|---|
+| 中央索引 | `logos/resources/verify/history/<run_id>.json` | 只含结构化白名单字段（功能规格 §2.104.3）：`schema`、`run_id`、`kind`、`started_at`、`finished_at`、`outcome`、`gate`、`error_code`、`proposal`、`module_scope`、`verify_mode`、`attempted_slice_id`、`environment`、`deploy_id`、`counts`、`failed_ids`、`skipped_ids`、`uncovered_ids`、`result_source`、`commit`、`cli_version`、`raw_location`；不含任何自由文本 |
+| 提案完整记录 | `logos/changes/<slug>/verify-runs/<run_id>/` | `record.json`、`results.jsonl`、`report.md`；只在有活跃提案时写 |
+| 本机原文 | `logos/.openlogos-runtime/verify-runs/<run_id>/` | `report.md`、`results-raw.jsonl`；只在有活跃提案且 `verify.history.raw_in_proposal: false` 时写 |
+
+- 自由文本字段：结果行中 `id`、`status`、`scenario`、`timestamp`、`duration_ms`、`environment`、`target_environment` 以外的全部字段（典型为 `error`、`detail`、`evidence`、`not_applicable_reason`、`missing_requirements`），以及报告正文。
+- `verify.history.raw_in_proposal` 缺省 `true`：提案完整记录的 `results.jsonl` 为本次实际采集的完整结果、`report.md` 为报告快照；为 `false` 时提案完整记录只保留结构化字段，自由文本字段（按用例 ID 对应）与报告快照写到本机原文层。
+- 没有活跃提案时只写中央索引（`proposal: null`、`raw_location: "none"`）。
+
+### 结果来源
+
+- `result_source: "executed"`：本次调用执行了预跑 / 两阶段命令或 smoke 命令。
+- `result_source: "reused"`：本次调用只读取了既有结果文件。
+
+### 结果路径运行锁
+
+- 锁集合为一次运行实际会截断或读取的全部有效结果路径，统一解析为真实路径；首个截断或读取之前按路径排序一次性获取，全有或全无；任一路径被占用即以 `RESULT_PATH_BUSY`（退出码 2）拒绝，不截断任何结果文件。只读取既有结果的运行同样参加。锁文件位于 `logos/.openlogos-runtime/result-locks/`，持有进程不存在时视为过期并回收。
+
+### 写入失败、入库与合并
+
+- 历史任一层写入失败只在 history 元数据中置 `write_status: "failed"` 与 `write_error`（`verification_history_write_failed`），不改变门禁、退出码与标记。
+- CLI 不执行 git 操作；按运行各写一个文件，不同分支的记录互不重名，普通合并即保留两边。历史路径被忽略规则命中时，由流程提交或用户以 `git add -f` 纳入。
+- 本约定之前的运行不回填。

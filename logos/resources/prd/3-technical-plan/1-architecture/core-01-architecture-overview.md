@@ -3298,3 +3298,59 @@ issues 非空 → 输出 issues，退出码 1，零写入
 - 没有知识条目、从未启用标签表的项目：change-lint、merge、status、next、sync 输出与 0.16.17 一致（提案骨架多一个空的 `deltas/knowledge/` 除外）。
 - apply 不通过时项目文件逐字节不变；写入中途失败时整批回滚为执行前字节，回滚失败时如实报告并保留事务日志；进程中断后，任何读取方在回滚完成前都不把半写入状态当作已接受内容。
 - apply / index 只写 `logos/resources/knowledge/`、`logos/resources/reference/knowledge/` 与事务存储目录 `logos/.openlogos-runtime/knowledge-apply/`，不写 `SPEC_MERGED`、guard 文件、`logos-project.yaml` 或 `resource_index`。
+
+## 五十八、验收历史留存与查询
+
+> 来源变更：verification-history（决策 C01～C04；proposal-r1 F1～F5、proposal-r2 F1/F2/F4、proposal-r3 F2 处置）。功能规格见 §2.104；场景见 `core-S13-verify-results.md`「验收历史留存与查询时序（verification-history）」、`core-S19-smoke-gate.md`「smoke 验收历史留存（verification-history）」；留存约定见 `spec/test-results.md`「验收历史留存（verification-history）」。
+
+### 58.1 目标与边界
+
+- 让每一次进入执行的 verify / smoke 都留下不会被覆盖的历史：中央轻量索引（结构化、进 git）、提案完整记录（随提案归档）、本机原文（可选）三层。
+- 不改最新报告与结果文件的路径与格式，不改 PASS / FAIL 标记、切片 checkpoint、部署账本与 status / next 派生；不回填；CLI 不执行 git 操作。
+- 两处既有行为一并修正：共用 `acceptance-report.md` 与共用 smoke 报告改在最终门禁之后写出；同一结果路径的并发运行由静默互相截断改为后到者拒绝。
+
+### 58.2 组件
+
+| 组件 | 变化 |
+|---|---|
+| `cli/src/lib/verification-history.ts`（新增） | run_id 生成；三层写入（中央索引 `logos/resources/verify/history/<run_id>.json`、提案运行目录 `logos/changes/<slug>/verify-runs/<run_id>/`、本机原文 `logos/.openlogos-runtime/verify-runs/<run_id>/`）；按 `verify.history.raw_in_proposal` 剥除自由文本字段；中央索引字段白名单的构造（只从结构化数据取值，不接收任意对象透传）；读取与按 run_id 跨活动 / 归档目录解析 |
+| `cli/src/lib/result-path-lock.ts`（新增） | 结果路径运行锁：真实路径解析、排序后全有或全无获取、过期锁回收、释放；锁文件位于 `logos/.openlogos-runtime/result-locks/` |
+| `cli/src/commands/verify.ts` | 进入执行前（首个预跑 / 两阶段命令或结果读取之前）开启运行并获取锁集合（`result_path`、`regression_result_path`、`incremental_result_path` 的有效值）；共用 `acceptance-report.md` 的写入移到 `applySmokePrecheck` 与沙箱裁决之后；最终门禁处与各早退出口经同一个收尾函数写历史；JSON 输出新增 `data.history` |
+| `cli/src/commands/smoke.ts` | 进入执行前开启运行并获取有效 `result_path` 的锁；`collectSmokeData` 不再写共用报告，改在沙箱失败改判与环境证据改判之后由同一份最终数据经 `generateSmokeReport` 写出一次；最终门禁与各早退出口写历史；JSON 输出新增 `data.history` |
+| `cli/src/commands/history.ts`（新增） | `openlogos history list` / `openlogos history show <run_id>`，文本与 `--format json` |
+| `cli/src/index.ts` | 注册 `history` 命令与帮助 |
+| `cli/src/lib/plan-package.ts` 等指纹 / 派生计算 | 确认 `verify-runs/` 不进入计划、任务与规格指纹及 proposal_step 派生（以回归测试锚定） |
+| `spec/logos.config.schema.json` | `verify` 节新增 `history.raw_in_proposal`（JSON 根规范不经 delta 合并，由代码切片写入提案目录 `code-targets/` 下的目标字节） |
+
+### 58.3 运行生命周期
+
+```text
+用法 / 配置 / 前置检查 ──拒绝──▶ 退出（不记录）
+        │通过
+        ▼
+开启运行：生成 run_id → 解析锁集合（真实路径、排序）→ 全有或全无获取
+        │冲突 → RESULT_PATH_BUSY（退出 2，不截断，不记录）
+        ▼
+执行 / 采集（预跑、两阶段、smoke 命令；或只读既有结果 → result_source=reused）
+        │早退（NO_TEST_RESULTS / NO_TEST_CASES / NO_SMOKE_RESULTS / NO_SMOKE_CASES）──▶ 收尾：outcome=aborted → 写历史 → 既有错误信封附 error.details.history → 释放锁
+        ▼
+最终门禁（verify：覆盖与账本 → smoke 覆盖预检 → 沙箱；smoke：用例 → 沙箱改判 → 环境证据改判）
+        ▼
+由最终数据渲染报告字节（一次，保留在内存）→ 写共用报告 → 写标记（既有规则）→ 收尾：outcome=completed，以同一份内存字节写报告快照与历史（三层）→ data.history → 释放锁
+```
+
+- 收尾函数是唯一的历史写入点，正常与早退出口都调用它；报告快照使用渲染时保留在内存中的同一份字节，不从共用报告路径回读（共用报告路径不在运行锁集合内，可能已被另一次运行覆盖）。
+- 历史写入失败只在 history 元数据中置 `write_status: "failed"` 与 `write_error`，不改变门禁、退出码与标记。
+- 早退出口沿用既有错误信封与退出码，history 元数据经 `makeErrorEnvelope` 的扩展字段放在 `error.details.history`。
+
+### 58.4 读取路径
+
+- `history list` 只读中央索引目录，逐文件解析，损坏文件跳过并给出 `verification_history_corrupt`。
+- `history show <run_id>` 读中央索引后，按 `proposal.slug` 与 run_id 依次查 `logos/changes/<slug>/verify-runs/<run_id>/`、`logos/changes/archive/*-<slug>/verify-runs/<run_id>/`，再查本机原文目录；以 run_id 目录名精确匹配，缺失时返回中央字段并标明不可用。
+
+### 58.5 兼容性与不变量
+
+- 历史由 CLI 主进程在采集之后写入，不在沙箱白名单内，runner 无法伪造历史。
+- 中央索引只含结构化白名单字段，不含 runner detail、断言错误、命令输出或报告正文。
+- 一次运行恰好一条记录；run_id 全局唯一；历史文件写入后不再改写。
+- 未开启运行（进入执行前被拒）的命令与修改前行为一致。

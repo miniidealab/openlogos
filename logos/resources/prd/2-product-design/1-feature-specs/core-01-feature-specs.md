@@ -5517,7 +5517,7 @@ Claude Code（`plugin/bin/guard-check`）、Cursor（`plugin-cursor/hooks/runtim
 - 只在**多模块项目**（`logos-project.yaml` 登记了两个及以上模块）中、且只对 `lifecycle: initial` 的模块写入与读取模块报告。
 - 单模块项目继续只写、只认共用的 `acceptance-report.md` / `deployment-report.md` / `smoke-report.md`，派生与 launch 判定不变。
 - launched 模块继续看提案标记（`VERIFY_PASS` / `DEPLOY_DONE` / `SMOKE_PASS`），不写模块报告。
-- 共用报告在任何项目中都照旧写入，写入时机与内容不变。
+- 共用报告在任何项目中都照旧写入，内容不因模块报告而变化；写入时机自 verification-history 起统一为最终门禁之后（§2.104.5），模块报告仍在共用报告最后一次写入之后写出。
 
 ### 2.99.2 报告路径与格式
 
@@ -6194,3 +6194,110 @@ proposal_view = 活跃提案尚未合并或待应用修正时：after_entries �
 - 场景：`core-S45-enterprise-knowledge.md` Step 12～19、EX-45.12～EX-45.21。
 - 架构：「57.6 直接录入与强拦截」。
 - 测试：`core-S45-test-cases.md` UT-S45-21～UT-S45-43、ST-S45-06～ST-S45-10；安装态 smoke：SMOKE-core-321～SMOKE-core-323。
+
+## 2.104 验收历史留存与查询（S13 / S19，verification-history）
+
+> 来源变更：verification-history（决策 C01～C04；proposal-r1 F1～F5、proposal-r2 F1/F2/F4、proposal-r3 F2 处置）。需求见 `core-01-requirements.md`「S13/S19 验收历史留存与追溯要求」；场景见 `core-S13-verify-results.md`「验收历史留存与查询时序（verification-history）」、`core-S19-smoke-gate.md`「smoke 验收历史留存（verification-history）」；留存约定见 `spec/test-results.md`「验收历史留存（verification-history）」；JSON 契约见 `spec/cli-json-output.md`「`openlogos history` 命令组与 verify / smoke 的 history 字段（verification-history）」。本节只新增历史留存与查询，最新报告、结果文件与 PASS / FAIL 标记的路径、格式与流程判断不变。
+
+### 2.104.1 问题与边界
+
+- verify 每次运行清空 `verify.result_path`（缺省 `logos/resources/verify/test-results.jsonl`）并重写 `acceptance-report.md`；smoke 每次清空有效 `result_path`（缺省 `smoke-results.jsonl`）并重写有效 `report_path`（缺省 `smoke-report.md`）。切片 checkpoint、失败后修复重跑都会抹掉上一次结果；提案标记是空文件；部署账本只有带环境的 smoke 摘要。
+- 本节新增「每次运行一条、不覆盖」的历史，并提供查询命令。**不回填**本版本之前的运行；**不改**部署账本结构；CLI **不执行任何 git 操作**。
+
+### 2.104.2 三层数据
+
+| 层 | 位置 | 内容 | 写入条件 | 随 git |
+|---|---|---|---|---|
+| ① 中央索引 | `logos/resources/verify/history/<run_id>.json` | 只含结构化字段白名单（§2.104.3），不含任何自由文本 | 每次进入执行的运行（含无活跃提案、含早退） | 是（由使用者提交，§2.104.8） |
+| ② 提案完整记录 | `logos/changes/<slug>/verify-runs/<run_id>/` | `record.json`（与①同字段）、`results.jsonl`（本次实际采集的结果）、`report.md`（本次最终报告快照，报告未产生时缺省） | 有活跃提案时 | 随提案文件夹 |
+| ③ 本机原文 | `logos/.openlogos-runtime/verify-runs/<run_id>/` | `report.md` 与 `results-raw.jsonl`（被剥除的自由文本字段，按用例 ID 对应） | 有活跃提案且 `verify.history.raw_in_proposal: false` 时 | 否（受管 `.gitignore` 已排除） |
+
+- `verify.history.raw_in_proposal`（布尔，缺省 `true`，决策 C04）：`true` 时②的 `results.jsonl` 为完整结果（含 `error`、`detail`、`evidence` 等全部字段），`report.md` 写在②；`false` 时②的 `results.jsonl` 只保留结构化字段 `id`、`status`、`scenario`、`timestamp`、`duration_ms`、`environment`、`target_environment`，其余字段与报告快照写到③。
+- 没有活跃提案时只写①，`proposal` 为 null，不写②③。
+- smoke 的结果行同样适用：`detail`、`error`、`evidence`、`not_applicable_reason` 属自由文本。
+
+### 2.104.3 中央索引字段（白名单）
+
+`schema: "openlogos/verification-run@1"`，闭合字段：
+
+| 字段 | 说明 |
+|---|---|
+| `run_id` | `<UTC 时间戳 YYYYMMDDTHHMMSSmmmZ>-<kind>-<6 位小写十六进制随机>`，全局唯一，同时是文件名 |
+| `kind` | `"verify"` \| `"smoke"` |
+| `started_at` / `finished_at` | ISO 8601 UTC |
+| `outcome` | `"completed"`（到达最终门禁）\| `"aborted"`（进入执行后早退） |
+| `gate` | `{ "result": "PASS" \| "FAIL" \| null, "reason": string \| null }`，取同一次调用的最终判定；`aborted` 时 `result` 为 null |
+| `error_code` | 早退时沿用的既有错误码；`completed` 时为 null |
+| `proposal` | `{ "slug": string, "run_dir": "verify-runs/<run_id>" }` 或 null；`run_dir` 是提案目录内相对位置，不含归档日期或绝对路径 |
+| `module_scope` | 本次有效模块范围（模块 id 升序数组；未启用按模块区分时为 null） |
+| `verify_mode` / `attempted_slice_id` | verify 的 `"slice-checkpoint"` \| `"final"` \| null 与对应切片 id；smoke 为 null |
+| `environment` / `deploy_id` | smoke 的目标环境与核对的 deploy_id；verify 为 null |
+| `counts` | `{ defined, executed, passed, failed, skipped, uncovered }`，早退时只填已取得的项、其余为 null |
+| `failed_ids` / `skipped_ids` / `uncovered_ids` | 用例 ID 数组，按 ID 字典序 |
+| `result_source` | `"executed"`（本次调用执行了预跑 / 两阶段命令或 smoke 命令）\| `"reused"`（只读取既有结果文件） |
+| `commit` | `{ "head": string \| null, "dirty": boolean \| null }`，非 git 项目为 null |
+| `cli_version` | 产生该记录的 CLI 版本 |
+| `raw_location` | `"proposal"` \| `"local"` \| `"none"`（无活跃提案时） |
+
+中央索引**不得**包含 runner `detail`、断言 `error`、命令输出、报告正文或任何其他自由文本。
+
+### 2.104.4 一次运行的边界
+
+- **起点**：命令通过用法、配置与前置拒绝检查后，在执行第一个预跑 / 两阶段命令、运行 smoke 命令或开始读取结果文件之前开启一次运行（生成 run_id、获取结果路径运行锁，§2.104.6）。
+- **终点**：①正常收尾——在同一次调用的**最终门禁**处写历史：verify 在 smoke 覆盖预检（`applySmokePrecheck`）与沙箱裁决之后，smoke 在沙箱失败改判与环境证据改判之后；②早退——进入执行后以既有错误信封退出时（verify：未配置预跑且结果文件不存在的 `NO_TEST_RESULTS`、缺少可验收用例定义的 `NO_TEST_CASES`；smoke：结果文件不存在且本提案没有变更 smoke 用例的 `NO_SMOKE_RESULTS`、没有 smoke 用例规格的 `NO_SMOKE_CASES`），写 `outcome: "aborted"` 的记录，沿用既有错误码与退出码，已取得的计数与证据照写，报告字段缺省。
+- **不记录**：用法错误、`logos/logos.config.json` 缺失、guard 拒绝、结果路径运行锁冲突（§2.104.6）等进入执行前的拒绝。
+- 每次运行恰好一条记录；切片 checkpoint 与 final 各算一次运行。
+
+### 2.104.5 共用报告的写出时机
+
+- 共用 `acceptance-report.md` 改为在最终门禁（含 smoke 覆盖预检改判）之后写出一次；共用 smoke 报告改为在最终门禁（沙箱失败改判与环境证据改判之后）由同一份最终数据经既有渲染逻辑写出一次。两者路径与格式不变。
+- 与现状的差异只出现在「smoke 覆盖预检把 verify 门禁改判 FAIL」「沙箱失败把 smoke 门禁改判 FAIL 且无环境登记表」两种情况：报告由错误的 PASS 变为与命令结果一致的 FAIL。
+- 报告由同一次调用的最终数据**只渲染一次**，得到的字节保留在本次进程内存中，分别写入共用报告路径与报告快照（②或③的 `report.md`）；**不得**从共用报告路径回读快照——共用报告路径可被另一次运行覆盖（例如两个模块的 `result_path` 不同、`report_path` 都回落到同一项目级路径，运行锁互不冲突）。多模块项目的模块报告（§2.99）写出时机不变，不进快照。
+- 结果文件已存在但为空或缺用例结果时（如 smoke 命令运行后未写任何行、预跑失败后结果为空）不属于早退：照常到达最终门禁，按未覆盖 / 失败判定，记录 `outcome: "completed"`。
+
+### 2.104.6 结果路径运行锁
+
+- **锁集合**：一次运行实际会截断或读取的全部有效结果路径——verify 的 `result_path`、`regression_result_path`、`incremental_result_path`（按模块命令组解析后的实际值）；smoke 按项目级与 `smoke.modules.<id>` 覆盖解析后的有效 `result_path`。统一解析为真实路径（不存在的文件按最近已存在祖先解析后拼接）。
+- **获取**：在首个截断或读取之前，按路径排序一次性获取全部锁，全有或全无；锁文件位于 `logos/.openlogos-runtime/result-locks/<sha256(真实路径)>.lock`，记录持有进程 pid 与开始时间；持有进程已不存在的锁视为过期并回收。
+- **冲突**：任一路径已被其他运行持有时，后到的命令以 `RESULT_PATH_BUSY` 拒绝（退出码 2），释放本次已获取的锁，不截断、不改写任何结果文件，不写历史。只读取既有结果（`result_source: "reused"`）的运行同样参加。
+- **释放**：历史写入结束（或早退写入结束）后释放全部锁；进程异常退出时由过期回收处理。
+
+### 2.104.7 写入失败与诊断
+
+- 历史任一层写入失败时，在 history 元数据（正常门禁为 `data.history`，早退为 `error.details.history`，§2.104.10）中置 `write_status: "failed"` 并给出 `write_error: { code: "verification_history_write_failed", layer, path }`，文本输出给出一行警告；**门禁结论、退出码、PASS / FAIL 标记均不受影响**。
+- 历史由 CLI 主进程在结果采集之后写入，不经过沙箱，测试 runner 无权写历史目录。
+
+### 2.104.8 纳入版本控制
+
+- CLI 只写文件，不 `git add`、不提交。verify / smoke 的文本输出与 JSON `data.history`（§2.104.10）给出本次写入的中央索引路径与提案运行目录。
+- **历史路径未被忽略**（下游项目常态）：新文件出现在 `git status` 中；有活跃提案时由流程中的验收报告提交一并暂存 `logos/resources/verify/history/`，没有活跃提案时由用户在下一次提交中暂存。
+- **历史路径被忽略规则命中**（如本仓 `.gitignore` 的 `/logos/resources/*`）：新文件不出现在 `git status` 中、普通 `git add` 会漏掉；有活跃提案时流程提交以 `git add -f` 暂存，没有活跃提案时由用户按输出给出的路径执行 `git add -f`，或自行调整忽略规则。OpenLogos 不修改 `.gitignore`。
+- 按运行各写一个文件：不同分支各自验收产生的文件互不重名，普通 Git 合并即保留两边记录。
+
+### 2.104.9 提案运行记录目录的边界
+
+- `verify-runs/` 只由 verify / smoke 写入；不属于 delta，不参与 change-lint、merge、计划指纹（plan / task / spec fingerprint）、`proposal_step` 派生与切片状态派生。
+- `openlogos archive` 整目录移动时随提案一起进入 `logos/changes/archive/<日期>-<slug>/verify-runs/`，不改写中央索引。
+
+### 2.104.10 查询命令
+
+- `openlogos history list [--kind verify|smoke] [--slug <slug>] [--result pass|fail|aborted] [--module <id>] [--limit <n>] [--format json]`：读取中央索引，按 `started_at` 倒序列出；`--result aborted` 匹配 `outcome: "aborted"`；`--module` 匹配 `module_scope` 含该模块的记录；`--limit` 缺省 20。
+- `openlogos history show <run_id> [--format json]`：给出该次中央索引字段，并按 run_id 依次在 `logos/changes/<slug>/verify-runs/<run_id>/` 与 `logos/changes/archive/*-<slug>/verify-runs/<run_id>/` 精确查找完整记录、在 `logos/.openlogos-runtime/verify-runs/<run_id>/` 查找本机原文；找到即给出完整记录位置与报告快照，找不到时仍返回中央索引字段，并以 `full_record: "unavailable"` / `raw: "unavailable"` 标明（例如重新克隆、提案文件夹不入库）。同名提案的新运行 run_id 不同，不会被认成旧记录。
+- 损坏的中央索引文件（非 JSON 或缺必填字段）在查询时被跳过，并在 `warnings` 中给出 `verification_history_corrupt`（点名文件）。
+- `history show` 的 run_id 不存在：错误信封 `error.code = "HISTORY_RUN_NOT_FOUND"`，退出码 1。
+- history 元数据 `{ run_id, index_path, run_dir, raw_location, write_status: "written" | "failed", write_error? }` 的位置：verify / smoke 到达最终门禁时在成功信封 `data.history`；进入执行后早退时沿用既有错误信封（stderr、既有错误码与退出码不变），经 `makeErrorEnvelope` 的扩展字段放在 `error.details.history`（该错误已有 `details` 时作为其中的 `history` 键追加）；进入执行前被拒绝时不出现。`RESULT_PATH_BUSY` 同样使用错误信封 `error.code`。
+
+### 2.104.11 兼容性
+
+- `acceptance-report.md`、`smoke-report.md`（含模块级 `report_path` 覆盖）、两份结果文件的路径与格式不变；内容只在 §2.104.5 两种改判情况下与现状不同。
+- `VERIFY_PASS` / `VERIFY_FAIL` / `SMOKE_PASS` / `SMOKE_FAIL`、`LOOP_ITERS`、切片 checkpoint、部署账本与 status / next 的派生不变。
+- 同一结果路径的并发运行由静默互相截断改为后到者以错误信封 `error.code = "RESULT_PATH_BUSY"` 拒绝。
+- 既有早退错误的通道、错误码、`message` 与退出码不变，只在 `error.details` 中新增 `history`。
+- 未配置 `verify.history` 的项目按缺省（`raw_in_proposal: true`）运行，无需迁移。
+
+### 2.104.12 追溯
+
+- 需求：「S13/S19 验收历史留存与追溯要求」。
+- 场景：S13「验收历史留存与查询时序（verification-history）」EX-13H.1～EX-13H.10；S19「smoke 验收历史留存（verification-history）」EX-19H.1～EX-19H.5。
+- 架构：「五十八、验收历史留存与查询」。
+- 测试：UT-S13-141～UT-S13-156、ST-S13-38～ST-S13-39；UT-S19-100～UT-S19-107、ST-S19-34；SMOKE-core-326～SMOKE-core-327。

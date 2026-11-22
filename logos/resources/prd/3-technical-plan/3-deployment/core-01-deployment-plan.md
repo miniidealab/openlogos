@@ -6012,3 +6012,78 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 - 测试：UT-S11-82、UT-S11-111～UT-S11-115、ST-S11-47；安装态 smoke：SMOKE-core-324～SMOKE-core-325，以及通用的 SMOKE-core-268～SMOKE-core-271。
 - 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
 - 本提案：fix-phase-banner-api-false-missing（决策 C02）。
+
+## OpenLogos 0.16.20 本机测试环境发布（verification-history）
+
+> 本节引用「本机测试环境脚本部署（scripts/deploy-local.mjs）」通用方案，只写本次的差异：版本号、CHANGELOG、源码回归范围、本仓 `openlogos sync`、本仓历史目录的入库方式与安装态 smoke。冻结、回滚制品、构建候选、试装、全局安装、复核与回执一律按通用方案第三～七节执行，不在本节复写。
+>
+> **版本与回滚目标的取值规则**：下文的 `0.16.20`、`0.16.19`、提交 `000ac05` 都是**规划值**。实际执行时统一使用：**候选版本** = 「部署前置与版本」第 3 条复核后实际选定的版本；**回滚版本 / 回滚目标** = 部署前环境账本中 `test.current_ref` 对应的安装态与其版本。升版命令、CHANGELOG 标题、`--version` 断言、回滚常量、回滚证据与部署记录一律取这两个实际值，并在部署记录写明它们与规划值是否一致。
+
+### 部署目标与授权边界
+
+把本提案的验收历史能力（功能规格 §2.104）装进本机全局安装态。行为差异：
+
+- verify / smoke 每次进入执行的运行写中央索引 `logos/resources/verify/history/<run_id>.json`；有活跃提案时另写 `logos/changes/<slug>/verify-runs/<run_id>/`；`verify.history.raw_in_proposal: false` 时原文写本机运行态目录。
+- 新增 `openlogos history list` / `openlogos history show <run_id>`；verify / smoke 的 JSON 新增 `data.history`。
+- 共用 `acceptance-report.md` 与共用 smoke 报告改在最终门禁之后写出一次；同一结果路径的并发运行由后到者以 `RESULT_PATH_BUSY` 拒绝。
+- 最新报告、结果文件与 PASS / FAIL 标记的路径与格式、部署账本结构不变。
+
+- **目标环境**：`test`（登记表 `proposal_default_env: test`，决策 C02）。登记表中 `test.deploy` 为 `mode: script`、`script: scripts/deploy-local.mjs`。
+- **入口**：提案通道 `openlogos deploy --env test`，部署请求 HEAD；由 CLI 追加部署报告、写 `DEPLOY_DONE` 并勾选 `[deploy]`。部署成功后**不再**另行执行 `openlogos deploy-done`。
+- **授权**：部署执行、smoke、archive 与 `git push` 各自为人类确认点，须用户逐次明确授权（`openlogos next --auto` 的 standing 授权按 CLAUDE.md 两档授权语义处理）；`test` 未配置 `promote_from` / `require_approval`。
+- **版本号边界**：0.16.20 只作本机全局版本，不进入 npm registry。本方案**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`。不改写其他仓库（包括 runlogos）。
+
+### 部署前置与版本
+
+1. 本提案 delta 已 merge，`[code]` 切片实现并提交，`openlogos verify` PASS；`openlogos env check` 无 error，`openlogos deploy --env test --dry-run` 通过（通用方案第三节）。
+2. **请求提交已提交**：部署前确认 merge 后的规格、切片代码与验收报告都已提交、工作区干净；未提交时按「规格合并 → 代码 → 验收报告」的顺序补提交后再部署。`.claude/` 与 `logos/resources/verify/` 下的已跟踪文件以 `git add -u -- <path>` 暂存。
+3. **本仓历史目录入库**：本仓 `.gitignore` 的 `/logos/resources/*` 会排除 `logos/resources/verify/history/`。随验收报告一起提交时，以 `git add -f -- logos/resources/verify/history/` 暂存本提案期间产生的历史文件（只暂存该目录，不改 `.gitignore`）；部署后 smoke 产生的历史随部署记录提交时同样处理。
+4. **版本事实复核**：读取 `cli/package.json` 当前版本，计划时为 `0.16.19`（未发布到 npm）。候选为下一 patch `0.16.20`，执行 `npm view @miniidealab/openlogos@0.16.20 version` 应返回 E404。若实施前已有其他提案升版，或 registry 已存在候选版本号，候选改为「当时版本与 registry 最高版本中较大者的下一 patch」，并在部署记录写明实际值。
+5. **升版**：在实现中执行 `node cli/scripts/bump-version.mjs <候选版本>`（规划值 `0.16.20`），由脚本一次更新全部版本载体、回滚常量并重算 `cli/asset-manifest.json`，**禁止手改** manifest。
+6. **CHANGELOG**：在 `## [Unreleased]` 之后新增 `## [<候选版本>]` 条目（规划值 `## [0.16.20]`），注明「本机全局发布（未发布到 npm）」，不改既有条目：
+   - **Added**：verify / smoke 验收历史（中央索引、提案运行目录、可选本机原文）与 `openlogos history list` / `show`；verify / smoke JSON 的 `data.history`；配置项 `verify.history.raw_in_proposal`。
+   - **Changed**：共用验收报告与 smoke 报告在最终门禁之后写出（改判场景下报告与命令结果一致）；同一结果路径并发运行时后到者以 `RESULT_PATH_BUSY` 拒绝。
+   - **升级提示**：历史目录随项目正常提交纳入；路径被忽略时以 `git add -f` 纳入；本版本之前的运行不回填。
+
+### 源码回归范围
+
+部署前的 verify 负责源码回归，脚本不跑测试（通用方案第八节）。升版后复跑以下检查，必须全绿：
+
+- `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`、`npm run build`。
+- 范围包括本提案的 UT-S13-141～UT-S13-156、ST-S13-38～ST-S13-39、UT-S19-100～UT-S19-107、ST-S19-34；S13 / S19 既有用例（报告写出时机调整后的零回归由 UT-S13-152、UT-S19-105 锚定）；verify / smoke golden；asset-manifest 自洽用例。版本相关的既有用例若断言具体版本号，随升版更新期望值。
+
+### 部署、sync 与部署后检查
+
+1. 执行 `openlogos deploy --env test`（提案通道）。按通用方案第七节第 1、2 条读回回执与账本：
+   - 全局 `--version` 等于候选版本（规划值 `0.16.20`）；
+   - 入口 realpath 等于回执 `entry_realpath`，全局 `dist/index.js` 的 SHA-256 等于 `candidate_entry_sha256`；
+   - 记录候选 tarball 与回滚制品的路径与 SHA-256；回滚制品由脚本从当前全局安装打包，即部署前 test 的当前安装态（计划时为提交 `000ac05` 的 0.16.19）；
+   - 部署前先读取账本 `test.current_ref`（计划时为 `000ac05634cbd606a2c61ee378e8cf2866ff7e81`，0.16.19，deploy `1e666d71`；若其间有其他提案部署，以读到的实际值为准并写入部署记录），部署成功后它成为 `previous_ref`。
+2. **本仓 sync**：在主工作树执行一次 `openlogos sync`，读回 `logos/spec/test-results.md`、`logos/spec/directory-convention.md`、`logos/spec/cli-json-output.md` 与根 `spec/` 同名文件逐字节一致；AGENTS.md / CLAUDE.md 的变化只来自托管内容与版本戳；受版本控制的托管文件变化随部署记录一起提交，不 push；若 sync 改动 `.claude/settings.json`，按前几版部署记录同样还原并记录。
+3. **补部署报告**：部署后追加人写的「部署报告」小节（版本、deploy_id、ref、制品哈希、sync 读回结果）并提交，然后才执行 smoke。
+4. 经授权执行 `openlogos smoke --env test`：
+   - 本次行为用例：「OpenLogos 0.16.20 验收历史安装态 smoke（SMOKE-core-326～327）」；
+   - 通用安装态用例：「本机测试环境脚本部署安装态 smoke（SMOKE-core-268～SMOKE-core-271）」；
+   - 本次 smoke 自身会在本仓写一条 smoke 历史，随部署记录提交时按「部署前置与版本」第 3 条以 `git add -f` 纳入。
+
+### 失败处置与回滚
+
+回滚目标是**部署前账本 `test.current_ref` 对应的安装态**（计划时为提交 `000ac05` 的 0.16.19，不含本能力），处置按通用方案第五节，本次差异如下：
+
+- **部署前置或 dry-run 失败**：不执行部署，修正后重试，或回流实现。
+- **脚本失败（部署未成功）**：脚本自动回装回滚制品，复核 `--version` 等于回滚版本（规划值 `0.16.19`）；账本记 `result=failed`，不推进。
+- **成功部署后要回退**：执行 `openlogos deploy --env test --rollback`，回到 `previous_ref`（即部署前读到的 `test.current_ref`）。回退后用回退到的版本在本仓执行一次 `openlogos sync`。回退后不再写新历史；已写出的历史文件保留，旧版本 CLI 不读取也不受其影响。
+- **成功落账后 smoke 失败**：停止后续完成流程，保留失败证据，回流修复后以 `openlogos deploy --env test` 部署修复提交并重跑 smoke。不得手工回装旧包。
+- 本次无数据迁移：只新增历史文件与查询命令，不改写既有文件格式。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`，不部署官网。
+- 不改 `.gitignore`；不改写其他仓库（包括 runlogos）。
+
+### 追溯
+
+- 功能规格：§2.104；架构：「五十八、验收历史留存与查询」；场景：S13「验收历史留存与查询时序（verification-history）」、S19「smoke 验收历史留存（verification-history）」。
+- 测试：UT-S13-141～UT-S13-156、ST-S13-38～ST-S13-39、UT-S19-100～UT-S19-107、ST-S19-34；安装态 smoke：SMOKE-core-326～SMOKE-core-327，以及通用的 SMOKE-core-268～SMOKE-core-271。
+- 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
+- 本提案：verification-history（决策 C02）。

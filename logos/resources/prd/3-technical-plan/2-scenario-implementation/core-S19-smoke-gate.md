@@ -1362,3 +1362,91 @@ sequenceDiagram
 - 需求：「S11/S13/S14/S19/S21/S42 多模块 initial 模块按模块阶段报告验收补充」AC-MOD-REPORT-05。
 - 功能规格：§2.99.2、§2.99.3、§2.99.6。
 - 测试：UT-S19-90 起、ST-S19-33 起；smoke：SMOKE-core-298 起。
+
+## smoke 验收历史留存（verification-history）
+
+### 目标
+
+让每一次进入执行的 `openlogos smoke` 都留下一条不会被覆盖的历史，共用 smoke 报告与历史都取自同一份最终门禁数据。规则权威见功能规格 §2.104；verify 侧时序见 `core-S13-verify-results.md`「验收历史留存与查询时序（verification-history）」。
+
+### 参与者
+
+- 用户或自动化宿主
+- OpenLogos CLI（`openlogos smoke`）
+- ResultPathLock、smoke runner、VerificationHistory
+- 沙箱回收、环境证据与部署账本
+
+### 前置条件
+
+- 项目已初始化；smoke 配置可解析；本次命令已通过用法、配置、环境与部署身份核对等前置检查（未通过时不开启运行、不留历史）。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    actor Caller as 用户/宿主
+    participant CLI as openlogos smoke
+    participant Lock as ResultPathLock
+    participant Runner as smoke runner
+    participant Gate as 门禁判定
+    participant Hist as VerificationHistory
+
+    Caller->>CLI: smoke [--env <id>] [--format json]
+    CLI->>CLI: Step 1 前置检查（拒绝则退出，不记录）
+    CLI->>Lock: Step 2 开启运行：获取有效 result_path（含模块级覆盖）的锁
+    alt 冲突
+        CLI-->>Caller: RESULT_PATH_BUSY（退出 2，不记录）
+    else 已持有
+        opt 配置了 smoke 命令
+            CLI->>Runner: Step 3 截断结果并运行（result_source=executed）
+            Runner-->>CLI: smoke-results.jsonl
+        end
+        alt 早退（NO_SMOKE_RESULTS / NO_SMOKE_CASES）
+            CLI->>Hist: Step 4a outcome=aborted，沿用既有错误信封并附 error.details.history
+            CLI->>Lock: 释放
+        else 可判定
+            CLI->>Gate: Step 5 用例统计 → 沙箱失败改判 → 环境证据改判
+            Gate-->>CLI: 最终门禁
+            CLI->>CLI: Step 6 由最终数据渲染报告字节（一次，留在内存），写共用 smoke 报告、SMOKE_PASS/FAIL、部署账本 smoke 摘要
+            CLI->>Hist: Step 7 outcome=completed（环境、deploy_id、计数、失败用例；报告快照用同一份内存字节）
+            CLI->>Lock: Step 8 释放
+            CLI-->>Caller: 门禁结论 + data.history
+        end
+    end
+```
+
+### 步骤说明
+
+1. **Step 1～2**：进入执行前的拒绝（含环境不属于模块、部署身份核对失败）不留历史；锁集合为按项目级与 `smoke.modules.<id>` 覆盖解析后的有效 `result_path`。
+2. **Step 3**：运行了 smoke 命令时 `result_source=executed`；未配置命令、只汇总既有结果时为 `reused`。
+3. **Step 5～6**：`collectSmokeData` 不再提前写共用报告；共用报告在沙箱失败改判与环境证据改判之后由同一份最终数据经既有渲染逻辑渲染一次，字节留在内存中写入共用报告路径，报告快照使用同一份字节、不从共用路径回读（两个模块的 `result_path` 不同而 `report_path` 相同时，共用路径可能被另一次运行覆盖），路径与格式不变；`SMOKE_PASS` / `SMOKE_FAIL` 与部署账本 smoke 摘要按既有规则写入。
+4. **Step 7**：中央索引只写结构化字段（`environment`、`deploy_id`、计数、失败 / 跳过用例 ID 等）；runner 的 `detail`、`error`、`evidence`、`not_applicable_reason` 属自由文本，默认随完整记录写入提案运行目录，`verify.history.raw_in_proposal=false` 时只写本机原文目录。
+
+### 异常与边界
+
+#### EX-19H.1: 无环境登记表时沙箱失败改判
+- 用例全部通过，没有环境登记表，沙箱回收中另一项白名单产物校验失败，门禁改判 FAIL。
+- 命令结果、共用 smoke 报告与历史都是 FAIL（修正前共用报告会停留在 PASS）。
+
+#### EX-19H.2: 无结果或无用例早退
+- 触发条件限定为既有早退路径，以**采集时**结果文件的状态与本提案变更 smoke 用例集合为准：采集时结果文件不存在且本提案没有变更 smoke 用例（`NO_SMOKE_RESULTS`）——既包括未配置 `smoke.command` 且文件本就不存在，也包括配置了命令、runner 执行后预创建的空文件被删除或替换失败而不复存在；或没有 smoke 用例规格（`NO_SMOKE_CASES`）。
+- 写 `outcome=aborted` 记录，沿用既有 stderr 错误信封、错误码与退出码，`error.details.history` 给出历史元数据。
+- 不属于早退：smoke 命令运行后未写任何结果行、采集时预创建的空文件仍在，照常到达门禁，按未覆盖判 FAIL，记 `completed`；结果文件不存在但本提案有变更 smoke 用例时，沿用既有带门禁数据的返回路径，同样记 `completed`。
+
+#### EX-19H.5: 不同结果路径、相同报告路径的并发
+- 两个模块各自配置不同的 `smoke.modules.<id>.result_path`，`report_path` 都回落到同一项目级路径，两次 smoke 同时运行（运行锁互不冲突）。
+- 每次运行的报告快照与其中央索引结论一致（快照取自本次内存字节）；共用报告路径的最终内容为最后一次写出的报告——即使某次运行写完共用报告后、写快照前，共用报告已被另一次运行覆盖，该次的快照仍是它自己的报告。
+
+#### EX-19H.3: 复用既有结果
+- 未配置 smoke 命令，只汇总既有结果文件。
+- 记录的 `result_source` 为 `reused`。
+
+#### EX-19H.4: runner 自由文本
+- runner 在 `detail` 中输出了敏感内容。
+- 中央索引不含该内容；默认出现在提案运行目录的完整记录中；关闭 `raw_in_proposal` 后只出现在本机原文目录。
+
+### 追溯
+
+- 需求：「S13/S19 验收历史留存与追溯要求」。
+- 规格：功能规格 §2.104；架构「五十八、验收历史留存与查询」。
+- 测试：UT-S19-100～UT-S19-107、ST-S19-34。

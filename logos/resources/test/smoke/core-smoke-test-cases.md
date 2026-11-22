@@ -2996,3 +2996,38 @@ SMOKE-core-21 / 23 的既有认领者是 `website/scripts/smoke-releases.mjs`（
 - 全局 CLI 与模板子进程由 runner 设时限（不超过 120 秒）；超时判 fail 并在证据中写明，不得重试后写 pass。
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-324～SMOKE-core-325 均被 runner 覆盖。
+
+## OpenLogos 0.16.20 验收历史安装态 smoke（SMOKE-core-326～327）
+
+> 这组用例验证本提案 verification-history 的验收历史能力在本机全局安装态中以 0.16.20 的身份可用（功能规格 §2.104）。完整行为已由仓库内 UT-S13-141～UT-S13-156、ST-S13-38～ST-S13-39、UT-S19-100～UT-S19-107、ST-S19-34 覆盖；安装态只取证两件事：装上的是本次候选，以及全局 CLI 在一次性项目中真实写出并查得到历史。
+>
+> 用例在 `mktemp -d` 一次性 git 项目内执行：经全局 `openlogos init` 建立项目后写入夹具——单模块 `core` launched，已合并测试规格含 UT-S01-01、UT-S01-02，smoke 规格含 SMOKE-core-901；`verify.pre_run_command` 与 `smoke.command` 指向夹具内的记录型脚本，可按环境变量决定结果并在 `error` / `detail` 中写入占位值 `SECRET-PLACEHOLDER-7f3a`；环境登记表 `logos/environments.yaml` 登记 `test`，`deploy.mode: script` 指向夹具内只返回 0 的部署脚本。活跃提案 `vh-smoke` 复用 S19 测试夹具的「待部署」状态：`proposal.md` 的部署影响声明「是否需要部署：是」「是否需要 smoke：是」、影响环境 `test`；`tasks.md` 含已全部勾选的 `[code]` 与未勾选的 `[deploy]` 段；提案目录有 spec-complete 标记 `SPEC_MERGED`；写入 guard 文件。每次执行全局 CLI 前把夹具改动提交到本地 git（历史文件在一次性项目中未被忽略，随 `git add -A` 提交），使部署请求的 HEAD 干净。外层本仓候选安装态只读，不为一次性项目提供任何生命周期事实。runner 对全局安装态**只读**，不做安装或卸载；不触碰本仓活跃提案、本仓 `logos/resources/`（结果账本除外）、本仓运行态目录与用户其他仓库（包括 runlogos）。版本以部署记录与 `cli/src/lib/local-release-candidate.ts` 的候选版本为准，断言写成关系式，不硬编码 `0.16.20`。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-326 | 安装态版本、制品身份与 history 命令 | 本机全局已安装本次候选；部署账本中有本提案在 test 的成功部署记录，本机回执与之同一 deploy_id | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 执行 `openlogos --help` 与在空的一次性项目中执行 `openlogos history list --format json` | ① `--version` 等于本次成功部署回执中的候选版本，入口无 workspace link；② `payloadHash` 自洽；③ 帮助列出 `history`，`history list` 退出码 0、`data.runs=[]` | 保留读取结果；任一不符 → 停止后续流程，按部署方案以 `openlogos deploy --env test --rollback` 回退 |
+| SMOKE-core-327 | 全局 CLI 写出并查得到验收历史 | 本机全局已安装本次候选；一次性项目按上述夹具建立 | ① 第一次 `verify --format json`（UT-S01-02 失败，`error` 含占位值），记下 `data.history.run_id`；② 第二次 `verify --format json`（全部通过，写出 `VERIFY_PASS`）；③ 部署前先执行一次 `smoke --env test --format json`；④ 执行 `deploy --env test --format json`（真实命令写 `DEPLOY_DONE`、勾选 `[deploy]`、写部署账本）；⑤ 两次 `smoke --env test --format json`（第一次 SMOKE-core-901 失败、`detail` 含占位值，第二次通过并写 `SMOKE_PASS`）；⑥ `history list --format json` 与以第①轮 run_id 执行 `history show --format json`；⑦ 全文搜索占位值；⑧ 执行 `archive vh-smoke` 后再次以第①轮 run_id `history show --format json` | ①②各写一个 verify 中央索引文件；③ 以既有错误信封 `SMOKE_DEPLOY_NOT_DONE` 拒绝，不新增历史文件（前置拒绝不留历史）；④ 部署成功；⑤各写一个 smoke 中央索引文件，`environment="test"`、`deploy_id` 等于④的 deploy_id；⑥ 列表共 4 条、按 `started_at` 倒序：smoke PASS、smoke FAIL、verify PASS、verify FAIL；第①轮详情 `failed_ids=["UT-S01-02"]` 且 `full_record` 指向活动提案运行目录；⑦ 中央索引文件不含占位值，提案运行目录的完整结果含占位值（缺省 `raw_in_proposal: true`）；⑧ archive 成功，`full_record` 指向 `logos/changes/archive/<日期>-vh-smoke/verify-runs/<run_id>/`，中央索引文件字节不变 | 同上；任一不成立表示历史能力未完整进入安装态 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目与受控临时目录内进行，结束即删除；不配置远端、不联网。
+- **不得**触碰本仓活跃提案、本仓 `logos/resources/`（结果账本除外）、本仓运行态目录、本仓的 git 分支与工作区、用户其他仓库（包括 runlogos）或本机全局 prefix。
+- 结果写入本仓 `logos/resources/verify/smoke-results.jsonl`；实际执行的结果行带 `target_environment="test"`，窗口之外的 skip 行不声明 `target_environment`。
+
+### 三、追溯与覆盖
+
+- 功能规格：§2.104；场景：S13「验收历史留存与查询时序（verification-history）」、S19「smoke 验收历史留存（verification-history）」。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.20 本机测试环境发布（verification-history）」。
+- 仓库内对应用例：UT-S13-141、UT-S13-145、UT-S13-149、UT-S13-155（对应 SMOKE-core-327）；UT-S19-100、UT-S19-101（对应 SMOKE-core-327 ③⑤）。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-verification-history.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-326～SMOKE-core-327，不得依靠通配发现后无条件 PASS。
+- 适用窗口：活跃变更为 `verification-history`，或 `OPENLOGOS_VH_SMOKE=1`；窗口之外按既有留痕机制为全部 owned ID 写 skip，skip 行不声明 `target_environment`。环境变量一律使用 `OPENLOGOS_VH_` 前缀。
+- 部署前置：以部署账本中本提案在 test 的最后一条成功 deploy 与本机部署回执（同一 deploy_id、`result=done`、`candidate_version` 逐字段等于源码候选版本）为准；账本中没有本提案成功部署记录时写显式 `skip` 并携带缺失项，记录存在但回执不符时判 fail。有 skip 时不得写 `SMOKE_PASS`。
+- 全局 CLI 子进程在独立进程组中运行并限时 120 秒，到时对整个进程组强制终止并判 fail；每一步按**预期的退出码与输出通道**判定后再解析输出：SMOKE-core-327 中第①步 verify 预期退出码 1、解析 stdout 的 FAIL 成功信封（取 `data.history.run_id`），第②步 verify 与第⑤步第二次 smoke 预期退出码 0、解析 stdout，第③步部署前 smoke 预期退出码 1、解析 stderr 的既有错误信封（`error.code=SMOKE_DEPLOY_NOT_DONE`），第④步 deploy 预期退出码 0、解析 stdout 的成功信封，第⑧步 archive 预期退出码 0，第⑤步第一次 smoke 预期退出码 1、解析 stdout 的 FAIL 信封，SMOKE-core-326 与查询命令预期退出码 0；凡要求解析信封的步骤一律以 `--format json` 调用，文本模式输出视为信封不匹配。超时、被信号终止、启动错误、非预期退出码或信封通道 / 形态不匹配均判该用例 fail，不得重试后写 pass。
+- 自测模式只接受仓库之外的独立结果账本，并在正式 smoke 上下文（已注入 `OPENLOGOS_SMOKE_ENV` / `OPENLOGOS_SMOKE_MODULE`）中拒绝运行；自测结果不声明 `target_environment`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-326～SMOKE-core-327 均被 runner 覆盖。

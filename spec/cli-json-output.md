@@ -3697,3 +3697,94 @@ L10 的启用条件：本提案有 `deltas/knowledge/`，或本提案场景 delt
 
 - `refs` 按 `scenario_path` → `line` 排序；没有引用时为 `[]`。参数不匹配 `^K\d+(-R\d+)?$` → 退出码 2；其余退出码 0。
 - **未完成事务与读锁**：`check` / `list` / `show` / `refs` 在 `knowledge-apply.lock` 读锁区间内读取（功能规格 §2.103.4「事务」第 6 条）。区间内存在未完成的录入事务，或退避预算内取不到锁时，`list` / `show` / `refs` 不输出视图数据，`data` 为 `{"errors": [issue]}`（含 `knowledge_apply_incomplete`，`message` 区分「上一次录入被中断」与「另一个录入正在进行」），退出码 1；`check` 在事务未完成时照常输出并在 `errors[]` 中报告，取不到锁时与前三者相同；`index` 先取写锁、恢复再生成。
+
+## `openlogos history` 命令组与 verify / smoke 的 history 字段（verification-history）
+
+> 规则权威：功能规格 §2.104；留存约定见 `spec/test-results.md`「验收历史留存（verification-history）」。两个子命令共用 §1.2 通用信封，`command` 取值为 `"history list"`、`"history show"`；不携带 `contract` 字段（`contract` 只属于 `status` / `next`）。
+
+### verify / smoke 的 `data.history`
+
+本次运行开启了历史（命令通过前置检查、进入执行或结果采集）时输出 history 元数据：到达最终门禁时在成功信封的 `data.history`；进入执行后以既有错误早退（`NO_TEST_RESULTS`、`NO_TEST_CASES`、`NO_SMOKE_RESULTS`、`NO_SMOKE_CASES`）时，沿用 §6 的 stderr 错误信封、既有错误码与退出码，经 `makeErrorEnvelope` 扩展字段放在 `error.details.history`（该错误已有 `details` 对象时作为其 `history` 键追加，不改其余键）；进入执行前被拒绝时不出现。
+
+```jsonc
+"history": {
+  "run_id": "20261122T061530123Z-verify-a1b2c3",
+  "index_path": "logos/resources/verify/history/20261122T061530123Z-verify-a1b2c3.json",  // 项目根相对路径
+  "run_dir": "logos/changes/vh-demo/verify-runs/20261122T061530123Z-verify-a1b2c3",     // 无活跃提案时为 null
+  "raw_location": "proposal" | "local" | "none",
+  "write_status": "written" | "failed",
+  "write_error": { "code": "verification_history_write_failed", "layer": "index" | "proposal" | "local", "path": "logos/resources/verify/history/…" }  // 仅 write_status=failed 时出现
+}
+```
+
+- `write_status="failed"` 时 `write_error` 点名失败层与路径；门禁、退出码与其余字段不受影响。
+- `spec/schema/verify.schema.json` 顶层允许附加字段，`history` 作为可选字段出现不改变该 schema 的校验结果；既有字段与 golden 中的其他字段不变。
+
+### 结果路径运行锁冲突
+
+- verify / smoke 在开启运行时若任一有效结果路径被其他运行持有，按 §6 错误信封输出到 stderr：`error.code = "RESULT_PATH_BUSY"`，`message` 点名冲突路径（项目根相对），`error.details.paths` 列出全部冲突路径，退出码 2；不写历史、不出现 history 元数据。
+
+### 共用对象：run
+
+`history list` 的元素与 `history show` 的 `run` 为中央索引记录本身（`schema: "openlogos/verification-run@1"`，字段闭合，见功能规格 §2.104.3）：
+
+```jsonc
+{
+  "schema": "openlogos/verification-run@1",
+  "run_id": "20261122T061530123Z-verify-a1b2c3",
+  "kind": "verify" | "smoke",
+  "started_at": "2026-11-22T06:15:30.123Z",
+  "finished_at": "2026-11-22T06:16:02.004Z",
+  "outcome": "completed" | "aborted",
+  "gate": { "result": "PASS" | "FAIL" | null, "reason": "failed_cases" },
+  "error_code": null,
+  "proposal": { "slug": "vh-demo", "run_dir": "verify-runs/20261122T061530123Z-verify-a1b2c3" },  // 或 null
+  "module_scope": ["core"],                // 或 null
+  "verify_mode": "slice-checkpoint" | "final" | null,
+  "attempted_slice_id": "slice-01-demo",   // 或 null
+  "environment": null,                     // smoke 为目标环境 id
+  "deploy_id": null,                       // smoke 为核对的 deploy_id
+  "counts": { "defined": 3, "executed": 3, "passed": 1, "failed": 2, "skipped": 0, "uncovered": 0 },
+  "failed_ids": ["UT-S01-01", "UT-S01-02"],
+  "skipped_ids": [],
+  "uncovered_ids": [],
+  "result_source": "executed" | "reused",
+  "commit": { "head": "000ac05…", "dirty": false },
+  "cli_version": "0.16.20",
+  "raw_location": "proposal" | "local" | "none"
+}
+```
+
+### `openlogos history list [--kind verify|smoke] [--slug <slug>] [--result pass|fail|aborted] [--module <id>] [--limit <n>] --format json`
+
+```jsonc
+"data": {
+  "runs": [ /* run，按 started_at 倒序 */ ],
+  "total": 12,          // 筛选后、截断前的条数
+  "warnings": [ { "code": "verification_history_corrupt", "path": "logos/resources/verify/history/x.json", "message": "…" } ]
+}
+```
+
+- `--result pass` / `fail` 匹配 `gate.result`；`aborted` 匹配 `outcome`。`--limit` 缺省 20。目录不存在时 `runs=[]`、`total=0`。
+- 退出码：0；参数非法 → 2。
+
+### `openlogos history show <run_id> --format json`
+
+```jsonc
+"data": {
+  "run": { /* run */ },
+  "full_record": { "path": "logos/changes/archive/20261122-0730-vh-demo/verify-runs/<run_id>", "results_path": "…/results.jsonl", "report_path": "…/report.md" } | "unavailable",
+  "raw": { "path": "logos/.openlogos-runtime/verify-runs/<run_id>" } | "unavailable" | null,  // raw_location 非 local 时为 null
+  "unavailable_reason": null | "no_proposal" | "not_found_locally",
+  "warnings": []
+}
+```
+
+- `full_record` 按 run_id 依次在活动提案与归档提案的运行目录中精确查找；`report_path` 在该次没有报告快照（早退）或原文在本机时为 null。
+- 退出码：0；run_id 不存在（含对应中央索引文件损坏）→ 1，按 §6 错误信封输出 `error.code = "HISTORY_RUN_NOT_FOUND"`；参数非法 → 2。
+
+### 错误码与 warning 码
+
+- 错误信封 `error.code`：`RESULT_PATH_BUSY`（verify / smoke）、`HISTORY_RUN_NOT_FOUND`（history show）。
+- history 元数据 `write_error.code`：`verification_history_write_failed`（verify / smoke）。
+- `data.warnings[].code`：`verification_history_corrupt`（history list / show）。

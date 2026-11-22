@@ -600,3 +600,54 @@
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S13"`；失败不得写 pass。
 - 环境变量与 eligible 的断言必须读取记录型运行器的调用日志，不得以 verify 的 stdout 自述代替。
 - 「零回归」「字节不变」类断言直接读回磁盘字节与修改时间比对；UT-S13-134 的引入前基准由同一夹具在引入前实现上生成并作为 golden 固化。
+
+## S13 验收历史留存与查询测试（verification-history）
+
+> 覆盖场景 `core-S13-verify-results.md`「验收历史留存与查询时序（verification-history）」（Step 1～10、EX-13H.1～EX-13H.10），功能规格 §2.104，`spec/test-results.md`「验收历史留存（verification-history）」，`spec/cli-json-output.md`「`openlogos history` 命令组与 verify / smoke 的 history 字段（verification-history）」。
+>
+> **夹具 VH**：`mktemp -d` 一次性 git 项目，单模块 `core`（launched），已合并测试规格定义 UT-S01-01、UT-S01-02、ST-S01-01；`verify.pre_run_command` 指向记录型 runner（按环境变量决定每条用例 pass / fail、可在 `error` 中写入敏感占位值 `SECRET-PLACEHOLDER-7f3a`、记录每次调用）；活跃提案 `vh-demo` 已 spec-complete。变体 VH0：同一项目无活跃提案。变体 VH-reuse：不配置预跑命令，结果文件预先写好。
+>
+> 结构化断言一律读回磁盘文件解析，不以命令 stdout 自述代替；「行为不变」类断言以同一夹具在引入前实现上生成的 golden 比对。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S13-141 | 连续两次 verify 后两轮都可追溯 | §2.104.2、§2.104.3 | 夹具 VH；第一次 runner 让 UT-S01-01、UT-S01-02 失败，第二次全部通过 | 依次执行两次 `verify --format json`（记下两次 `data.history.run_id`），再执行 `history list --slug vh-demo --format json` 与 `history show <第一次的 run_id> --format json` | `logos/resources/verify/history/` 下恰有两个文件，文件名等于各自 `run_id`；列表按 `started_at` 倒序，第一条为第二次运行（`gate.result=PASS`）、第二条为第一次运行（`gate.result=FAIL`）；按第一次的 run_id 查看得到 `failed_ids` 为 `["UT-S01-01","UT-S01-02"]`、`counts` 与第一次的报告一致，报告快照的 Gate 行为 FAIL；`acceptance-report.md` 与 `test-results.jsonl` 只反映第二次 |
+| UT-S13-142 | smoke 覆盖预检改判时报告与历史一致 | §2.104.5、EX-13H.1 | 夹具 VH；提案新增 smoke 用例 SMOKE-core-901 但没有 runner；用例全部通过 | `verify --format json` | 命令 `gate.result=FAIL`；`acceptance-report.md` 的 Gate 行为 FAIL；历史 `gate.result=FAIL`、`gate.reason` 与命令一致；提案运行目录 `report.md` 与 `acceptance-report.md` 逐字节相同 |
+| UT-S13-143 | 复用既有结果标 reused | §2.104.3、EX-13H.2 | 夹具 VH-reuse | 连续两次 `verify --format json` | 两条历史 `result_source` 都是 `reused`；runner 调用日志为空 |
+| UT-S13-144 | 进入执行后的早退仍留历史，执行前拒绝不留 | §2.104.4、§2.104.10、EX-13H.3 | 夹具 VH；变体 ①：VH-reuse 配置（不配置预跑）且结果文件不存在；②：预跑执行后已合并测试规格中没有任何可验收用例；③：预跑命令以非零退出且不写任何结果行；④：传入未知参数；⑤：删除 `logos/logos.config.json` | 分别执行 `verify --format json`，解析 stdout 与 stderr 的 JSON 信封 | ①②：stderr 为既有错误信封，`error.code` 分别为 `NO_TEST_RESULTS`、`NO_TEST_CASES`，`message` 与退出码与修改前一致；`error.details.history.index_path` 指向新增的中央索引文件，该文件 `outcome=aborted`、`error_code` 等于 `error.code`、`gate.result=null`，提案运行目录无 `report.md`；③：不是早退，stdout 成功信封 `gate.result=FAIL`，历史 `outcome=completed`、`result_source=executed`；④⑤：不新增任何历史文件，信封中无 history 元数据 |
+| UT-S13-145 | 自由文本的 Git 可见范围 | §2.104.2、§2.104.3 | 夹具 VH；runner 让 UT-S01-01 失败并在 `error` 写入 `SECRET-PLACEHOLDER-7f3a`；两臂：缺省配置 / `verify.history.raw_in_proposal: false` | 每臂执行一次 `verify` 后全文搜索占位值 | 两臂中央索引文件都不含占位值，且其键集合等于 §2.104.3 白名单；缺省臂：提案运行目录 `results.jsonl` 与 `report.md` 含占位值，`raw_location="proposal"`；关闭臂：提案运行目录 `results.jsonl` 每行只含 `id`、`status`、`scenario`、`timestamp`、`duration_ms`（及存在时的 `environment` / `target_environment`）且不含占位值、无 `report.md`，占位值只出现在 `logos/.openlogos-runtime/verify-runs/<run_id>/`，`raw_location="local"` |
+| UT-S13-146 | 同一结果路径并发时后到者被拒 | §2.104.6、EX-13H.4 | 夹具 VH；runner 在收到信号前阻塞；先在后台启动一次 verify 直至其持锁 | 再执行一次 `verify --format json`，解析 stderr 信封 | 后到者退出码 2、stderr 错误信封 `error.code=RESULT_PATH_BUSY`，`error.details.paths` 含 `logos/resources/verify/test-results.jsonl`；`test-results.jsonl` 的字节与修改时间不变；不新增历史文件；放行前者后其历史正常写入 |
+| UT-S13-147 | 只共享阶段结果路径或只读既有结果也参加冲突判定 | §2.104.6、EX-13H.4 | 夹具 VH 改为两阶段：`regression_result_path=logos/resources/verify/reg.jsonl`、`incremental_result_path=logos/resources/verify/inc.jsonl`；`smoke.result_path` 配为 `logos/resources/verify/reg.jsonl`；变体：后台持锁的是只读取既有结果的 verify（VH-reuse 配置） | verify 持锁期间执行 `smoke --format json`；变体中执行配置预跑的 verify | 两种情况后到者都以 `RESULT_PATH_BUSY` 拒绝，`reg.jsonl` 字节不变，不新增历史 |
+| UT-S13-148 | checkpoint 与 final 各留一条 | §2.104.3、EX-13H.7 | 两切片提案（复用 S13 切片验收夹具 SV）；切片 1 checkpoint 连续两次 PASS，随后 final PASS | 依次执行三次 `verify` | 三条历史：前两条 `verify_mode=slice-checkpoint`、`attempted_slice_id` 为切片 1，第三条 `verify_mode=final`、`attempted_slice_id=null`；`SLICE_CHECKPOINTS.jsonl` 的去重行为与修改前一致 |
+| UT-S13-149 | 归档后按 run_id 定位，同名新提案不串号 | §2.104.9、§2.104.10、EX-13H.9 | 夹具 VH 运行一次 verify 后执行 `archive vh-demo`，再新建同名提案 `vh-demo` 并运行一次 verify | `history show <旧 run_id> --format json`、`history show <新 run_id> --format json`；再删除归档目录下的旧运行目录后重查旧 run_id | 旧 run_id 的 `full_record.path` 指向 `logos/changes/archive/<日期>-vh-demo/verify-runs/<旧 run_id>/`；新 run_id 指向活动目录；两次结果的计数与失败用例互不相同；删除后仍返回中央字段，`full_record="unavailable"`；中央索引文件字节在归档前后不变 |
+| UT-S13-150 | 没有活跃提案只写中央索引 | §2.104.2、EX-13H.8 | 夹具 VH0 | `verify --format json` 后 `history show <run_id>` | 新增一个中央索引文件，`proposal=null`、`raw_location="none"`；`logos/changes/` 下无新增文件；`history show` 标明无完整记录 |
+| UT-S13-151 | 运行记录目录不影响 change-lint、merge 与计划指纹 | §2.104.9 | 夹具 VH 在 spec-complete 前运行一次 verify，使提案目录出现 `verify-runs/` | 执行 `change-lint --format json`、读取 `TEST_SLICE_MANIFEST.json` 指纹、执行 `merge`（no-delta 变体）与 `status --format json` | change-lint 结论与没有 `verify-runs/` 时相同；计划、任务与规格指纹不变；merge 不把 `verify-runs/` 当作 delta；`proposal_step` 与切片状态派生不变 |
+| UT-S13-152 | 现有报告、结果文件与标记零回归 | §2.104.11 | 夹具 VH 的全绿、真实失败、两阶段三种运行（不触发 smoke 覆盖预检改判） | 各执行一次 `verify` | `acceptance-report.md`、`test-results.jsonl` 字节与引入前 golden 一致；`VERIFY_PASS` / `VERIFY_FAIL` / `LOOP_ITERS` 的写入与删除时机与修改前一致；JSON 输出除新增 `data.history` 外与修改前一致 |
+| UT-S13-153 | 历史写入失败不改变门禁与退出码 | §2.104.7、EX-13H.5 | 夹具 VH；把 `logos/resources/verify/history` 预先创建为普通文件（无法作为目录写入） | `verify --format json`（全绿） | 退出码 0、`gate.result=PASS`、`VERIFY_PASS` 写入；`data.history.write_status="failed"`，`data.history.write_error` 为 `{ code: "verification_history_write_failed", layer: "index", path: "logos/resources/verify/history" }` 形态；文本模式给出一行警告 |
+| UT-S13-154 | 损坏的历史文件被跳过并提示 | §2.104.10、EX-13H.6 | 夹具 VH 已有两条正常历史；另放入一个内容为 `not json` 的 `<run_id>.json` 与一个缺 `kind` 的文件 | `history list --format json` | 返回两条正常记录；`warnings` 含两条 `verification_history_corrupt`，各点名对应文件；退出码 0 |
+| UT-S13-155 | 查询命令的筛选、查看与错误码 | §2.104.10 | 夹具 VH 已有 verify 的 FAIL、PASS、aborted 各一条与 smoke 的 PASS 一条 | `history list --kind verify --result fail`、`--result aborted`、`--kind smoke`、`--limit 1`；`history show <不存在的 run_id> --format json`；文本模式 `history list` | 筛选结果分别只含对应记录、按 `started_at` 倒序；`--limit 1` 只返回最新一条；未知 run_id 退出码 1、stderr 错误信封 `error.code=HISTORY_RUN_NOT_FOUND`；文本模式每条一行，含时间、类型、提案、结论与失败用例数 |
+| UT-S13-156 | 历史路径被 git 忽略时照常写入并给出路径 | §2.104.8、EX-13H.10 | 夹具 VH 的 `.gitignore` 含 `/logos/resources/*` | `verify --format json` 与文本模式 `verify` | 中央索引文件写入成功；`data.history.index_path` 为该文件的项目根相对路径，文本输出包含该路径；`git status --porcelain` 不列出它（被忽略），`git add -f <路径>` 可暂存；CLI 未执行任何 git 写操作（git 仓库的 index 与 HEAD 不变） |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S13-38 | 端到端：失败轮与通过轮在归档后仍可追溯 | Step 1～10 | 真实 CLI；夹具 VH | ① runner 让 UT-S01-02 失败，执行 `verify`；② 修复后执行 `verify`；③ `archive vh-demo`；④ `history list --slug vh-demo`；⑤ 以第①轮 verify 输出的 `data.history.run_id` 执行 `history show` | ①写出 FAIL 历史与提案运行目录；②写出 PASS 历史，`VERIFY_PASS` 在场、`VERIFY_FAIL` 已删除；④按时间倒序两条，第②轮（PASS）在前、第①轮（FAIL）在后；⑤以第①轮输出的 run_id 查看，从归档目录读到第①轮的完整结果与报告快照，`failed_ids=["UT-S01-02"]`，报告快照的 Gate 行为 FAIL |
+| ST-S13-39 | 新克隆与两分支各验收一次后合并无冲突 | Step 2、Step 8、Step 10 | 真实 CLI；夹具 VH0 推到本地裸仓库；中央索引目录未被忽略 | ① 克隆两份，分别在分支 a、b 上各执行一次 `verify` 并各自提交新历史文件；② 在 a 上 `git merge b`；③ 第三次新克隆后执行 `history list` 与 `history show <a 的 run_id>` | ②合并无冲突，两条历史都在；③新克隆列出两条记录；`history show` 返回中央字段（无活跃提案时本就无完整记录，`full_record="unavailable"` 的原因注明为无提案） |
+
+### 覆盖度校验
+
+- 两轮可追溯与查询：UT-S13-141、UT-S13-155、ST-S13-38。
+- 与最终门禁一致、结果来源、早退：UT-S13-142、UT-S13-143、UT-S13-144。
+- Git 可见范围与入库：UT-S13-145、UT-S13-156、ST-S13-39。
+- 运行锁：UT-S13-146、UT-S13-147。
+- checkpoint / final、无活跃提案、归档定位：UT-S13-148、UT-S13-150、UT-S13-149。
+- 边界与零回归：UT-S13-151、UT-S13-152、UT-S13-153、UT-S13-154。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S13"`，测试名含用例 ID；失败不得写 pass。
+- 并发用例以可控阻塞的记录型 runner 构造确定的持锁窗口，不依赖 sleep 竞速；断言读取锁文件与结果文件的字节和修改时间。
+- 自由文本断言对中央索引、提案运行目录与本机原文目录逐文件全文搜索占位值，并校验中央索引键集合等于白名单。

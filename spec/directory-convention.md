@@ -221,3 +221,28 @@ PreToolUse guard hook 脚本。在 Claude Code 调用 Edit/Write/Bash 工具前�
 ### logos/resources/reference/knowledge/（S45）
 
 企业原始资料（制度原文、接口说明、术语表等）的存放处，是 `reference/` 的子目录，沿用 `reference/` 的 guard 默认豁免：直接写入，不经 delta（`deltas/reference/` 仍为显式忽略）；也可放进 `openlogos knowledge apply` 候选目录的 `sources/`，由 apply 校验通过后复制（显式 `guard.exempt` 不含 `reference/` 的项目只能用此方式；走提案通道时用只含 `sources/` 的候选目录写原文，条目仍经 delta 合并）。同名原文已存在且内容不同时 apply 拒绝，新版原文使用新文件名。原始资料与知识条目都进入 git 仓库；AI 写入原文时必须提示「原文将随仓库 push 扩散，push 前请确认可公开范围」。知识条目的 `source` 以仓库相对路径指向这里的文件并注明版本。`openlogos init` 创建本目录与 `logos/resources/knowledge/`；升级前已初始化的项目没有这两个目录时，首次录入由 AI 直接创建原文目录，`logos/resources/knowledge/` 由首次合并知识 delta 时创建。
+
+## 验收历史目录（verification-history）
+
+> 来源变更：verification-history（决策 C01～C04）。留存约定见 [test-results.md](./test-results.md)「验收历史留存（verification-history）」；功能规格 §2.104。三处目录都只由 `openlogos verify` / `openlogos smoke` 在一次运行收尾时写入，测试 runner、reporter 与 AI 不直接写入。
+
+### logos/resources/verify/history/
+
+- 中央轻量索引：每次进入执行的 verify / smoke 运行写一个 `<run_id>.json`（`run_id` 形如 `20261122T061530123Z-verify-a1b2c3`，全局唯一），写入后不再改写。
+- 只含结构化字段，不含自由文本；覆盖所有运行（含没有活跃提案时的运行与进入执行后的早退）。
+- 随项目正常提交纳入版本控制：OpenLogos 不执行 git 操作；路径被忽略规则命中时由流程提交或用户以 `git add -f` 纳入。按运行独立成文件，分支合并不冲突。
+
+### logos/changes/<slug>/verify-runs/<run_id>/
+
+- 提案完整记录：有活跃提案时每次运行写 `record.json`（与中央索引同字段）、`results.jsonl`（本次实际采集的结果）、`report.md`（本次最终报告快照，早退时缺省）。
+- `verify.history.raw_in_proposal` 缺省 `true` 时 `results.jsonl` 为完整结果；为 `false` 时只保留结构化字段，且不写 `report.md`。
+- 不属于 delta，不参与 change-lint、merge、计划 / 任务 / 规格指纹与流程派生；`openlogos archive` 整目录移动时随提案进入 `logos/changes/archive/<日期>-<slug>/verify-runs/`。归档目录仍按既有「audit-only」定位，项目清理归档时这些完整记录随之删除，中央索引不受影响。
+
+### logos/.openlogos-runtime/verify-runs/<run_id>/
+
+- 本机原文：只在有活跃提案且 `verify.history.raw_in_proposal: false` 时写 `report.md` 与 `results-raw.jsonl`（被剥除的自由文本字段，按用例 ID 对应）。
+- 位于运行态目录，已被受管 `.gitignore` 区块排除，不进入版本控制，换机器或重新克隆后不可用。
+
+### logos/.openlogos-runtime/result-locks/
+
+- 结果路径运行锁文件（`<sha256(真实路径)>.lock`），运行结束即删除；持有进程不存在的锁视为过期并回收。不进入版本控制。

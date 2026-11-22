@@ -903,3 +903,128 @@ sequenceDiagram
 - 功能规格：§2.37.2、§2.37.4、§2.37.8、§2.101。
 - 根规范：`spec/test-slice-manifest.md` §7；`spec/test-results.md`「切片 checkpoint 的结果集合与 pending 语义」。
 - 测试：`core-S13-test-cases.md`「S13 切片 checkpoint owned 验收范围测试」——UT-S13-132～UT-S13-140、ST-S13-35～ST-S13-37。
+
+## 验收历史留存与查询时序（verification-history）
+
+### 目标
+
+让每一次进入执行的 `openlogos verify` 都留下一条不会被覆盖的历史，历史与同一次调用的最终门禁、共用验收报告一致，并能在提案归档后按 run_id 查到完整记录。规则权威见功能规格 §2.104。
+
+### 参与者
+
+- 用户或自动化宿主（RunLogos driver）
+- OpenLogos CLI（`openlogos verify`、`openlogos history`）
+- ResultPathLock（结果路径运行锁）
+- 测试 runner / OpenLogos reporter
+- VerificationHistory（三层写入与读取）
+- 提案目录、中央索引目录与本机运行态目录
+
+### 前置条件
+
+- 项目已初始化；`verify` 配置可解析。
+- 有活跃提案时提案目录存在；没有活跃提案时同样适用（只写中央索引）。
+- 本次命令已通过用法、配置与前置拒绝检查（未通过时不开启运行、不留历史）。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    actor Caller as 用户/宿主
+    participant CLI as openlogos verify
+    participant Lock as ResultPathLock
+    participant Runner as 测试 runner
+    participant Gate as 门禁判定
+    participant Hist as VerificationHistory
+    participant FS as 报告/中央索引/提案运行目录
+
+    Caller->>CLI: verify [--format json]
+    CLI->>CLI: Step 1 用法/配置/前置检查（拒绝则退出，不记录）
+    CLI->>Lock: Step 2 开启运行：生成 run_id，按真实路径排序获取全部有效结果路径的锁
+    alt 任一路径被占用
+        Lock-->>CLI: 冲突
+        CLI-->>Caller: RESULT_PATH_BUSY（退出 2，不截断，不记录）
+    else 全部获取
+        Lock-->>CLI: 已持有
+        opt 配置了预跑 / 两阶段命令
+            CLI->>Runner: Step 3 截断阶段结果并执行命令
+            Runner-->>CLI: reporter JSONL（result_source=executed）
+        end
+        CLI->>CLI: Step 4 读取结果（未执行命令时 result_source=reused）
+        alt 进入执行后早退（NO_TEST_RESULTS / NO_TEST_CASES）
+            CLI->>Hist: Step 5a 收尾：outcome=aborted，沿用错误码与已取得的计数
+            Hist->>FS: 写中央索引；有活跃提案时写提案运行目录
+            CLI->>Lock: 释放
+            CLI-->>Caller: 既有错误信封（error.details.history）与既有退出码
+        else 结果可判定
+            CLI->>Gate: Step 6 覆盖/账本 → smoke 覆盖预检 → 沙箱裁决
+            Gate-->>CLI: 最终门禁
+            CLI->>FS: Step 7 由最终数据渲染报告字节（一次，留在内存），写共用 acceptance-report.md 与既有标记
+            CLI->>Hist: Step 8 收尾：outcome=completed，报告快照用同一份内存字节
+            Hist->>FS: 写中央索引（结构化字段）；有活跃提案时写 verify-runs/<run_id>/；raw_in_proposal=false 时原文写本机
+            CLI->>Lock: Step 9 释放
+            CLI-->>Caller: 门禁结论 + data.history
+        end
+    end
+    Caller->>CLI: Step 10 history list / history show <run_id>
+    CLI->>Hist: 读中央索引；按 run_id 查活动/归档提案运行目录与本机原文
+    Hist-->>Caller: 历史与完整记录（缺失时标明不可用）
+```
+
+### 步骤说明
+
+1. **Step 1**：用法错误、`logos.config.json` 缺失、guard 拒绝等在开启运行前退出，不留历史，行为与修改前一致。
+2. **Step 2**：锁集合为 `result_path`、`regression_result_path`、`incremental_result_path` 的有效值（按模块命令组解析），统一解析为真实路径后排序，全有或全无获取。
+3. **Step 3～4**：执行了任一预跑 / 两阶段命令时 `result_source=executed`，只读取既有结果时为 `reused`。
+4. **Step 5a**：进入执行后的早退（未配置预跑且结果文件不存在的 `NO_TEST_RESULTS`、缺少可验收用例定义的 `NO_TEST_CASES`）写 `outcome=aborted` 记录，报告字段缺省；沿用既有 stderr 错误信封、错误码与退出码，history 元数据放在 `error.details.history`。结果文件存在但为空（如预跑失败）时不是早退，照常到达门禁。
+5. **Step 6～7**：共用 `acceptance-report.md` 在全部门禁（含 smoke 覆盖预检改判与沙箱裁决）之后写出一次；`VERIFY_PASS` / `VERIFY_FAIL`、`LOOP_ITERS`、切片 checkpoint 按既有规则写入。
+6. **Step 8**：报告快照使用 Step 7 渲染时留在内存的同一份字节，不从共用报告路径回读；中央索引只写结构化白名单字段；有活跃提案时 `verify-runs/<run_id>/` 写 `record.json`、`results.jsonl`、`report.md`；`verify.history.raw_in_proposal=false` 时 `results.jsonl` 去掉自由文本字段，报告快照与被去掉的字段写到 `logos/.openlogos-runtime/verify-runs/<run_id>/`。写入失败只在 history 元数据中置 `write_status: "failed"` 与 `write_error`。
+7. **Step 9**：释放全部锁。
+8. **Step 10**：`history list` 只读中央索引；`history show` 以 run_id 精确匹配活动或归档提案的运行目录。
+
+### 异常与边界
+
+#### EX-13H.1: smoke 覆盖预检把门禁改判 FAIL
+- 用例全部通过，但本提案新增的 smoke 用例缺 runner，`applySmokePrecheck` 把门禁改为 FAIL。
+- 共用 `acceptance-report.md`、命令结果与历史的结论都是 FAIL；报告快照与共用报告逐字节一致。
+
+#### EX-13H.2: 复用既有结果
+- 未配置预跑命令，两次 verify 读取同一份预先生成的结果文件。
+- 两条记录的 `result_source` 都是 `reused`，不冒充重新执行。
+
+#### EX-13H.3: 进入执行后早退
+- 未配置预跑且结果文件不存在（`NO_TEST_RESULTS`），或已合并测试规格中没有可验收用例（`NO_TEST_CASES`，预跑可能已执行）。
+- 写 `outcome=aborted` 记录，带既有错误码与已取得的计数；报告字段缺省；stderr 错误信封、错误码与退出码不变，`error.details.history` 给出历史元数据。预跑失败但结果文件已被创建（为空）时不属于早退，照常判定为 FAIL 并记 `completed`。用法错误与配置缺失不记录。
+
+#### EX-13H.4: 结果路径冲突
+- 另一个 verify 或 smoke 正在运行，且其有效结果路径与本次锁集合有交集（包括只共享 regression / incremental 阶段路径、或对方只读取既有结果）。
+- 本次以 `RESULT_PATH_BUSY` 拒绝（退出 2），释放已获取的锁，不截断、不改写任何结果文件，不写历史。
+
+#### EX-13H.5: 历史写入失败
+- 中央索引目录不可写或提案运行目录写入失败。
+- `data.history.write_status="failed"`，`write_error.code="verification_history_write_failed"` 点名失败层与路径；门禁结论、退出码与标记不受影响。
+
+#### EX-13H.6: 损坏的历史文件
+- 中央索引目录中有非 JSON 或缺必填字段的文件。
+- `history list` / `show` 跳过它并给出 `verification_history_corrupt` 警告，其余记录照常返回。
+
+#### EX-13H.7: 切片 checkpoint 与 final
+- 多切片提案依次执行 checkpoint verify 与 final verify。
+- 各留一条记录，`verify_mode` 分别为 `slice-checkpoint`（带 `attempted_slice_id`）与 `final`；checkpoint 重复 PASS 也各留一条（历史记录每次运行，不同于 checkpoint 账本的去重）。
+
+#### EX-13H.8: 没有活跃提案
+- 初始开发阶段或两次提案之间执行 verify。
+- 只写中央索引，`proposal=null`、`raw_location="none"`；`history show` 注明没有完整记录。
+
+#### EX-13H.9: 归档后与同名新提案
+- 提案归档后又新建同名提案并运行 verify。
+- 旧 run_id 从 `logos/changes/archive/*-<slug>/verify-runs/<run_id>/` 读到完整记录；新运行 run_id 不同，不会被认成旧记录；中央索引不改写。完整记录在本机缺失时（如重新克隆）返回中央字段并标明 `full_record: "unavailable"`。
+
+#### EX-13H.10: 历史路径被 git 忽略
+- 历史目录命中 `.gitignore` 规则。
+- 文件照常写入，输出给出路径；由流程提交或用户以 `git add -f` 纳入。CLI 不执行 git 操作。
+
+### 追溯
+
+- 需求：「S13/S19 验收历史留存与追溯要求」。
+- 规格：功能规格 §2.104；架构「五十八、验收历史留存与查询」；`spec/test-results.md`「验收历史留存（verification-history）」。
+- 测试：UT-S13-141～UT-S13-156、ST-S13-38～ST-S13-39。

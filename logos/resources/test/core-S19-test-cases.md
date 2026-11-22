@@ -696,3 +696,42 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 - 写入白名单：UT-S19-96。
 - 保留路径与写入次序（delta-r1 F1）：UT-S19-97、UT-S19-98、UT-S19-99。
 - 端到端推进：ST-S19-33。
+
+## S19 smoke 验收历史留存测试（verification-history）
+
+> 覆盖场景 `core-S19-smoke-gate.md`「smoke 验收历史留存（verification-history）」（Step 1～8、EX-19H.1～EX-19H.4），功能规格 §2.104，`spec/test-results.md`「验收历史留存（verification-history）」。
+>
+> **夹具 SH**：`mktemp -d` 一次性 git 项目，单模块 `core`（launched），已合并 smoke 规格定义 SMOKE-core-901、SMOKE-core-902；`smoke.command` 指向记录型 runner（按环境变量决定每条结果 pass / fail、可在 `detail` 中写入敏感占位值 `SECRET-PLACEHOLDER-7f3a`）；登记表含 `test` 环境（script 方式 `deploy`），活跃提案 `sh-demo` 已部署到 test 并落账。变体 SH-noreg：无环境登记表。变体 SH-reuse：不配置 `smoke.command`，结果文件预先写好。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S19-100 | 连续两次 smoke 后两条历史含环境与 deploy_id | §2.104.3 | 夹具 SH；第一次 SMOKE-core-902 失败，第二次全部通过 | 两次 `smoke --env test --format json`（记下两次 `data.history.run_id`），再 `history list --kind smoke --format json` 与 `history show <第一次的 run_id>` | 两条 `kind=smoke` 记录，`environment="test"`、`deploy_id` 等于账本中本提案最近一次 deploy；列表按 `started_at` 倒序，第二次（PASS）在前、第一次（FAIL）在后；按第一次的 run_id 查看得到 `failed_ids=["SMOKE-core-902"]`；提案运行目录各有完整记录 |
+| UT-S19-101 | runner detail 的 Git 可见范围 | §2.104.2、EX-19H.4 | 夹具 SH；runner 在 SMOKE-core-901 的 `detail` 写入占位值；两臂：缺省 / `verify.history.raw_in_proposal: false` | 每臂执行一次 `smoke --env test` 后全文搜索占位值 | 两臂中央索引都不含占位值；缺省臂提案运行目录 `results.jsonl` 与 `report.md` 含占位值；关闭臂提案运行目录不含占位值、无 `report.md`，占位值只在 `logos/.openlogos-runtime/verify-runs/<run_id>/` |
+| UT-S19-102 | 既有早退仍留历史，空结果不算早退 | §2.104.4、EX-19H.2 | 夹具 SH 的活跃提案不变更任何 smoke 用例；变体 ①：SH-reuse 配置（不配置 `smoke.command`）且结果文件不存在；②：删除全部 smoke 用例规格后运行；③：`smoke.command` 运行后不写任何结果行（CLI 预先创建的空文件保留）；④：`smoke.command` 的 runner 删除 CLI 预先创建的结果文件后以替换方式更新失败（采集时结果文件不存在）并退出 | 分别执行 `smoke --env test --format json`，解析 stdout 与 stderr 信封 | ①②④：stderr 既有错误信封，`error.code` 依次为 `NO_SMOKE_RESULTS`、`NO_SMOKE_CASES`、`NO_SMOKE_RESULTS`，退出码与修改前一致；`error.details.history.index_path` 指向新增记录，`kind=smoke`、`outcome=aborted`、`error_code` 等于 `error.code`、`gate.result=null`；①的 `result_source=reused`、④的 `result_source=executed`；③：不是早退，stdout 成功信封 `gate.result=FAIL`，历史 `outcome=completed`、`uncovered_ids` 含 SMOKE-core-901 与 SMOKE-core-902 |
+| UT-S19-103 | 未配置命令时标 reused | §2.104.3、EX-19H.3 | 夹具 SH-reuse | `smoke --env test --format json` | 历史 `result_source="reused"`；结论与既有结果文件一致 |
+| UT-S19-104 | 无登记表时沙箱失败改判，报告与历史均为 FAIL | §2.104.5、EX-19H.1 | 夹具 SH-noreg，启用 smoke 沙箱；runner 写全部 pass，并额外产出一项白名单产物，使回收校验失败（沙箱状态 `fail`），结果仍可统计 | `smoke --format json` | 命令 `gate.result=FAIL`；`smoke-report.md` 的 Gate 行为 FAIL；历史 `gate.result=FAIL`；提案运行目录 `report.md` 与 `smoke-report.md` 逐字节相同 |
+| UT-S19-105 | smoke 报告与结果文件零回归 | §2.104.11 | 夹具 SH 的全绿、真实失败两种运行；另一变体配置 `smoke.modules.core.report_path` | 各执行一次 `smoke --env test` | `smoke-report.md`（或模块级配置的报告路径）与 `smoke-results.jsonl` 的路径、格式、字节与引入前 golden 一致（有登记表时环境证据改判后只写出一次）；`SMOKE_PASS` / `SMOKE_FAIL` 与部署账本 smoke 摘要的写入不变；JSON 输出除新增 `data.history` 外不变 |
+| UT-S19-107 | 不同结果路径、相同报告路径的并发 | §2.104.5、EX-19H.5 | 两模块夹具：`smoke.modules.alpha.result_path` 与 `smoke.modules.beta.result_path` 不同，二者都不配置 `report_path`（回落到同一项目级 `smoke-report.md`）；alpha 的 runner 全部通过，beta 的 runner 让一条用例失败；以测试专用的可注入暂停点（只在测试环境变量开启时生效，例如写完共用报告后等待指定文件出现）让 alpha 停在「已写完共用报告、尚未写报告快照与历史」的位置 | 启动 alpha 的 smoke 直至停在该暂停点（此时共用 `smoke-report.md` 为 alpha 的 PASS）；运行 beta 的 smoke 至结束（覆盖共用报告为 beta 的 FAIL）；再放行 alpha | 两次运行都不被运行锁拒绝；放行后共用 `smoke-report.md` 仍为 beta 的 FAIL（alpha 不再重写共用报告）；alpha 历史 `gate.result=PASS` 且其报告快照 Gate 行为 PASS（若实现从共用路径回读，快照会是 FAIL，用例即失败）；beta 历史与快照均为 FAIL；每个快照与各自命令的 JSON 结论一致 |
+| UT-S19-106 | 按 smoke 类型筛选 | §2.104.10 | 夹具 SH 已有 verify 两条、smoke 两条历史 | `history list --kind smoke --format json` | 只返回两条 smoke 记录，按 `started_at` 倒序 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S19-34 | 端到端：smoke 失败轮与通过轮可追溯 | Step 1～8 | 真实 CLI；夹具 SH | ① runner 让 SMOKE-core-902 失败，`smoke --env test`；② 修复后再次 `smoke --env test`；③ `history list --kind smoke`；④ 以第①轮 smoke 输出的 `data.history.run_id` 执行 `history show` | ①写 FAIL 历史、`SMOKE_FAIL`；②写 PASS 历史、`SMOKE_PASS`；③两条按时间倒序，第②轮（PASS）在前；④以第①轮输出的 run_id 查看，给出第①轮的环境、deploy_id、失败用例与完整结果、报告快照 |
+
+### 覆盖度校验
+
+- 两轮留存与查询：UT-S19-100、UT-S19-106、ST-S19-34（UT-S19-107 见下）。
+- 自由文本可见范围：UT-S19-101。
+- 早退与结果来源：UT-S19-102、UT-S19-103。
+- 相同报告路径的并发快照归属：UT-S19-107。
+- 报告与最终门禁一致：UT-S19-104。
+- 零回归：UT-S19-105。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S19"`，测试名含用例 ID；失败不得写 pass。
+- 「零回归」断言读回磁盘字节与引入前 golden 比对；沙箱改判用例断言 JSON 中沙箱状态为 `fail` 且结果仍被统计。

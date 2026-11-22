@@ -4123,3 +4123,72 @@ Claude Code 提供官方设置 `language`（Claude 回复的首选语言）。�
 - 场景：`core-S45-enterprise-knowledge.md`；相关场景 S09（变更提案与原子合并）、S11（状态）、S05（下一步）、S18（资源索引补录）、S35（change-lint）、S37（条目守恒门）。
 - 规范：`spec/directory-convention.md`、`spec/change-management.md`、`spec/cli-json-output.md` §3.15 与「`openlogos knowledge` 命令组」、`spec/pretooluse-guard.md`「企业知识目录的免立案录入」。
 - 测试：`core-S45-test-cases.md`；安装态 smoke：`core-smoke-test-cases.md`「OpenLogos 0.16.17 企业知识安装态 smoke（SMOKE-core-318～320）」与「OpenLogos 0.16.18 企业知识直接录入安装态 smoke（SMOKE-core-321～323）」。
+
+## S13/S19 验收历史留存与追溯要求
+
+> 来源变更：verification-history（决策 C01、C02、C03、C04；proposal-r1 F1～F5、proposal-r2 F1/F2/F4、proposal-r3 F2 处置）。判据的权威定义见功能规格 §2.104、`spec/test-results.md`「验收历史留存（verification-history）」、`spec/directory-convention.md`「验收历史目录（verification-history）」、`spec/cli-json-output.md`「`openlogos history` 命令组与 verify / smoke 的 history 字段（verification-history）」。
+
+### 场景定义
+
+- **触发条件**：用户想追溯某个提案验收时跑了多少用例、哪些失败过、第几轮才通过，或上一次 smoke 失败在哪条用例。现状下 `openlogos verify` 每次运行都清空 `test-results.jsonl`、整篇重写 `acceptance-report.md`，`openlogos smoke` 每次清空 `smoke-results.jsonl`、重写 `smoke-report.md`；提案目录的 `VERIFY_PASS` / `SMOKE_PASS` 是空文件、失败标记在通过后被删除；部署账本只有带环境的 smoke 摘要，没有任何 verify 记录；`acceptance-report.md` 只在流程提交时留下最后一版。
+- **用户价值**：每一次进入执行的 verify / smoke 都留下不会被覆盖的历史；跨提案可查结构化结论与失败用例，提案内可查每次运行的完整结果与报告，归档后仍可定位。
+- **优先级**：P1
+- **主路径**：verify / smoke 在同一次调用的最终门禁收尾处（或进入执行后的早退处）写一条历史：①中央轻量索引 `logos/resources/verify/history/<run_id>.json`，只含结构化字段、覆盖所有运行、随 git 共享；②有活跃提案时，提案文件夹 `logos/changes/<slug>/verify-runs/<run_id>/` 存本次完整结果与报告快照，随 `openlogos archive` 保留；③`verify.history.raw_in_proposal` 设为 `false` 时，报告快照与自由文本字段改存本机 `logos/.openlogos-runtime/verify-runs/<run_id>/`。`openlogos history list` / `openlogos history show <run_id>` 查询历史。
+
+### 验收条件
+
+#### 正常：连续两次 verify 后两轮都可追溯
+- **GIVEN** 活跃提案，第一次 verify 有 2 条用例失败（Gate FAIL），修复后第二次 verify 全部通过（Gate PASS）
+- **WHEN** 执行 `openlogos history list --slug <slug>` 与 `openlogos history show <第一次的 run_id>`
+- **THEN** 列表按时间倒序给出两条记录：较新的 PASS 在前、较早的 FAIL 在后；以第一次 verify 输出的 run_id 查看，详情给出失败用例 ID、各项计数、verify 模式与提交号，并能读到该次的完整结果与报告快照；`acceptance-report.md` 与 `test-results.jsonl` 照旧只反映最近一次运行
+
+#### 正常：smoke 同样留存
+- **GIVEN** 活跃提案已部署到 test
+- **WHEN** 连续两次执行 `openlogos smoke --env test`
+- **THEN** 历史中有两条 smoke 记录，各含目标环境、deploy_id、结论与失败用例 ID；`openlogos history list --kind smoke` 只列出 smoke 记录；`smoke-report.md` 与 `smoke-results.jsonl` 的路径与格式不变
+
+#### 正常：没有活跃提案时只留轻量索引
+- **GIVEN** 项目处于初始开发阶段或两次提案之间，没有活跃提案
+- **WHEN** 执行一次 verify
+- **THEN** 中央索引新增一条记录（`proposal` 为 null），不写任何提案文件夹；`history show` 给出结构化详情并注明本次没有完整记录
+
+#### 正常：归档后仍可定位
+- **GIVEN** 提案已执行过两次 verify，随后执行 `openlogos archive`，之后又新建了同名提案并运行一次 verify
+- **WHEN** 对归档前的 run_id 执行 `history show`
+- **THEN** 详情从归档目录 `logos/changes/archive/<日期>-<slug>/verify-runs/<run_id>/` 读到该次的完整记录；同名新提案的运行不会被当作旧记录；历史文件不被改写
+
+#### 异常：历史与最终结论一致
+- **GIVEN** 用例全部通过，但 smoke 覆盖预检发现本提案新增的 smoke 用例缺 runner，把 verify 门禁改判为 FAIL；或 smoke 用例全部通过、没有环境登记表，但沙箱回收校验失败把 smoke 门禁改判为 FAIL
+- **WHEN** 查看命令结果、共用报告与该次历史
+- **THEN** 三者结论都是 FAIL；共用 `acceptance-report.md` / `smoke-report.md` 都在最终门禁之后由同一份最终数据渲染一次写出，报告快照使用同一份字节、不从可被另一次运行覆盖的共用路径回读
+
+#### 异常：进入执行后的早退也留存
+- **GIVEN** verify 进入执行后以既有错误退出（未配置预跑且结果文件不存在 `NO_TEST_RESULTS`、缺少可验收用例定义 `NO_TEST_CASES`）；或 smoke 进入执行后以既有错误退出（结果文件不存在且本提案没有变更 smoke 用例 `NO_SMOKE_RESULTS`、没有 smoke 用例规格 `NO_SMOKE_CASES`）
+- **WHEN** 查看历史与命令的错误输出
+- **THEN** 有该次的记录，`outcome` 为 `aborted`，带原有错误码与已取得的计数，报告字段缺省；命令照旧以既有错误信封、错误码与退出码退出，并在 `error.details.history` 给出历史文件路径。结果文件存在但为空（如 smoke 命令未写任何行）不属于早退，照常判定并记 `completed`。命令用法错误、`logos.config.json` 缺失等进入执行前的拒绝不留历史
+
+#### 异常：结果来源与并发
+- **GIVEN** ① 没有配置预跑命令，两次 verify 读取同一份预先生成的结果文件；② 一次 verify 正在运行，另一个 verify 或 smoke 的有效结果路径（含 verify 的 regression / incremental 阶段路径）与它有交集
+- **WHEN** 执行命令并查看历史
+- **THEN** ① 两条记录的结果来源都是 `reused`（只读取既有结果），不冒充重新执行；② 后到的命令以明确错误码拒绝，不清空、不改写任何结果文件，只读取既有结果的运行同样参加冲突判定
+
+#### 异常：Git 可见范围
+- **GIVEN** 一条失败用例的断言错误与 smoke runner 的 detail 中含敏感占位值
+- **WHEN** 检查中央索引、提案文件夹完整记录与本机原文目录
+- **THEN** 中央索引不含该值（只含结构化字段）；默认情况下提案文件夹的完整结果与报告快照含该值；`verify.history.raw_in_proposal` 设为 `false` 时，提案文件夹只留去掉自由文本的逐用例结构化结果，该值只出现在本机 `logos/.openlogos-runtime/verify-runs/<run_id>/`
+
+#### 边界：入库责任、写入失败与零回归
+- **THEN** CLI 只写文件、不执行 git 操作，verify / smoke 的输出给出本次写入的历史文件路径；历史路径被忽略规则命中时文件照常写入，由流程提交或用户以 `git add -f` 纳入；两个分支各自验收后合并不冲突（按运行各写一个文件）；历史写入失败只给出诊断，不改变门禁结论与退出码；损坏的历史文件在查询时被跳过并提示；`VERIFY_PASS` / `VERIFY_FAIL` / `SMOKE_PASS` / `SMOKE_FAIL` 标记、流程判断、部署账本结构不变；提案文件夹的运行记录目录不影响 change-lint、merge 与计划指纹；本版本之前的运行不回填
+
+### 非目标
+
+- 不保存没有活跃提案时的完整逐用例结果（只留轻量索引）。
+- 不对自由文本做内容级脱敏；由 `verify.history.raw_in_proposal` 控制是否随提案保存原文。
+- 不做跨运行对比报告、趋势统计或网页展示；不回填历史；不改部署账本结构；CLI 不提交、不暂存任何文件。
+
+### 追溯
+
+- 功能规格：§2.104；架构：「五十八、验收历史留存与查询」。
+- 场景：`core-S13-verify-results.md`「验收历史留存与查询时序（verification-history）」、`core-S19-smoke-gate.md`「smoke 验收历史留存（verification-history）」。
+- 规范：`spec/test-results.md`、`spec/directory-convention.md`、`spec/cli-json-output.md`、`spec/logos.config.schema.json`（`verify.history.raw_in_proposal`）。
+- 测试：`core-S13-test-cases.md`「S13 验收历史留存与查询测试（verification-history）」、`core-S19-test-cases.md`「S19 smoke 验收历史留存测试（verification-history）」；安装态 smoke：`core-smoke-test-cases.md`「OpenLogos 0.16.20 验收历史安装态 smoke（SMOKE-core-326～327）」。
