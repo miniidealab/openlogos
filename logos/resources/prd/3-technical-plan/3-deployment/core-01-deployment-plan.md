@@ -5941,3 +5941,74 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 - 测试：UT-S45-21～UT-S45-43、ST-S45-06～ST-S45-10；安装态 smoke：SMOKE-core-321～SMOKE-core-323，以及通用的 SMOKE-core-268～SMOKE-core-271。
 - 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
 - 本提案：knowledge-direct-intake（决策 C05）。
+
+## OpenLogos 0.16.19 本机测试环境发布（fix-phase-banner-api-false-missing）
+
+> 本节引用「本机测试环境脚本部署（scripts/deploy-local.mjs）」通用方案，只写本次的差异：版本号、CHANGELOG、源码回归范围、本仓 `openlogos sync` 与安装态 smoke。冻结、回滚制品、构建候选、试装、全局安装、复核与回执一律按通用方案第三～七节执行，不在本节复写。
+>
+> **版本与回滚目标的取值规则（delta-r1 F3）**：下文的 `0.16.19`、`0.16.18`、提交 `86e3c63` 都是**规划值**。实际执行时统一使用：**候选版本** = 第「部署前置与版本」第 3 条复核后实际选定的版本；**回滚版本 / 回滚目标** = 部署前环境账本中 `test.current_ref` 对应的安装态与其版本。升版命令、CHANGELOG 标题、`--version` 断言、回滚常量、回滚证据与部署记录一律取这两个实际值，并在部署记录写明它们与规划值是否一致。
+
+### 部署目标与授权边界
+
+把本提案对 SessionStart 阶段横幅 API 阶段判定的修复（场景 S11「per-scenario 覆盖判定的权威口径与 SessionStart 同口径约束」约束 5 / 5a、EX-11.26）装进本机全局安装态。行为差异：
+
+- 插件模板 `openlogos-phase` 的 API 分支不再调用 `check_scenarios_complete`、不再输出逐场景 `(incomplete: missing …)`；SessionStart 既有的 `openlogos status --format json` 结果可用时按 initial 模块的 `phase_progress["phase.3-2-api"]` 判定，不可用时降级为 `logos/resources/api/` 是否为空。
+- 场景时序、测试用例两个逐场景调用点、CLI 命令、JSON 字段与退出码均不变。
+- 修复只在安装包里的插件模板进入下游项目后生效：下游项目需执行 `openlogos sync` 刷新 `.claude/openlogos/bin/openlogos-phase` 等部署副本。
+
+- **目标环境**：`test`（登记表 `proposal_default_env: test`，决策 C02）。登记表中 `test.deploy` 为 `mode: script`、`script: scripts/deploy-local.mjs`。
+- **入口**：提案通道 `openlogos deploy --env test`，部署请求 HEAD；由 CLI 追加部署报告、写 `DEPLOY_DONE` 并勾选 `[deploy]`。部署成功后**不再**另行执行 `openlogos deploy-done`。
+- **授权**：部署执行、smoke、archive 与 `git push` 各自为人类确认点，须用户逐次明确授权（`openlogos next --auto` 的 standing 授权按 CLAUDE.md 两档授权语义处理）；`test` 未配置 `promote_from` / `require_approval`。
+- **版本号边界**：0.16.19 只作本机全局版本，不进入 npm registry。本方案**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`。不改写其他仓库（包括 runlogos）；runlogos 的横幅在其执行 `openlogos sync` 后才换上修复。
+
+### 部署前置与版本
+
+1. 本提案 delta 已 merge，`[code]` 切片实现并提交，`openlogos verify` PASS；`openlogos env check` 无 error，`openlogos deploy --env test --dry-run` 通过（通用方案第三节）。
+2. **请求提交已提交**：部署前确认 merge 后的规格、切片代码与验收报告都已提交、工作区干净；未提交时按「规格合并 → 代码 → 验收报告」的顺序补提交后再部署。`.claude/` 与 `logos/resources/verify/` 下的已跟踪文件以 `git add -u -- <path>` 暂存。
+3. **版本事实复核**：读取 `cli/package.json` 当前版本，计划时为 `0.16.18`（未发布到 npm）。候选为下一 patch `0.16.19`，执行 `npm view @miniidealab/openlogos@0.16.19 version` 应返回 E404。若实施前已有其他提案升版，或 registry 已存在候选版本号，候选改为「当时版本与 registry 最高版本中较大者的下一 patch」，并在部署记录写明实际值。
+4. **升版**：在实现中执行 `node cli/scripts/bump-version.mjs <候选版本>`（规划值 `0.16.19`），由脚本一次更新全部版本载体并重算 `cli/asset-manifest.json`，**禁止手改** manifest。`cli/src/lib/local-release-candidate.ts` 的回滚版本应为部署前 test 当前安装的版本（规划值 `0.16.18`）；不符时按实际值修正，并在部署记录说明。
+5. **CHANGELOG**：在 `## [Unreleased]` 之后新增 `## [<候选版本>]` 条目（规划值 `## [0.16.19]`），注明「本机全局发布（未发布到 npm）」，不改既有条目：
+   - **Fixed**：SessionStart 阶段横幅在 API 阶段不再按场景报 `missing`（API 按业务领域分文件，天然不带场景编号）；改为按 initial 模块的 API 进度判定，多模块项目中其他模块的 API 文件不会遮蔽仍需 API 的模块。
+   - **升级提示**：下游项目执行 `openlogos sync` 后横幅生效。
+
+### 源码回归范围
+
+部署前的 verify 负责源码回归，脚本不跑测试（通用方案第八节）。升版后复跑以下检查，必须全绿：
+
+- `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`、`npm run build`。
+- 范围包括本提案的 UT-S11-111～UT-S11-115、修改后的 UT-S11-82 与 ST-S11-47，既有 UT-S11-83～UT-S11-85、S11 SessionStart 横幅相关全部用例（去排他措辞、消费 status 结构化状态）、guard / 插件模板分发与 asset-manifest 自洽用例（UT-S19-46、UT-S19-49）。版本相关的既有用例若断言具体版本号，随升版更新期望值。
+
+### 部署、sync 与部署后检查
+
+1. 执行 `openlogos deploy --env test`（提案通道）。按通用方案第七节第 1、2 条读回回执与账本：
+   - 全局 `--version` 等于候选版本（规划值 `0.16.19`）；
+   - 入口 realpath 等于回执 `entry_realpath`，全局 `dist/index.js` 的 SHA-256 等于 `candidate_entry_sha256`；
+   - 记录候选 tarball 与回滚制品的路径与 SHA-256；回滚制品由脚本从当前全局安装打包，即部署前 test 的当前安装态（计划时为提交 `86e3c63` 的 0.16.18）；
+   - 部署前先读取账本 `test.current_ref`（计划时为 `86e3c6322e8227ab2f5bfd7e90d6f5905c11207e`，0.16.18，deploy `183195a1`；若其间有其他提案部署，以读到的实际值为准并写入部署记录），部署成功后它成为 `previous_ref`。
+2. **本仓 sync**：本提案修改了插件模板 `plugin/bin/openlogos-phase`。在主工作树执行一次 `openlogos sync` 并读回：`.claude/openlogos/bin/openlogos-phase` 与全局安装包内 `claude-plugin-template/bin/openlogos-phase` 及仓内源模板逐字节一致；AGENTS.md / CLAUDE.md 的变化只来自托管内容与版本戳；sync 产生的受版本控制托管文件变化随部署记录一起由流程提交，不 push；若 sync 改动 `.claude/settings.json`，按前几版部署记录同样还原并记录。
+3. **补部署报告**：部署后追加人写的「部署报告」小节（版本、deploy_id、ref、制品哈希、sync 读回结果）并提交，然后才执行 smoke。
+4. 经授权执行 `openlogos smoke --env test`：
+   - 本次行为用例：「OpenLogos 0.16.19 SessionStart 横幅 API 阶段安装态 smoke（SMOKE-core-324～325）」；
+   - 通用安装态用例：「本机测试环境脚本部署安装态 smoke（SMOKE-core-268～SMOKE-core-271）」。
+
+### 失败处置与回滚
+
+回滚目标是**部署前账本 `test.current_ref` 对应的安装态**（计划时为提交 `86e3c63` 的 0.16.18，不含本修复），处置按通用方案第五节，本次差异如下：
+
+- **部署前置或 dry-run 失败**：不执行部署，修正后重试，或回流实现。
+- **脚本失败（部署未成功）**：脚本自动回装回滚制品，复核 `--version` 等于回滚版本（规划值 `0.16.18`）；账本记 `result=failed`，不推进。
+- **成功部署后要回退**：执行 `openlogos deploy --env test --rollback`，回到 `previous_ref`（即部署前读到的 `test.current_ref`，计划时为 `86e3c63…`，该提交含 `scripts/deploy-local.mjs`）。回退后用回退到的版本在本仓执行一次 `openlogos sync`，或以 git 恢复 sync 前的托管文件。回退后横幅恢复为 API 逐场景判定（已知误报）。
+- **成功落账后 smoke 失败**：停止后续完成流程，保留失败证据，回流修复后以 `openlogos deploy --env test` 部署修复提交并重跑 smoke。不得手工回装旧包。
+- 本次无数据迁移：只改 SessionStart 探测脚本的判定，不读写任何持久数据。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`，不部署官网。
+- 不改写其他仓库（包括 runlogos）；其他项目的插件副本由用户在各项目执行 `openlogos sync` 刷新。
+
+### 追溯
+
+- 场景：S11「per-scenario 覆盖判定的权威口径与 SessionStart 同口径约束」约束 5 / 5a / 6、EX-11.7、EX-11.26。
+- 测试：UT-S11-82、UT-S11-111～UT-S11-115、ST-S11-47；安装态 smoke：SMOKE-core-324～SMOKE-core-325，以及通用的 SMOKE-core-268～SMOKE-core-271。
+- 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
+- 本提案：fix-phase-banner-api-false-missing（决策 C02）。

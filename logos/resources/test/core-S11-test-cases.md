@@ -331,8 +331,14 @@
 > **跨实现断言的适用域（重要）**：D1 选定「同口径的独立实现」，故 shell 与 CLI 只在
 > **恒等域**上对账——目标目录内文件全部为 `<module>-SXX-*` 规范命名、且不含其它模块同号文件，
 > 且仅限 CLI 侧确有 per-scenario 判定的 `phase.3-1` / `phase.3-4a` 两个调用点。无前缀历史命名、
-> 其它模块同号文件、`-test-cases` 后缀宽严差异、API 调用点（CLI 侧 `SCENARIO_PHASES` 不含）
-> 均为场景 delta「已知差异清单」中的具名差异，**只作 shell 自身断言、不纳入恒等对账**。
+> 其它模块同号文件、`-test-cases` 后缀宽严差异均为场景「已知差异清单」中的具名差异，**只作 shell 自身断言、
+> 不纳入恒等对账**。
+>
+> **API 阶段（fix-phase-banner-api-false-missing，决策 C01）**：不再调用 `check_scenarios_complete()`、不输出逐场景
+> `missing`；`STATUS_JSON` 可用时按 initial 模块的 `phase_progress["phase.3-2-api"]` 判定，不可用时降级为
+> `logos/resources/api/` 是否为空（场景 S11 约束 5a、EX-11.26）。API 用例比较的对象是 CLI 的**模块阶段**，不是顶层 phases；
+> status 路径用桩 `openlogos` 可执行文件（置于 `PATH` 首位）返回指定 `phase_progress` 的 `status --format json`，
+> 降级路径用不含 `openlogos` 的 `PATH`（或桩返回非零 / 非 JSON）。
 >
 > 夹具用一次性隔离项目构造，直接以 `bash`/`sh` 子进程运行**源模板** `plugin/bin/openlogos-phase`
 > （不测 `.claude/openlogos/bin/` 的 sync 部署副本）；`openlogos status --format json` 对照臂以真实
@@ -343,26 +349,33 @@
 
 | ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
 |---|---|---|---|---|---|
-| UT-S11-82 | 模块前缀命名项目三个调用点均零 missing（含真实项目根噪声，修复前必红） | EX-11.7 | 隔离项目 `logos-project.yaml` 声明 4 个场景；场景目录、API 目录、测试目录分别有 `core-SXX-<slug>.md` / `core-SXX-*.yaml` / `core-SXX-test-cases.md` 全覆盖；**项目根同时存在 `README.md`、`AGENTS.md`、`CLAUDE.md` 与一个根级 `*.yaml`**（真实项目常态） | 以项目根为 cwd 运行 `openlogos-phase`，分别取场景时序、API、测试用例三个调用点的 `check_scenarios_complete` 结果 | 三处均返回 0 且 missing 为空；phase 文本不含 `missing`。**修复前必红**：`*.md` / `*.yaml *.yml` 被 cwd 文件名展开后拼出 `S0X-README.md` 等，且即便字面量到达也漏模块前缀，三处全报 missing |
+| UT-S11-82 | 模块前缀命名项目两个逐场景调用点均零 missing，API 阶段不做逐场景判定（含真实项目根噪声，修复前必红） | EX-11.7、约束 5 | 隔离项目 `logos-project.yaml` 声明 4 个场景；场景目录、API 目录、测试目录分别有 `core-SXX-<slug>.md` / 按领域命名的 `core-*.yaml` / `core-SXX-test-cases.md`；**项目根同时存在 `README.md`、`AGENTS.md`、`CLAUDE.md` 与一个根级 `*.yaml`**（真实项目常态） | 以项目根为 cwd 运行 `openlogos-phase`，分别取场景时序、测试用例两个调用点的 `check_scenarios_complete` 结果；API 臂只取横幅文本，并以 `set -x` 跟踪确认 API 分支未调用 `check_scenarios_complete` | 两处均返回 0 且 missing 为空；API 臂横幅不含 `missing`，跟踪中不出现以 `*.yaml` / `*.yml` 为模式的 `find`；phase 文本不含 `missing`。**修复前必红**：`*.md` 被 cwd 文件名展开后拼出 `S0X-README.md` 等，且即便字面量到达也漏模块前缀，两处全报 missing |
 | UT-S11-83 | 模式字面量到达 `find`，结果不随 cwd 文件集合变化 | EX-11.8、INV-SC4 | 目标目录仅有 `core-S03-demo.md`；对照两态：项目根**无**任何 `.md` / `.yaml` 文件 vs 仅新增一个 `README.md`（API 臂对应新增一个根级 `.yaml`） | 两态下分别运行探测，并捕获实际执行的 `find` 参数（`set -x` 跟踪或等价手段） | 两态 missing 集合**均为空且相等**；捕获到的 `find` 参数中 `-name` 值恒为 `*.md`（API 臂为 `*.yaml` / `*.yml`）字面量，**不出现** `S03-README.md` / `*-S03-README.md` 形态。修复前后一态即红 |
 | UT-S11-84 | 无前缀历史命名向后兼容仍命中（shell 自身断言，不与 CLI 对账） | EX-11.9、约束 3 | 同一夹具改为历史命名 `SXX-<slug>.md` / `SXX-test-cases.md`（无模块前缀） | 同上三个调用点 | shell 侧仍判为全覆盖、missing 为空；放宽匹配不得使历史项目的 missing 集合增大。**明确不断言与 CLI 相等**——CLI 按权威口径 `core-SXX` 子串判 missing，属场景 delta 已知差异清单第 1 行 |
 | UT-S11-85 | 真实缺失仍如实报 missing（不漏报） | EX-11.10、INV-SC3 | 声明 4 个场景，其中 2 个在目标目录下既无 `core-SXX-*` 也无 `SXX-*` 文件；目录内另有 `core-00-scenario-overview.md` 作为干扰 | 同上三个调用点 | missing 恰为那 2 个场景 ID、顺序稳定；`core-00-*` 不被当作任一场景的覆盖。另设**已知差异见证臂**：目录内放入 `web-S03-demo.md` 时 shell 判 S03 已覆盖——该行为按已知差异清单第 2 行**如实记录为预期**，不判红（收紧需另立提案） |
+| UT-S11-111 | runlogos 形态：API 目录只有本模块按领域命名的文件时继续向下判定 | EX-11.26-1、约束 5a-1 | 多模块：`core` launched 且 `skip_phases: [api, database, scenario]`，`team` initial；`logos-project.yaml` 声明 104 个场景；`logos/resources/api/` 只有 `team-auth.yaml`、`team-requirements.yaml`（无 `SXX`）；场景时序、测试用例齐全；桩 `openlogos status --format json` 返回 team 的 `phase_progress["phase.3-2-api"]={done:true,skipped:false}` | 运行 `openlogos-phase` | 横幅不含 `missing`，不是 API 阶段的 `Phase 3 Step 2: API & Database Design`；本夹具测试用例目录非空，空数据库目录按既有「向后看兜底」跳过，编排目录为空且 team 未声明跳过 scenario，横幅确切为 `Phase 3 Step 3b: Orchestration Tests`（证明已通过 API 判定）；比较对象为 team 的模块阶段 |
+| UT-S11-112 | 只有其他模块的 API 文件而 initial 模块仍需 API 时仍指向 API 阶段 | EX-11.26-2、约束 5a-1 | 多模块夹具，`logos/resources/api/` 只有 `core-auth.yaml`；team 前序阶段齐全、**没有已完成的后续阶段产物**；桩 status 返回 team 的 `phase.3-2-api={done:false,skipped:false}`；另一臂再加一个 initial 模块 `ops`（`phase.3-2-api` 同为未完成）；优先级臂：**清空 API 目录**，并在测试目录放 `core-S01-test-cases.md`，使 shell 的「向后看兜底」条件成立（API 为空 + 后续阶段有文件），桩返回不变 | 运行 `openlogos-phase` | 横幅为 `Phase 3 Step 2: API & Database Design (modules: team)`（另一臂为 `(modules: ops team)`，按 id 升序），不含 `missing`；优先级臂以 `set -x` 跟踪确认 shell 确实得出 `SKIP_API=true`，横幅仍报 `Phase 3 Step 2: API & Database Design (modules: team)`——status 路径结论覆盖 shell 的跳过决定（约束 5a-1）。另以真实 CLI 对基础夹具执行 `status --format json`，断言 team 的 `phase.3-2-api` 确为 `done=false, skipped=false`（桩取值与真实 CLI 一致） |
+| UT-S11-113 | `STATUS_JSON` 不可用时降级为既有项目级判定且不输出逐场景 missing | EX-11.26-3、约束 5a-2 | 多模块夹具（同 UT-S11-111 的模块与场景声明），前序阶段（需求、设计、架构、场景时序）齐全，**测试用例、编排、验收目录均无文件**（不触发「向后看兜底」）；三种 status 不可用形态：① `PATH` 中无 `openlogos`；② 桩返回非零退出；③ 桩输出非 JSON / `data.modules` 缺失 / 某 initial 模块 `phase_progress` 为 null | 每种形态下依次运行：(a) API 目录只有 `team-auth.yaml`；(b) API 目录为空；(c) 对照臂：API 目录与测试目录仍为空，但编排目录 `logos/resources/scenario/` 放入 `team-refund-flow.json`（更后置的产物，不进入测试用例的逐场景判定） | (a) 横幅不含 `missing`、继续向下判定；(b) 报 `Phase 3 Step 2: API & Database Design`（不带 modules 后缀），且断言 shell 未命中 `SKIP_API`（`set -x` 跟踪中无 `SKIP_API=true`）；(c) 命中「向后看兜底」，横幅继续到 `Phase 3 Step 3a: Test Cases`、不报 Step 2；三种形态结论相同，(a)～(c) 均不含 `missing`（「不含 missing」断言针对的是 API 阶段：本用例各臂的测试目录均为空，不会出现测试用例阶段的逐场景缺失） |
+| UT-S11-114 | API 目录为空且无后续阶段文件时仍报 Phase 3 Step 2（真空缺不被吞） | EX-11.26、约束 5a | 单模块 initial 项目，前序阶段（需求、产品设计、架构、场景时序）齐全，`logos/resources/api/` 为空，数据库、测试用例等后续阶段目录均为空；两臂：桩 status 返回 `phase.3-2-api={done:false,skipped:false}` / 无 status | 运行 `openlogos-phase` | 两臂横幅均报 Phase 3 Step 2（status 臂带 `(modules: core)`），不含 `missing` |
+| UT-S11-115 | 场景时序与测试用例两个逐场景调用点零回归；status 路径不新增 CLI 调用 | 约束 5、约束 6 | 声明 4 个场景；桩 `openlogos` 记录每次被调用的参数。夹具 A：场景目录缺 2 个场景（规范命名）、测试目录缺 2 个；夹具 B：场景目录齐全、API 目录有本模块文件、测试目录缺 2 个 | ① 对夹具 A 分别**直接调用** `check_scenarios_complete` 取场景目录（`*.md`）与测试目录（`*.md`）两处 missing 集合（复用既有隔离调用方式，避免被横幅短路遮蔽）；② 对夹具 A 运行完整 `openlogos-phase`；③ 对夹具 B 运行完整 `openlogos-phase` | ① 两处 missing 恰为各自缺失的场景 ID、与修改前一致；② 横幅停在场景时序并列出场景缺失（不进入后续分支）；③ 横幅经过 API 分支后到达测试用例调用点并列出测试缺失，桩在这次探测中只被调用 1 次（`status --format json`），API 判定未引发第二次调用 |
 
 ### 场景测试
 
 | ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
 |---|---|---|---|---|---|
-| ST-S11-47 | 恒等域上 SessionStart 探测与 `status` 权威口径 missing 集合逐项相等 | EX-11.7、EX-11.8、EX-11.10 | 两个**恒等域** fixture（全部 `<module>-SXX-*` 规范命名、单模块、项目根含 `README.md` / `AGENTS.md` 噪声）：① 全覆盖；② 部分缺失 | 对每个 fixture 依次跑真实 `openlogos status --format json` 与 `bash plugin/bin/openlogos-phase`，解析两侧 missing 集合，**仅比对 `phase.3-1`（场景时序）与 `phase.3-4a`（测试用例）两个调用点** | 两 fixture 上两侧 missing 集合**逐项相等**（① 均为空、② 相同且非空）。另断言：**修复前 fixture ① 两侧相反**（JSON 空、shell 非空），即本次误导源的回归锁；`openlogos-phase` 全路径**只读**——运行前后文件清单与逐文件 SHA-256 完全不变，无 marker / cache / stamp 写入；探测**不调用 CLI**（断言子进程树中无 node/openlogos 进程，锁定 D1 的零依赖约束）。API 调用点**不参与对账**（CLI 侧 `SCENARIO_PHASES` 无对应判定），仅断言 shell 自身结果与 UT-S11-82 一致 |
+| ST-S11-47 | 恒等域上 SessionStart 探测与 `status` 权威口径 missing 集合逐项相等 | EX-11.7、EX-11.8、EX-11.10、EX-11.26 | 两个**恒等域** fixture（全部 `<module>-SXX-*` 规范命名、单模块、项目根含 `README.md` / `AGENTS.md` 噪声）：① 全覆盖；② 部分缺失 | 对每个 fixture 依次跑真实 `openlogos status --format json` 取 `scenario_coverage`，shell 侧对场景目录与测试目录**分别直接调用** `check_scenarios_complete` 取 missing 集合（不从完整横幅提取，避免场景缺失时短路遮蔽测试用例调用点），**仅比对 `phase.3-1`（场景时序）与 `phase.3-4a`（测试用例）两个调用点** | 两 fixture 上两侧 missing 集合**逐项相等**（① 均为空、② 相同且非空）。另断言：**修复前 fixture ① 两侧相反**（JSON 空、shell 非空），即本次误导源的回归锁；`openlogos-phase` 全路径**只读**——运行前后文件清单与逐文件 SHA-256 完全不变，无 marker / cache / stamp 写入；`check_scenarios_complete()` **不调用 `openlogos` CLI**（以记录调用的桩 `openlogos` 断言逐场景判定期间零次调用，锁定 D1 的零依赖约束；`get_scenario_ids` 既有的 node / python 解析路径不计为 CLI 调用；完整探测中只有 SessionStart 既有的那一次 `status --format json`）。API 阶段**不参与 missing 集合对账**（两侧都不做 API 逐场景判定）；另断言 fixture ① 上横幅的 API 结论与真实 `status --format json` 中 initial 模块的 `phase_progress["phase.3-2-api"]` 一致（完成即不停在 Phase 3 Step 2） |
 
 ### 追溯与覆盖
 
 - 主修·模式字面量到达 `find`、结果不随 cwd 变化（delta-r1 F1 必红臂）：UT-S11-83、UT-S11-82 的根噪声夹具、ST-S11-47 的根噪声 fixture。
-- 主修·模块前缀命名命中、三个调用点同时生效（修复前必红）：UT-S11-82、ST-S11-47 fixture ①。
+- 主修·模块前缀命名命中、两个逐场景调用点同时生效（修复前必红）：UT-S11-82、ST-S11-47 fixture ①。
+- 主修·API 阶段按模块进度判定、不输出逐场景 missing（fix-phase-banner-api-false-missing，EX-11.26、约束 5 / 5a）：UT-S11-82 的 API 臂、UT-S11-111（只有本模块文件继续）、UT-S11-112（只有其他模块文件仍指向 API，review r1 F1）、UT-S11-113（status 不可用降级）、UT-S11-114（真空缺不被吞）、ST-S11-47 的 API 结论对照。
+- 不变式·逐场景调用点零回归、不新增 CLI 调用（约束 5、约束 6）：UT-S11-115。
 - 不变式·无前缀历史命名向后兼容（INV-SC2、约束 3）：UT-S11-84（shell 自身断言）。
 - 不变式·不漏报（INV-SC3）：UT-S11-85、ST-S11-47 fixture ②。
 - 不变式·两条实现在恒等域同口径、域外差异具名（INV-SC1，delta-r1 F2 的适用域收敛）：ST-S11-47 的恒等域限定断言 + UT-S11-85 的已知差异见证臂。
 - 不变式·探测只读且零 CLI 依赖（D1、约束 6）：ST-S11-47 的只读与进程树断言。
-- 方法论规范：`spec/module-naming-convention.md`；场景：S11「per-scenario 覆盖判定的权威口径与 SessionStart 同口径约束」（EX-11.7～EX-11.10、INV-SC1～SC4）；来源变更：fix-merge-prototype-commit-and-phase-module-prefix。
+- 方法论规范：`spec/module-naming-convention.md`；`skills/api-designer/SKILL.md`（API 按业务领域分文件）；场景：S11「per-scenario 覆盖判定的权威口径与 SessionStart 同口径约束」（EX-11.7～EX-11.10、EX-11.26、INV-SC1～SC4）；来源变更：fix-merge-prototype-commit-and-phase-module-prefix、fix-phase-banner-api-false-missing。
 
 ## S11 SessionStart 阶段横幅去排他措辞测试
 

@@ -690,6 +690,8 @@ sequenceDiagram
 
 ## S11 per-scenario 覆盖判定的权威口径与 SessionStart 同口径约束
 
+> 来源变更：fix-merge-prototype-commit-and-phase-module-prefix（决策 D1）；fix-phase-banner-api-false-missing（决策 C01，proposal-r1 F1：API 阶段不再做逐场景判定，改按 initial 模块的 API 进度判定）。
+
 ### 场景目标
 
 修好 SessionStart phase 探测的 missing 误报，并把「某场景是否已有对应文件」这一判定的**权威口径**
@@ -723,7 +725,11 @@ legacy done 语义」一节既定的 legacy `includes()` 子串语义在目标�
 是 missing 集合的**唯一事实源**。
 
 **权威口径的适用面**：CLI 侧 per-scenario 覆盖判定只覆盖 `SCENARIO_PHASES = { phase.3-1, phase.3-4a }`
-（场景时序、测试用例）——**API 阶段在 CLI 侧没有 per-scenario 覆盖判定**，故不存在可对账的权威集合。
+（场景时序、测试用例）——**API 阶段在 CLI 侧没有 per-scenario 覆盖判定**。CLI 对 API 阶段的权威判定是
+**模块级**的：initial 模块的 `phase_progress["phase.3-2-api"]`（`flow-derive.ts`：多模块时只统计文件名以
+`{module}-` 开头的文件，单模块时目录非空即完成；`skip_phases` 含 `api` 的模块为 `skipped`）。API 文件按
+业务领域分组命名（`skills/api-designer/SKILL.md`：每组一个 YAML，如 `auth.yaml`），天然不带场景编号，
+「每个场景一个 API 文件」不是方法论要求。
 
 ### 同口径约束（SessionStart 探测）
 
@@ -741,11 +747,26 @@ legacy done 语义」一节既定的 legacy `includes()` 子串语义在目标�
   不得因收紧而把历史项目判成 missing。
 - **约束 4（不漏报）**：放宽匹配不得把「真缺失」判成已覆盖——某场景在目标目录下确无任何对应
   文件时，仍必须如实出现在 missing 集合中。
-- **约束 5（覆盖三个调用点）**：`check_scenarios_complete()` 同时服务场景时序（`*.md`）、
-  API（`*.yaml *.yml`）、测试用例（`*.md`）三处判定，修正在函数内一处完成、三处同时生效。
-- **约束 6（不引入 CLI 依赖）**：`openlogos-phase` 是纯 shell、零依赖的 SessionStart 探测脚本，
-  **不得**改为调用 `openlogos status` 取判据（D1 决策）——反向依赖 CLI 可用性与版本、需在无 `jq`
-  假设下解析 JSON、每次启动多一次 Node 冷启动，且 CLI 不可用时仍需 shell 回退，回退本身又是第二条实现。
+- **约束 5（覆盖两个调用点）**：`check_scenarios_complete()` 只服务场景时序（`*.md`）与测试用例（`*.md`）
+  两处判定，修正在函数内一处完成、两处同时生效。**API 阶段不调用 `check_scenarios_complete()`**，
+  不输出逐场景 `missing`（fix-phase-banner-api-false-missing，决策 C01）。
+- **约束 5a（API 阶段按模块进度判定）**：API 阶段按以下顺序判定（status 路径优先；`SKIP_API` 与「向后看兜底」只在降级路径生效）：
+  1. **status 路径**：SessionStart 在探测前已可选执行一次 `openlogos status --format json`（本文「SessionStart
+     消费 status 结构化状态」，结果存于 `STATUS_JSON`）。该结果可解析、含 `data.modules[]`，且每个 initial 模块都带
+     `phase_progress` 对象时，取全部 initial 模块的 `phase_progress["phase.3-2-api"]`：存在 `done=false` 且
+     `skipped=false` 的模块 → 报 `Phase 3 Step 2: API & Database Design (modules: <id …>)`（按模块 id 升序、空格分隔）；
+     全部 `done` 或 `skipped`，或项目没有 initial 模块 → 继续向下判定。status 路径的结论覆盖 `SKIP_API` 与
+     「向后看兜底」对 API 阶段的判断（两者是 shell 侧的项目级近似，status 给出的是模块级权威结论）。注意 CLI 的
+     `phase_progress` 已含其自身的兼容兜底：某模块的后续阶段已完成时，之前未完成的 `phase.3-2-api` 会被标为
+     `skipped=true`（`module-phase-report.ts` 的 `applyFallbackSkipAndFrontier`），横幅随之继续——与 CLI 结论一致。
+  2. **降级路径**：`STATUS_JSON` 为空（CLI 不可用或执行失败）、不可解析、缺 `data.modules[]`，或任一 initial 模块缺
+     `phase_progress` 时，沿用既有项目级判定：`SKIP_API`（含「向后看兜底」）命中则跳过；`logos/resources/api/` 为空 → 报
+     `Phase 3 Step 2: API & Database Design`；非空 → 继续向下判定。
+  3. 两条路径都**不**输出 `(incomplete: missing …)`。
+- **约束 6（不新增 CLI 依赖）**：`openlogos-phase` 的 per-scenario 覆盖判定（`check_scenarios_complete()`）仍为纯 shell、
+  零依赖实现，**不得**改为调用 `openlogos status` 取判据（D1 决策）。约束 5a 的 status 路径**只消费** SessionStart 既有的
+  那一次可选调用结果，**不新增** CLI 调用；CLI 不可用时走降级路径，脚本照常给出横幅。解析 `STATUS_JSON` 沿用既有的
+  node / python 双路径（无 `jq` 假设）。
 - **约束 7（源模板唯一）**：只改源模板 `plugin/bin/openlogos-phase`；`.claude/openlogos/bin/openlogos-phase`
   是 `openlogos sync` 的部署副本，不直接改（`spec/proposal-ui-ux-first.md` §13.5）。
 
@@ -766,9 +787,10 @@ D1 选定「同口径的独立实现」而非「调用唯一实现」，因此�
 | 无前缀历史命名 `SXX-*` | 判为已覆盖（约束 3） | 判为 missing（`core-SXX` 子串不命中） | 有意保留的向后兼容；只作 shell 自身断言 |
 | 其它模块同号文件 `web-SXX-*` | `*-${sid}-${pat}` 会接受 | 不命中 `core-SXX` | 放宽匹配的已知代价；shell 不解析模块归属（约束 6） |
 | 测试用例目录的 `-test-cases` 后缀 | 不作要求（模式为 `*.md`） | `phase.3-4a` 要求含 `-test-cases` | shell 侧更宽；仅在恒等域（规范命名）下两者结论一致 |
-| API 调用点 | 有 per-scenario 判定 | **无**对应判定（`SCENARIO_PHASES` 不含 API） | 无可对账权威集合；只作 shell 自身断言 |
+| API 阶段的降级路径（无 status） | 按共用 `logos/resources/api/` 是否为空判定；`skip_phases` 对 initial 模块取**并集**（任一 initial 模块声明即跳过） | 按模块判定（多模块只统计 `{module}-` 前缀文件）；顶层 phases 要求**全部** initial 模块声明才跳过 | 只在 CLI 不可用时出现；status 路径（约束 5a-1）下两者一致 |
 
-**收紧这些差异需另立提案**——那要求改 CLI 判据或让 shell 解析模块归属，超出本次改动范围与 D1。
+**收紧这些差异需另立提案**——那要求改 CLI 判据或让 shell 解析模块归属，超出本次改动范围与 D1。原「API 调用点：shell 有
+per-scenario 判定、CLI 无对应判定」一行已由 fix-phase-banner-api-false-missing 消除（两侧都不做 API 逐场景判定）。
 
 ### 漂移防护（锚点）
 
@@ -786,8 +808,8 @@ D1 选定「同口径的独立实现」而非「调用唯一实现」，因此�
 #### EX-11.7：模块前缀命名项目被 SessionStart 误报 missing（本次缺陷的回归锁）
 - **触发条件**：项目按 `<module>-SXX-*` 规范命名（如 `core-S03-….md`），项目根存在
   `README.md` / `AGENTS.md`，启动新会话。
-- **期望响应**：SessionStart phase 文本与 `openlogos status --format json` 一致——场景 / API /
-  测试用例三个调用点均零 missing。修复前 shell 侧报 missing、JSON 侧报无缺失，用例必红。
+- **期望响应**：SessionStart phase 文本与 `openlogos status --format json` 一致——场景时序、测试用例两个调用点均零
+  missing；API 阶段按约束 5a 判定、不输出逐场景 missing。修复前 shell 侧报 missing、JSON 侧报无缺失，用例必红。
 - **副作用**：修复前 agent 被诱导去重复创建已存在的场景文件。
 
 #### EX-11.8：扩展名模式被 cwd 文件名展开（约束 1 的回归锁）
@@ -808,13 +830,31 @@ D1 选定「同口径的独立实现」而非「调用唯一实现」，因此�
   `scenario_coverage.missing` 逐项相等。
 - **副作用**：无。
 
+#### EX-11.26：API 阶段按模块进度判定（fix-phase-banner-api-false-missing 的回归锁）
+- **触发条件**（下游 runlogos 形态）：多模块项目，`core` 为 launched 且 `skip_phases` 含 `api`，`team` 为 initial；
+  `logos-project.yaml` 声明了上百个场景；`logos/resources/api/` 下只有 team 按领域命名的文件（`team-auth.yaml`、
+  `team-requirements.yaml` …），没有任何 `SXX-*.yaml`。
+- **期望响应**：
+  1. `STATUS_JSON` 可用、team 的 `phase.3-2-api` 为完成：横幅**不含** `missing`，不停在 Phase 3 Step 2，继续向下判定；
+  2. 目录只有其他模块的文件（如 `core-auth.yaml`）而 team 的 `phase.3-2-api` 未完成、未跳过：横幅报
+     `Phase 3 Step 2: API & Database Design (modules: team)`，不含 `missing`；
+  3. `STATUS_JSON` 不可用：降级为既有项目级判定——目录非空继续；目录为空且未命中 `SKIP_API`（含「向后看兜底」：
+     测试用例、编排、验收目录均无文件）时报 Phase 3 Step 2；目录为空但后续阶段目录已有文件时按兜底跳过、继续向下判定。
+     API 阶段均不输出 `missing`（继续向下后，若测试目录非空，测试用例调用点照常按约束 5 报其逐场景缺失，那不属于 API 阶段）。
+  情况 2 的前提是 team 没有已完成的后续阶段产物（如 `team-*-test-cases.md`）：否则 CLI 的兼容兜底会把 team 的
+  `phase.3-2-api` 标为 `skipped`，横幅继续，与 CLI 一致。比较对象是 CLI 的**模块阶段**（initial 模块的 `phase.3-2-api`），
+  不是顶层 phases。
+- **副作用**：修复前 agent 每次会话被诱导去补 104 个 `SXX-*.yaml`，与 api-designer 的按领域分文件约定冲突。
+
 ### 追溯
 
 - 方法论规范：`spec/module-naming-convention.md`（`<module>-SXX-*` 命名）；本文「initial phase
   派生（flow-derive）与两套 legacy done 语义」（子串匹配语义来源）。
 - 场景：本节；消费方约束见本文「SessionStart 消费 status 结构化状态」。
-- 测试：UT-S11-82、UT-S11-83、UT-S11-84、UT-S11-85、ST-S11-47。
-- 来源变更：fix-merge-prototype-commit-and-phase-module-prefix（决策 D1：兼容 glob，不改调 CLI）。
+- 测试：UT-S11-82、UT-S11-83、UT-S11-84、UT-S11-85、ST-S11-47；UT-S11-111～UT-S11-115（EX-11.26、约束 5 / 5a / 6）；
+  安装态 smoke：SMOKE-core-324～SMOKE-core-325。
+- 来源变更：fix-merge-prototype-commit-and-phase-module-prefix（决策 D1：兼容 glob，不改调 CLI）；
+  fix-phase-banner-api-false-missing（决策 C01：API 阶段按模块进度判定，复用既有 status 结果，不新增 CLI 调用）。
 
 ## SessionStart 阶段横幅的措辞约束（情境信息而非写入授权）
 

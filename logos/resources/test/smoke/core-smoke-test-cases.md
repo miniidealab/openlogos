@@ -2962,3 +2962,37 @@ SMOKE-core-21 / 23 的既有认领者是 `website/scripts/smoke-releases.mjs`（
 - 全局 CLI 子进程由 runner 设时限（不超过 120 秒）；超时判 fail 并在证据中写明，不得重试后写 pass。
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-321～SMOKE-core-323 均被 runner 覆盖。
+
+## OpenLogos 0.16.19 SessionStart 横幅 API 阶段安装态 smoke（SMOKE-core-324～325）
+
+> 这组用例验证本提案 fix-phase-banner-api-false-missing 的修复在本机全局安装态中以 0.16.19 的身份可用：安装包里的插件模板 `openlogos-phase` 在 API 阶段不再输出逐场景 `missing`，并按 initial 模块的 API 进度判定（场景 S11「per-scenario 覆盖判定的权威口径与 SessionStart 同口径约束」约束 5 / 5a、EX-11.26）。完整行为已由仓库内 UT-S11-82、UT-S11-111～UT-S11-115、ST-S11-47 覆盖；安装态只取证两件事：装上的是本次候选且包内插件模板带着修复、该模板在一次性多模块项目中对三种 API 形态给出正确横幅。
+>
+> 用例在 `mktemp -d` 一次性项目内执行：经全局 `openlogos init` 建立项目后写入多模块夹具（`core` launched 且 `skip_phases: [api, database, scenario]`，`team` initial；team 的前序阶段——需求、产品设计、架构、场景时序——齐全，**测试用例、编排、验收目录默认不放任何文件**，以免 CLI 的兼容兜底把 team 的 API 阶段标为 skipped、或触发 shell 的「向后看兜底」），以 `bash` 子进程运行**安装包内**的 `claude-plugin-template/bin/openlogos-phase`，`PATH` 首位为全局 `openlogos` 所在目录（status 路径）或不含 `openlogos`（降级路径）。runner 对全局安装态**只读**，不做安装或卸载；不触碰本仓活跃提案、本仓 `logos/resources/`（结果账本除外）、本仓运行态目录与用户其他仓库（包括 runlogos）。版本以部署记录与 `cli/src/lib/local-release-candidate.ts` 的候选版本为准，断言写成关系式，不硬编码 `0.16.19`。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-324 | 安装态版本与插件模板身份 | 本机全局已安装本次候选；部署记录中有候选版本 | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash`；③ 比较全局包内 `claude-plugin-template/bin/openlogos-phase` 与仓内源模板 `plugin/bin/openlogos-phase` 的 SHA-256，并检查其 API 分支不再引用 `check_scenarios_complete "$P_API"` | ① `--version` 等于部署记录候选版本，入口无 workspace link；② `payloadHash` 自洽；③ 两者逐字节一致，包内模板不含 API 逐场景调用 | 保留读取结果；任一不符 → 停止后续流程，按部署方案以 `openlogos deploy --env test --rollback` 回退 |
+| SMOKE-core-325 | 安装包插件模板的 API 阶段横幅 | 本机全局已安装本次候选；一次性多模块项目按上述夹具建立，`logos-project.yaml` 声明 30 个场景 | ① `logos/resources/api/` 只放 `team-auth.yaml`、`team-requirements.yaml`，status 路径运行模板；② 改为只放 `core-auth.yaml`：先以全局 CLI 执行 `status --format json` 读取 team 的 `phase.3-2-api`，再以 status 路径运行模板；③ 清空 `logos/resources/api/`，降级路径（`PATH` 不含 `openlogos`）运行模板；④ 对照臂：API 目录与测试目录仍为空，在编排目录 `logos/resources/scenario/` 放入 `team-refund-flow.json`（更后置的产物），降级路径运行模板；⑤ 记录每次运行前后项目文件的 SHA-256 | ① 横幅不含 `missing`、不是 API 阶段的 `Phase 3 Step 2: API & Database Design`，确切到达 `Phase 3 Step 2: Database Design`（team 未声明跳过数据库、数据库目录只有被排除的 `.gitkeep`，证明模板已通过 API 判定）；② status 中 team 的 `phase.3-2-api` 为 `done=false, skipped=false`，横幅为 `Phase 3 Step 2: API & Database Design (modules: team)`，不含 `missing`；③ 横幅为 `Phase 3 Step 2: API & Database Design`，不含 `missing`（未命中 `SKIP_API`）；④ 命中「向后看兜底」，横幅继续到 `Phase 3 Step 3a: Test Cases`（测试目录为空，不触发测试用例的逐场景判定），不报 Step 2、不含 `missing`；⑤ 每次运行前后项目文件不变（模板只读） | 同上；任一不成立表示修复未完整进入安装包里的插件模板 |
+
+### 二、执行边界
+
+- 全部读写只在 `mktemp -d` 的一次性项目与受控临时目录内进行，结束即删除；不配置远端、不联网。
+- **不得**触碰本仓活跃提案、本仓 `logos/resources/`（结果账本除外）、本仓运行态目录、本仓 `.claude/` 下的托管副本、本仓的 git 分支与工作区、用户其他仓库（包括 runlogos）或本机全局 prefix。
+- 结果写入本仓 `logos/resources/verify/smoke-results.jsonl`；实际执行的结果行带 `target_environment="test"`，窗口之外的 skip 行不声明 `target_environment`。
+
+### 三、追溯与覆盖
+
+- 场景：S11「per-scenario 覆盖判定的权威口径与 SessionStart 同口径约束」约束 5 / 5a、EX-11.26（SMOKE-core-325）。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.19 本机测试环境发布（fix-phase-banner-api-false-missing）」。
+- 仓库内对应用例：UT-S11-82（对应 SMOKE-core-324 ③）；UT-S11-111、UT-S11-112、UT-S11-113（对应 SMOKE-core-325，含 UT-S11-113 的兜底对照臂）。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-fix-phase-banner-api.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行，显式分派 SMOKE-core-324～SMOKE-core-325，不得依靠通配发现后无条件 PASS。
+- 适用窗口：活跃变更为 `fix-phase-banner-api-false-missing`，或 `OPENLOGOS_FPB_SMOKE=1`；窗口之外按既有留痕机制为全部 owned ID 写 skip，skip 行不声明 `target_environment`。环境变量一律使用 `OPENLOGOS_FPB_` 前缀。
+- 只有部署记录确实缺失，或候选版本早于 0.16.19 时，才写显式 `skip` 并携带缺失项。有 skip 时不得写 `SMOKE_PASS`。
+- 全局 CLI 与模板子进程由 runner 设时限（不超过 120 秒）；超时判 fail 并在证据中写明，不得重试后写 pass。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-324～SMOKE-core-325 均被 runner 覆盖。
