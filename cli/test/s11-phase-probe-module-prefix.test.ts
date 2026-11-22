@@ -2,6 +2,8 @@
  * S11 — SessionStart phase 探测的模块前缀命名兼容与模式字面量化
  * （fix-merge-prototype-commit-and-phase-module-prefix，切片 2）。
  * 覆盖 UT-S11-82～UT-S11-85、ST-S11-47（与 logos/resources/test/core-S11-test-cases.md 严格对齐）。
+ * fix-phase-banner-api-false-missing：横幅的逐场景判定只保留场景时序、测试用例两个调用点，API 阶段改按模块进度判定
+ * （UT-S11-82 / ST-S11-47 随之修改；API 判定本身见 s11-phase-banner-api-module-progress.test.ts）。
  *
  * 被测对象是**源模板** `plugin/bin/openlogos-phase` 的 `check_scenarios_complete()`，
  * 不测 `.claude/openlogos/bin/` 的 sync 部署副本。两个叠加缺陷：
@@ -18,7 +20,7 @@
  * 结果由全局 OpenLogos reporter 写入 logos/resources/verify/test-results.jsonl。
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, existsSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -50,6 +52,8 @@ interface ProjectOpts {
   rootNoise?: boolean;
   /** 额外投放到场景目录的干扰文件（相对该目录的文件名）。 */
   scenarioExtras?: string[];
+  /** API 目录改用按业务领域命名的文件（不带场景编号），如 runlogos 的真实形态。 */
+  apiDomain?: boolean;
 }
 
 /** 一次性隔离项目：initial 模块 + 四个已声明场景 + 三个调用点目录全覆盖（可按需挖空）。 */
@@ -88,12 +92,16 @@ function project(opts: ProjectOpts = {}) {
     if (!(missing.scenario ?? []).includes(id)) {
       seed('logos/resources/prd/3-technical-plan/2-scenario-implementation', `${pre}${id}-flow.md`);
     }
-    if (!(missing.api ?? []).includes(id)) {
+    if (!opts.apiDomain && !(missing.api ?? []).includes(id)) {
       seed('logos/resources/api', `${pre}${id}-api.yaml`);
     }
     if (!(missing.test ?? []).includes(id)) {
       seed('logos/resources/test', `${pre}${id}-test-cases.md`);
     }
+  }
+  if (opts.apiDomain) {
+    seed('logos/resources/api', 'core-auth.yaml');
+    seed('logos/resources/api', 'core-requirements.yaml');
   }
   for (const extra of opts.scenarioExtras ?? []) {
     seed('logos/resources/prd/3-technical-plan/2-scenario-implementation', extra);
@@ -124,7 +132,7 @@ function probeMissing(text: string): string[] {
 }
 
 /** 直接 source 源模板并单独调用 `check_scenarios_complete`，逐调用点取 missing 与实际 find 参数。 */
-function callCheck(root: string, dir: string, extPattern: string, opts: { trace?: boolean } = {}) {
+function callCheck(root: string, dir: string, extPattern: string, opts: { trace?: boolean; path?: string } = {}) {
   const script = [
     'set +e',
     // 只 source 函数定义段：源模板从 `CONFIG=` 起是顶层执行体（会自行输出并 exit），
@@ -137,7 +145,7 @@ function callCheck(root: string, dir: string, extPattern: string, opts: { trace?
   ].filter(Boolean).join('\n');
   const r = spawnSync('bash', ['-c', script], {
     cwd: root, encoding: 'utf-8',
-    env: { ...process.env, PATH: '/usr/bin:/bin:/usr/sbin:/sbin' },
+    env: { ...process.env, PATH: opts.path ?? '/usr/bin:/bin:/usr/sbin:/sbin' },
   });
   const stdout = r.stdout ?? '';
   const stderr = r.stderr ?? '';
@@ -188,14 +196,25 @@ function cliMissing(root: string): { scenario: string[]; test: string[] } {
 }
 
 describe('S11 phase 探测模块前缀命名兼容（切片 2）', () => {
-  it('UT-S11-82: 模块前缀命名项目三个调用点均零 missing（含真实项目根噪声，修复前必红）', () => {
-    const { root } = project({ naming: 'prefixed', rootNoise: true });
+  it('UT-S11-82: 模块前缀命名项目两个逐场景调用点均零 missing，API 阶段不做逐场景判定（含真实项目根噪声，修复前必红）', () => {
+    const { root } = project({ naming: 'prefixed', rootNoise: true, apiDomain: true });
     // 根噪声确实在场——修复前 `*.md` / `*.yaml *.yml` 正是被它们替换掉
     expect(existsSync(join(root, 'README.md'))).toBe(true);
     expect(existsSync(join(root, 'noise.yaml'))).toBe(true);
 
-    expect(missingAtAllCallSites(root)).toEqual({ scenario: [], api: [], test: [] });
-    expect(runProbe(root)).not.toContain('missing');
+    // 场景时序、测试用例两个逐场景调用点
+    expect(callCheck(root, SCEN_DIR, '*.md').missing).toEqual([]);
+    expect(callCheck(root, TEST_DIR, '*.md').missing).toEqual([]);
+
+    // API 臂：只取横幅文本；以 set -x 跟踪确认 API 分支未调用 check_scenarios_complete
+    const r = spawnSync('bash', ['-x', PHASE_HOOK, '--plain'], {
+      cwd: root, encoding: 'utf-8', env: { ...process.env, PATH: '/usr/bin:/bin:/usr/sbin:/sbin' },
+    });
+    expect(r.stdout).toMatch(/Current Phase: /);
+    expect(r.stdout).not.toContain('missing');
+    expect(r.stderr).not.toMatch(/check_scenarios_complete logos\/resources\/api/);
+    expect(r.stderr).not.toMatch(/-name '?[^\s']*\.ya?ml/);   // 无以 *.yaml / *.yml 为模式的 find
+    expect(r.stderr).toMatch(/-name '?[^\s']*S01-\*\.md/);   // 对照：逐场景判定确实执行过（*.md 模式）
   });
 
   it('UT-S11-83: 模式字面量到达 find，结果不随 cwd 文件集合变化', () => {
@@ -250,7 +269,7 @@ describe('S11 phase 探测模块前缀命名兼容（切片 2）', () => {
     expect(cliMissing(other.root).scenario).toEqual(['S02']);
   });
 
-  it('ST-S11-47: 恒等域上 SessionStart 探测与 status 权威口径 missing 集合逐项相等', () => {
+  it('ST-S11-47: 恒等域上 SessionStart 探测与 status 权威口径 missing 集合逐项相等（API 阶段不参与对账）', () => {
     expect(existsSync(CLI_ENTRY)).toBe(true);
 
     // fixture ①：恒等域 + 全覆盖（根噪声在场）
@@ -265,15 +284,15 @@ describe('S11 phase 探测模块前缀命名兼容（切片 2）', () => {
       ['①全覆盖', full.root, [] as string[]],
       ['②部分缺失', partial.root, ['S03']],
     ] as const) {
-      const shell = missingAtAllCallSites(root);
+      // shell 侧对场景目录与测试目录分别直接调用 check_scenarios_complete（不从完整横幅提取，避免短路遮蔽）
+      const shell = { scenario: callCheck(root, SCEN_DIR, '*.md').missing, test: callCheck(root, TEST_DIR, '*.md').missing };
       const cli = cliMissing(root);
       // 只比对 CLI 侧确有 per-scenario 判定的两个调用点
       expect(shell.scenario, label).toEqual(cli.scenario);
       expect(shell.test, label).toEqual(cli.test);
       expect(shell.scenario, label).toEqual(expected);
       expect(cli.scenario, label).toEqual(expected);
-      // API 调用点不参与对账（CLI 侧 SCENARIO_PHASES 不含 API），只断言 shell 自身结果
-      expect(shell.api, label).toEqual(expected.length > 0 ? [] : []);
+      expect(shell.test, label).toEqual(expected);
     }
 
     // 只读：探测全路径不写任何文件
@@ -281,16 +300,35 @@ describe('S11 phase 探测模块前缀命名兼容（切片 2）', () => {
     runProbe(full.root);
     expect(treeHashes(full.root)).toEqual(before);
 
-    // per-scenario 判定不依赖 CLI（D1 零依赖约束）：PATH 中无 openlogos 时结论不变。
-    // 注：脚本在 launched 分支另有 `openlogos status` 调用用于 guard 文案，与本判定无关。
-    const withoutCli = missingAtAllCallSites(partial.root);
-    const withCli = (() => {
-      const binDir = join(partial.root, 'fakebin');
-      mkdirSync(binDir, { recursive: true });
-      writeFileSync(join(binDir, 'openlogos'), '#!/usr/bin/env bash\necho "{}"\n');
-      execFileSync('chmod', ['755', join(binDir, 'openlogos')]);
-      return probeMissing(runProbe(partial.root, { path: `${binDir}:/usr/bin:/bin` }));
-    })();
-    expect(withCli).toEqual(withoutCli.scenario);
+    // 逐场景判定不调用 openlogos CLI（D1 零依赖约束）：PATH 首位放记录调用的桩，直接调用两处判定后调用记录为空；
+    // get_scenario_ids 既有的 node / python 解析不计为 CLI 调用。
+    const binDir = join(partial.root, '..', `fakebin-${Date.now()}`);
+    mkdirSync(binDir, { recursive: true });
+    cleanups.push(() => rmSync(binDir, { recursive: true, force: true }));
+    writeFileSync(join(binDir, 'openlogos'), [
+      '#!/bin/bash',
+      'echo "$*" >> "$(cd "$(dirname "$0")" && pwd)/calls.log"',
+      `exec ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI_ENTRY)} "$@"`,
+      '',
+    ].join('\n'), { mode: 0o755 });
+    const callsLog = join(binDir, 'calls.log');
+    const calls = () => existsSync(callsLog) ? readFileSync(callsLog, 'utf-8').split('\n').filter(Boolean) : [];
+    const stubPath = `${binDir}:/usr/bin:/bin:/usr/sbin:/sbin`;
+    expect(callCheck(partial.root, SCEN_DIR, '*.md', { path: stubPath }).missing).toEqual(['S03']);
+    expect(callCheck(partial.root, TEST_DIR, '*.md', { path: stubPath }).missing).toEqual(['S03']);
+    expect(calls()).toEqual([]);
+    // 完整探测中只有 SessionStart 既有的那一次 status --format json
+    expect(probeMissing(runProbe(partial.root, { path: stubPath }))).toEqual(['S03']);
+    expect(calls()).toEqual(['status --format json']);
+
+    // fixture ① 上横幅的 API 结论与真实 status 中 initial 模块的 phase.3-2-api 一致（完成即不停在 Phase 3 Step 2）
+    const parsed = JSON.parse(spawnSync(process.execPath, [CLI_ENTRY, 'status', '--format', 'json'], {
+      cwd: full.root, encoding: 'utf-8', env: { ...process.env },
+    }).stdout ?? '{}');
+    const api = parsed?.data?.modules?.find((m: { id?: string }) => m?.id === 'core')?.phase_progress?.['phase.3-2-api'];
+    expect(api?.done).toBe(true);
+    const banner = runProbe(full.root, { path: stubPath });
+    expect(banner).not.toContain('Phase 3 Step 2: API & Database Design');
+    expect(banner).not.toContain('missing');
   }, 60_000);
 });

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.19] - 2026-11-22
+
+本机全局发布（未发布到 npm）。
+
+### Fixed
+
+- SessionStart 阶段横幅在 API 阶段不再按场景报 `missing`：API 按业务领域分文件、天然不带场景编号，原逐场景判定在 API 文件齐全的项目里也会误报全部场景缺失。现在优先复用启动时已执行的那一次 `openlogos status --format json`，按 initial 模块的 API 进度判定（有模块未完成即报 `Phase 3 Step 2: API & Database Design (modules: …)`），多模块项目中其他模块的 API 文件不会再遮蔽仍需 API 的模块；拿不到 status 时退回原来的「API 目录是否为空」判断。场景时序与测试用例两处逐场景判定不变，不新增 CLI 调用。
+
+### 升级提示
+
+- 修复在插件模板里：下游项目执行 `openlogos sync` 刷新 `.claude/openlogos/bin/openlogos-phase` 等部署副本后横幅才生效。
+
 ## [0.16.18] - 2026-11-21
 
 本机全局发布（未发布到 npm）。
