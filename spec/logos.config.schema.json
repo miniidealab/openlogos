@@ -99,6 +99,18 @@
           "type": "string",
           "description": "旧字段，保留兼容。建议使用 pre_run_command"
         },
+        "history": {
+          "type": "object",
+          "description": "验收历史留存配置（可选，verification-history，功能规格 §2.104）。verify / smoke 每次进入执行的运行都会写中央索引 logos/resources/verify/history/<run_id>.json（只含结构化字段）；有活跃提案时另写提案运行目录 logos/changes/<slug>/verify-runs/<run_id>/。",
+          "properties": {
+            "raw_in_proposal": {
+              "type": "boolean",
+              "default": true,
+              "description": "true（缺省）：提案运行目录保存本次完整结果（含 error / detail / evidence 等自由文本）与报告快照，随提案归档、随提案提交。false：提案运行目录只保留结构化字段，报告快照与自由文本字段改存本机 logos/.openlogos-runtime/verify-runs/<run_id>/（不进入版本控制）。中央索引无论取值都不含自由文本。"
+            }
+          },
+          "additionalProperties": false
+        },
         "modules": {
           "type": "object",
           "description": "模块级测试命令（可选，module-scoped-verify）。键为 logos-project.yaml 中已登记的模块 id，值为该模块的命令组；三个字段与项目级同名字段同语义、同互斥与兼容规则，都缺省视为该模块未配置模块级命令。只在模块范围启用（至少一个模块声明了非空 modules[].paths）或传入 --all 时使用；未登记的模块 id 产生警告 verify_module_unknown 并被忽略",

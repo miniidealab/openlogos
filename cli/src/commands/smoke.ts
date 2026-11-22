@@ -32,12 +32,19 @@ import {
   MODULE_ROW_LABEL, moduleReportPath, normalizeRelPath, publishReportAtomically, registeredModules, reservedModuleReportPaths, reservedPathCollisions,
 } from '../lib/module-phase-report.js';
 import { readProjectYaml } from '../lib/project-yaml.js';
+import { acquireResultPathLocks, ResultPathBusyError, type ResultPathLockHandle } from '../lib/result-path-lock.js';
+import {
+  startHistoryRun, writeHistoryRun, historyTextLine, testPauseAfterReport, captureResultBytes,
+  type HistoryMeta, type HistoryFinish,
+} from '../lib/verification-history.js';
 
 const DEFAULT_SMOKE_RESULT_PATH = 'logos/resources/verify/smoke-results.jsonl';
 const DEFAULT_SMOKE_REPORT_PATH = 'logos/resources/verify/smoke-report.md';
 const SMOKE_CASES_DIR = 'logos/resources/test/smoke';
 
 export interface SmokeData {
+  /** verification-history（§2.104.10）：本次运行写入的历史元数据；进入执行前被拒绝时不出现。 */
+  history?: HistoryMeta;
   environment: string | null;
   summary: {
     defined_count: number;
@@ -100,6 +107,11 @@ export interface SmokeCollectOptions {
   scope?: SmokeScope;
   /** 不影响门禁的警告诊断（smoke_module_unknown），在门禁判定之后追加到 diagnostics。 */
   warnings?: SmokeCoverageDiagnostic[];
+  /**
+   * verification-history（§2.104.5）：为 true 时不写共用报告，由调用方在全部门禁（沙箱失败改判、环境证据改判）
+   * 之后以最终数据渲染一次并写出。缺省 false 保持既有直接调用方的行为。
+   */
+  deferReport?: boolean;
 }
 
 /** smoke 环境证据（spec/environments.md §5.2、§6）。 */
@@ -533,12 +545,20 @@ export function collectSmokeData(
   if (options.warnings && options.warnings.length > 0) data.diagnostics = [...data.diagnostics, ...options.warnings];
   if (options.scope) data.scope = { ...options.scope, out_of_scope_result_count: outOfScope };
 
-  const fullReportPath = join(root, reportPath);
-  mkdirSync(dirname(fullReportPath), { recursive: true });
-  writeFileSync(fullReportPath, generateSmokeReport(data));
+  if (!options.deferReport) writeSmokeReportBytes(root, data);
 
   return data;
 }
+
+/** 由数据渲染一次共用 smoke 报告并写出，返回写入的字节（供报告快照复用，不从共用路径回读）。 */
+function writeSmokeReportBytes(root: string, data: SmokeData): string {
+  const bytes = generateSmokeReport(data);
+  const fullReportPath = join(root, data.report_path);
+  mkdirSync(dirname(fullReportPath), { recursive: true });
+  writeFileSync(fullReportPath, bytes);
+  return bytes;
+}
+
 
 /** 配置的共用报告路径落在保留路径时改写到默认路径并给出警告 smoke_report_path_reserved（§2.99.2）。 */
 function redirectReservedReportPath(
@@ -715,6 +735,81 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
   // 只有本次实际运行 smoke.command（运行前清空结果文件）时，结果才属于这次部署
   const freshResults = Boolean(command);
 
+  // verification-history（§2.104.4 / §2.104.6）：通过前置检查后、截断或读取结果之前开启运行，获取有效结果路径的锁；
+  // 冲突时以 RESULT_PATH_BUSY 拒绝，不截断结果文件、不写历史
+  let resultLock: ResultPathLockHandle;
+  try {
+    resultLock = acquireResultPathLocks(root, [resultPath]);
+  } catch (e) {
+    if (e instanceof ResultPathBusyError) {
+      if (format === 'json') console.error(JSON.stringify(makeErrorEnvelope('smoke', e.code, e.message, { details: { paths: e.paths } })));
+      else console.error(`\nError: ${e.message}`);
+      process.exit(2);
+    }
+    throw e;
+  }
+  // 锁在任何退出路径上都释放（含进程内调用时被拦截的 process.exit 抛出）
+  try {
+  // 版本上下文（§14.3）不读写任何提案文件：历史不归属活跃提案，只写中央索引
+  const historyRun = startHistoryRun(root, 'smoke', { withoutProposal: Boolean(versionContext) });
+  const resultSource: 'executed' | 'reused' = command ? 'executed' : 'reused';
+  const historyBase = (): Pick<HistoryFinish, 'moduleScope' | 'verifyMode' | 'attemptedSliceId' | 'environment' | 'deployId' | 'resultSource'> => ({
+    moduleScope: targetModule !== null ? [targetModule] : null,
+    verifyMode: null,
+    attemptedSliceId: null,
+    environment: envCtx.target ?? null,
+    deployId: envCtx.deployId ?? null,
+    resultSource,
+  });
+  /** 最终报告字节（由 finalizeVerdict 在最终门禁之后渲染一次）。 */
+  let finalReportBytes: string | null = null;
+  /** 采集当时的结果字节（code-r1 F3）：在 collectSmokeData 读取结果之后立即捕获，历史写入不再二次读取。 */
+  let collectedResult: ReturnType<typeof captureResultBytes> = null;
+  const recordCompleted = (data: SmokeData): void => {
+    data.history = writeHistoryRun(historyRun, {
+      ...historyBase(),
+      outcome: 'completed',
+      gate: { result: data.gate.result, reason: data.gate.reason },
+      errorCode: null,
+      counts: {
+        defined: data.summary.defined_count,
+        executed: data.summary.executed_count,
+        passed: data.summary.passed_count,
+        failed: data.summary.failed_count,
+        skipped: data.summary.skipped_count,
+        uncovered: data.summary.uncovered_count,
+      },
+      failedIds: data.failed_cases.map(item => item.id).filter(id => id !== 'sandbox'),
+      skippedIds: data.skipped_cases,
+      uncoveredIds: data.uncovered_cases,
+      resultPath: existsSync(join(root, resultPath)) ? resultPath : null,
+      resultCapture: collectedResult,
+      reportBytes: finalReportBytes,
+    });
+    resultLock.release();
+  };
+  /** 进入执行后的既有早退（§2.104.4）：写 aborted 历史，沿用既有错误信封、错误码与退出码，附 error.details.history。 */
+  const abortWithHistory = (code: 'NO_SMOKE_RESULTS' | 'NO_SMOKE_CASES', message: string): never => {
+    const meta = writeHistoryRun(historyRun, {
+      ...historyBase(),
+      outcome: 'aborted',
+      gate: { result: null, reason: null },
+      errorCode: code,
+      counts: {},
+      resultPath: existsSync(join(root, resultPath)) ? resultPath : null,
+      resultCapture: captureResultBytes(root, resultPath),
+      reportBytes: null,
+    });
+    resultLock.release();
+    if (format === 'json') {
+      console.error(JSON.stringify(makeErrorEnvelope('smoke', code, message, { details: { history: meta } })));
+      process.exit(1);
+    }
+    console.error(`\nError: ${message}`);
+    console.error(historyTextLine(meta, locale));
+    process.exit(1);
+  };
+
   if (command) {
     // 每次执行已配置的 smoke.command 都必须从空账本开始。
     // 否则上一次部署留下的 pass/skip 会被当成本轮真实结果，形成伪覆盖。
@@ -742,7 +837,7 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
 
   const coverageCheck = checkSmokeCoverage(root, { command, resultPath, ...(versionContext ? { versionContext: true } : {}) });
   // 按模块限定的应覆盖集合 S 与 scope（只在启用按模块区分时生效，§14.5、§14.6）
-  const collectOptions: SmokeCollectOptions = { resultPath, reportPath };
+  const collectOptions: SmokeCollectOptions = { resultPath, reportPath, deferReport: true };
   const unknownModules = unknownSmokeModules(root);
   if (unknownModules.length > 0) {
     collectOptions.warnings = unknownModules.map(id => ({
@@ -804,10 +899,13 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
       };
       if (envCtx.registryPresent) {
         data.environment_evidence = evidence;
-        // 门禁结论可能被环境证据改写：按最终 data 重写报告
-        writeFileSync(join(root, data.report_path), generateSmokeReport(data));
       }
     }
+
+    // verification-history（§2.104.5）：沙箱失败改判与环境证据改判之后由最终数据渲染一次共用报告；
+    // 同一份字节稍后用作报告快照，不从共用路径回读
+    finalReportBytes = writeSmokeReportBytes(root, data);
+    testPauseAfterReport();
 
     // 存在活跃提案且传入 --env 时先追加账本 smoke 行、再写 smoke marker（spec/environments.md §5.1，决策 C02）
     // 部署执行已启用而无活跃提案时也写账本（slug 为 null，只写账本、不写提案标记；environment-deploy 决策 C15）
@@ -847,8 +945,12 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
    */
   const writeLedgerThenMarkers = (data: SmokeData, evidence: SmokeEnvironmentEvidence, slug: string | null): void => {
     const gateResult = data.gate.result;
-    const ledgerFailure = (stage: 'ledger' | 'marker', message: string, details: Record<string, unknown>): never =>
-      smokeReject(format, 'SMOKE_LEDGER_WRITE_FAILED', message, { details: { stage, ...details, gate_result: gateResult } });
+    // 门禁已形成后的账本 / 标记失败（code-r1 F4）：先经同一收尾入口写 completed 历史（最终门禁与同一份报告字节），
+    // 再沿用 SMOKE_LEDGER_WRITE_FAILED 错误信封退出，历史元数据追加在既有 details 中
+    const ledgerFailure = (stage: 'ledger' | 'marker', message: string, details: Record<string, unknown>): never => {
+      recordCompleted(data);
+      return smokeReject(format, 'SMOKE_LEDGER_WRITE_FAILED', message, { details: { stage, ...details, gate_result: gateResult, history: data.history } });
+    };
 
     const observed = observeWorkspace(root);
     const record: SmokeLedgerRecord = {
@@ -937,8 +1039,10 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
   if (!existsSync(join(root, resultPath))) {
     if (coverageCheck.changed_case_ids.length > 0) {
       const data = collectSmokeData(root, reportedEnvironment, sandboxData, coverageCheck, collectOptions);
+      collectedResult = captureResultBytes(root, resultPath);
       finalizeVerdict(data);
       writeModuleSmokeReports(root, data, plan, targetModule);
+      recordCompleted(data);
       if (format === 'json') {
         console.log(JSON.stringify(makeEnvelope('smoke', data)));
         // 设 exitCode 后返回，保证管道消费方读到完整 envelope（S16 EX-2.6）
@@ -949,31 +1053,20 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
       for (const item of data.diagnostics) {
         console.error(`- ${item.code}: ${item.message}`);
       }
+      console.error(historyTextLine(data.history!, locale));
       process.exit(1);
     }
-    if (format === 'json') {
-      console.error(JSON.stringify(makeErrorEnvelope(
-        'smoke', 'NO_SMOKE_RESULTS', `No smoke results found at ${resultPath}.`,
-      )));
-      process.exit(1);
-    }
-    console.error(`\nError: No smoke results found at ${resultPath}.`);
-    process.exit(1);
+    // 采集时结果文件不存在且本提案没有变更 smoke 用例（EX-19H.2）
+    abortWithHistory('NO_SMOKE_RESULTS', `No smoke results found at ${resultPath}.`);
   }
 
   const defined = extractSmokeDefinedIds(root);
   if (defined.length === 0) {
-    if (format === 'json') {
-      console.error(JSON.stringify(makeErrorEnvelope(
-        'smoke', 'NO_SMOKE_CASES', 'No smoke case specs found in logos/resources/test/smoke/.',
-      )));
-      process.exit(1);
-    }
-    console.error('\nError: No smoke case specs found in logos/resources/test/smoke/.');
-    process.exit(1);
+    abortWithHistory('NO_SMOKE_CASES', 'No smoke case specs found in logos/resources/test/smoke/.');
   }
 
   const data = collectSmokeData(root, reportedEnvironment, sandboxData, coverageCheck, collectOptions);
+  collectedResult = captureResultBytes(root, resultPath);
   if (sandboxData.status === 'fail' && data.gate.result === 'PASS') {
     data.gate.result = 'FAIL';
     data.gate.reason = 'failed_cases';
@@ -988,6 +1081,8 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
   finalizeVerdict(data);
   // 共用报告最后一次写入（含环境证据收尾重写）之后，按最终结论写模块冒烟报告（§2.99.6）
   writeModuleSmokeReports(root, data, plan, targetModule);
+  // verification-history（§2.104.4）：最终门禁处写 completed 历史
+  recordCompleted(data);
 
   if (format === 'json') {
     console.log(JSON.stringify(makeEnvelope('smoke', data)));
@@ -1059,7 +1154,11 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
   }
 
   console.log(`\n${data.gate.result === 'PASS' ? '✅' : '❌'} Gate 3.8: ${data.gate.result}`);
-  console.log(`\n📄 ${t(locale, 'verify.reportPath', { path: data.report_path })}\n`);
+  console.log(`\n📄 ${t(locale, 'verify.reportPath', { path: data.report_path })}`);
+  console.log(`${historyTextLine(data.history!, locale)}\n`);
 
   if (data.gate.result !== 'PASS') process.exit(1);
+  } finally {
+    resultLock.release();
+  }
 }

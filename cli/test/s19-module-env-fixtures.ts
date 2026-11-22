@@ -182,6 +182,11 @@ export function runCli(root: string, args: string[], entry = CLI_DIST): CliRun {
 export function normalizeOutput(text: string, root: string): string {
   let out = text;
   for (const r of [realpathSync(root), root]) out = out.split(r).join('<ROOT>');
+  // verification-history（§2.104.11）：verify / smoke 输出除新增 history 元数据与一行历史路径外与引入前一致；
+  // 零回归基准生成于引入前，比较前剔除新增部分
+  out = out
+    .replace(/,"history":\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}/g, '')
+    .split('\n').filter(line => !/^(?:🗂 {2}(?:验收历史|Verification history)|⚠️ {2}(?:验收历史写入失败|Failed to write verification history))/.test(line)).join('\n');
   return out
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, '<TS>')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<UUID>')

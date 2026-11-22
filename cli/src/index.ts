@@ -108,6 +108,8 @@ Commands:
                        --lifecycle <initial|launched>  Pick which flow (default: inferred)
   knowledge <sub>    Enterprise knowledge without a proposal: apply <candidate-dir> [--init-tags] / apply --recover / index / check
                        list [--module <m>] [--tag <t>] / show <KXX> / refs <KXX|KXX-Rn>
+  history <sub>      Verification history of verify / smoke runs (read-only): list [--kind verify|smoke] [--slug <s>]
+                       [--result pass|fail|aborted] [--module <id>] [--limit <n>] / show <run_id>
   impact             Classify a git change range as lifecycle-only bookkeeping (read-only, for CI)
                        --base <rev> --head <rev>   Git range mode (safe revision resolution)
                        --stdin                      Read \`git diff --no-relative --name-status -z\` bytes from stdin
@@ -124,7 +126,7 @@ Options:
   --version, -v      Show version number
   --fresh-sandbox    verify / smoke: rebuild the persistent sandbox workspace from scratch
   --all              verify: check every module (skip module-scoped verify range)
-  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, deploy, approve, branch sync, branch status, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list, env list, env show, env check, knowledge apply, knowledge index, knowledge check, knowledge list, knowledge show, knowledge refs)
+  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, deploy, approve, branch sync, branch status, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list, env list, env show, env check, knowledge apply, knowledge index, knowledge check, knowledge list, knowledge show, knowledge refs, history list, history show)
 
 Examples:
   openlogos init my-saas-project
@@ -434,6 +436,12 @@ async function main() {
       // 企业知识直接录入与检索（knowledge-direct-intake，功能规格 §2.103）
       const { knowledgeCommand } = await import('./commands/knowledge.js');
       knowledgeCommand(args.slice(1), format);
+      break;
+    }
+    case 'history': {
+      // 验收历史查询（verification-history，功能规格 §2.104.10）
+      const { historyCommand } = await import('./commands/history.js');
+      historyCommand(args.slice(1), format);
       break;
     }
     case 'ignore':

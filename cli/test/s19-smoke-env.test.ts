@@ -522,7 +522,8 @@ describe('S19 smoke 环境一致性与证据 — 单元测试', () => {
   });
 
   it('UT-S19-66: 无登记表时 smoke 行为逐字不变', () => {
-    const DATA_KEYS = ['changed_cases', 'diagnostics', 'environment', 'failed_cases', 'gate', 'report_path', 'result_path', 'runners', 'sandbox', 'skipped_cases', 'summary', 'uncovered_cases'];
+    // verification-history（§2.104.11）：JSON 除新增 history 外字段集合不变
+    const DATA_KEYS = ['changed_cases', 'diagnostics', 'environment', 'failed_cases', 'gate', 'history', 'report_path', 'result_path', 'runners', 'sandbox', 'skipped_cases', 'summary', 'uncovered_cases'];
     // ① 有活跃提案、marker 为空文件
     setup({ registry: false, target: 'other' });
     writeMarker('');

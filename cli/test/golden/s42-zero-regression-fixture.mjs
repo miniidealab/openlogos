@@ -76,6 +76,9 @@ function normalizer(root) {
   return text => {
     let out = text;
     for (const r of roots) out = out.split(r).join('<ROOT>');
+    // verification-history（§2.104.11）：verify / smoke 输出除新增 history 元数据与一行历史路径外与引入前一致；基准生成于引入前，比较前剔除
+    out = out.replace(/,"history":\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}/g, '')
+      .split('\n').filter(line => !/^(?:🗂 {2}(?:验收历史|Verification history)|⚠️ {2}(?:验收历史写入失败|Failed to write verification history))/.test(line)).join('\n');
     // 平台默认沙箱根（darwin 为 /private/tmp，其余为 os.tmpdir()）是宿主环境事实，不进基线
     out = out.replace(/"root":"([^"]*)"/g, (m, v) => (DEFAULT_SANDBOX_ROOTS.has(v) ? '"root":"<SANDBOX_ROOT>"' : m));
     out = out.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, '<TIME>');
@@ -136,7 +139,8 @@ export function observeUnenabledFixtures(cliEntry) {
       result[name] = {
         steps,
         ledger: existsSync(join(root, LEDGER_REL)) ? norm(readFileSync(join(root, LEDGER_REL), 'utf-8')) : null,
-        proposal_files: readdirSync(proposalDir).sort(),
+        // verification-history：smoke 在提案文件夹新增的运行记录目录 verify-runs/ 不属于本基准观测范围
+        proposal_files: readdirSync(proposalDir).filter(name => name !== 'verify-runs').sort(),
         deploy_done: existsSync(join(proposalDir, 'DEPLOY_DONE')) ? norm(readFileSync(join(proposalDir, 'DEPLOY_DONE'), 'utf-8')) : null,
         tasks: norm(readFileSync(join(proposalDir, 'tasks.md'), 'utf-8')),
       };

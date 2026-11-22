@@ -297,6 +297,11 @@ describe('S44 branch status 与主分支确定', () => {
     expect(schema.definitions).toEqual(baseline.definitions);
     expect(schema.examples).toEqual(baseline.examples);
     const { branch_sync: _added, ...restProps } = schema.properties;
+    // verification-history：verify 节新增 history（raw_in_proposal），属该提案的增量，比较前剔除
+    if (restProps.verify?.properties?.history) {
+      restProps.verify = { ...restProps.verify, properties: { ...restProps.verify.properties } };
+      delete restProps.verify.properties.history;
+    }
     expect(restProps).toEqual(baseline.properties);
     const { properties: _p1, ...restTop } = schema;
     const { properties: _p2, ...baselineTop } = baseline;

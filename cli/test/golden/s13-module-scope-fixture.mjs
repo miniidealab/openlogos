@@ -184,6 +184,8 @@ function normalizeRun(root, run) {
   const norm = normalizer(root);
   const env = run.envelope ? { ...run.envelope } : null;
   if (env) { delete env.version; delete env.timestamp; }
+  // verification-history（§2.104.11）：verify JSON 除新增 data.history 外与引入前一致；history 含每次不同的 run_id，比较前剔除
+  if (env && env.data && typeof env.data === 'object') { env.data = { ...env.data }; delete env.data.history; }
   return {
     status: run.status,
     envelope: env ? JSON.parse(norm(JSON.stringify(env))) : null,

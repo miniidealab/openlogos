@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.20] - 2026-11-22
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- 验收历史：`openlogos verify` / `openlogos smoke` 每次进入执行的运行都留下一条不会被覆盖的历史。中央索引 `logos/resources/verify/history/<run_id>.json` 只记结构化字段（时间、提案、模块、模式、门禁结论、计数、失败 / 跳过 / 未覆盖用例 ID、结果来源、提交号），覆盖所有运行（含进入执行后的早退）；有活跃提案时，本次完整结果与报告快照另存进提案文件夹 `verify-runs/<run_id>/`，随归档保留。
+- `openlogos history list` / `openlogos history show <run_id>`：按类型、提案、结论、模块筛选列出历史，查看某一次的详情与完整记录位置（归档后仍可定位），支持 `--format json`。
+- verify / smoke 的 JSON 输出新增 `data.history`；进入执行后的既有早退在错误信封的 `error.details.history` 中给出历史元数据。
+- 配置项 `verify.history.raw_in_proposal`（缺省 true）：设为 false 时报告快照与失败文字等自由文本只存本机 `logos/.openlogos-runtime/verify-runs/`。
+
+### Changed
+
+- 共用 `acceptance-report.md` 与 smoke 报告改在最终门禁之后由同一份最终数据写出一次：smoke 覆盖预检或沙箱失败改判时，报告与命令结果一致（以前可能仍显示 PASS）。
+- 同一结果路径（含 verify 的回归 / 增量阶段路径）的并发运行，后到者以 `RESULT_PATH_BUSY`（退出码 2）拒绝，不再静默互相截断。
+
+### 升级提示
+
+- 历史目录随项目正常提交纳入版本控制；路径被忽略规则命中时以 `git add -f` 纳入。CLI 不执行任何 git 操作。本版本之前的运行不回填。
+
 ## [0.16.19] - 2026-11-22
 
 本机全局发布（未发布到 npm）。

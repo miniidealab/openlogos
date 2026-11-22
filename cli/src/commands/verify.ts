@@ -26,6 +26,11 @@ import {
   type SliceVerificationState,
 } from '../lib/test-slice-manifest.js';
 import { contractVersion } from '../lib/step-registry.js';
+import { acquireResultPathLocks, ResultPathBusyError, type ResultPathLockHandle } from '../lib/result-path-lock.js';
+import {
+  startHistoryRun, writeHistoryRun, historyTextLine, testPauseAfterReport, captureResultBytes,
+  type HistoryMeta, type HistoryRunContext, type HistoryFinish,
+} from '../lib/verification-history.js';
 import { VERIFY_PASS_MARKER } from '../lib/proposal-markers.js';
 import { TABLE_CELL_ID_RE, MANUAL_MARKER_RE } from '../lib/test-id.js';
 import {
@@ -142,6 +147,8 @@ export interface VerifyData {
   checkpoint?: SliceVerificationState['checkpoint'];
   test_change_set?: SliceVerificationState['test_change_set'];
   automation_diagnostic?: AutomationDiagnostic;
+  /** verification-history（§2.104.10）：本次运行写入的历史元数据；进入执行前被拒绝时不出现。 */
+  history?: HistoryMeta;
   /** module-scoped-verify（§2.96.7）：只在启用模块范围或传 --all 时输出。 */
   scope?: VerifyScopeData;
 }
@@ -1031,11 +1038,34 @@ function buildVerifyConsistency(params: {
   };
 }
 
+/**
+ * verification-history（§2.104.5）：共用验收报告由最终数据只渲染一次。collectVerifyData 记下渲染所需的参数，
+ * 调用方在全部门禁（smoke 覆盖预检、沙箱裁决）之后以最终 gate 渲染；渲染结果的字节同时写共用报告与报告快照。
+ */
+const acceptanceReportRenderers = new WeakMap<VerifyData, (gate: 'PASS' | 'FAIL') => string>();
+
+/** 以最终门禁渲染共用验收报告的字节（不写盘）。 */
+export function renderAcceptanceReport(data: VerifyData): string | null {
+  const render = acceptanceReportRenderers.get(data);
+  return render ? render(data.gate.result) : null;
+}
+
+/** 写共用验收报告并返回写入的字节（供报告快照复用，不从共用路径回读）。 */
+export function writeAcceptanceReport(root: string, data: VerifyData): string | null {
+  const bytes = renderAcceptanceReport(data);
+  if (bytes === null) return null;
+  const reportPath = join(root, REPORT_DIR, 'acceptance-report.md');
+  mkdirSync(dirname(reportPath), { recursive: true });
+  writeFileSync(reportPath, bytes);
+  return bytes;
+}
+
 export function collectVerifyData(
   root: string,
   preRun?: VerifyPreRunData,
   sliceVerification?: SliceVerificationState | null,
   scopeContext: VerifyScopeContext = { scope: null, inScope: null },
+  opts: { deferReport?: boolean } = {},
 ): VerifyData {
   const inScope = scopeContext.inScope;
   const config = readVerifyConfig(root);
@@ -1141,15 +1171,13 @@ export function collectVerifyData(
     else gateReason = 'incomplete_coverage';
   }
 
-  const reportPath = join(root, REPORT_DIR, 'acceptance-report.md');
-  mkdirSync(dirname(reportPath), { recursive: true });
-  writeFileSync(reportPath, generateReport(
+  const renderReport = (finalGate: 'PASS' | 'FAIL') => generateReport(
     defined, results, passed, failed, skipped, uncovered,
-    String(coveragePct), String(passRatePct), gateResult, resultIds, manualCount,
+    String(coveragePct), String(passRatePct), finalGate, resultIds, manualCount,
     sliceVerification,
     preRunFailures.map(cmd => ({ stage: cmd.stage, exit_code: cmd.exit_code })),
     scopeContext.scope ? { ...scopeContext.scope, out_of_scope_result_count: outOfScopeResultCount } : null,
-  ));
+  );
 
   const relReportPath = 'logos/resources/verify/acceptance-report.md';
 
@@ -1180,6 +1208,9 @@ export function collectVerifyData(
     ...(scopeContext.scope ? { scope: { ...scopeContext.scope, out_of_scope_result_count: outOfScopeResultCount } } : {}),
   });
   applySmokePrecheck(root, data);
+  acceptanceReportRenderers.set(data, renderReport);
+  // 直接调用方（未延迟）在 smoke 覆盖预检之后以最终 gate 写共用报告；verify 主流程延迟到沙箱裁决之后写（§2.104.5）
+  if (!opts.deferReport) writeAcceptanceReport(root, data);
 
   let proposalDir: string | null = null;
   const guardPath = join(root, 'logos', '.openlogos-guard');
@@ -1457,6 +1488,31 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   const checkpointScope = sliceVerification?.verify_mode === 'slice-checkpoint' ? sliceVerification.verify_scope : null;
   if (checkpointScope) process.env.OPENLOGOS_VERIFY_SLICE_SCOPE = checkpointScope;
   else delete process.env.OPENLOGOS_VERIFY_SLICE_SCOPE;
+  // verification-history（§2.104.4 / §2.104.6）：通过前置检查后、首个预跑命令或结果读取之前开启运行，
+  // 一次性获取全部有效结果路径的锁；冲突时以 RESULT_PATH_BUSY 拒绝，不截断任何结果文件、不写历史。
+  let resultLocks: ResultPathLockHandle;
+  try {
+    resultLocks = acquireResultPathLocks(root, [resultPath, config.regressionResultPath, config.incrementalResultPath]);
+  } catch (e) {
+    if (e instanceof ResultPathBusyError) {
+      if (format === 'json') {
+        console.error(JSON.stringify(makeErrorEnvelope('verify', e.code, e.message, { details: { paths: e.paths } })));
+      } else {
+        console.error(`\nError: ${e.message}`);
+      }
+      process.exit(2);
+    }
+    throw e;
+  }
+  // 锁在任何退出路径上都释放（含进程内调用时被拦截的 process.exit 抛出）
+  try {
+  const historyRun: HistoryRunContext = startHistoryRun(root, 'verify');
+  const historyBase = (): Pick<HistoryFinish, 'moduleScope' | 'verifyMode' | 'attemptedSliceId'> => ({
+    moduleScope: scopeContext.scope ? [...scopeContext.scope.modules] : null,
+    verifyMode: sliceVerification?.manifest_status === 'valid' && sliceVerification.verify_mode ? sliceVerification.verify_mode : null,
+    attemptedSliceId: sliceVerification?.manifest_status === 'valid' && sliceVerification.verify_mode
+      ? (sliceVerification.attempted_slice_id ?? null) : null,
+  });
   let preRunResult: RunVerifyPreRunResult;
   try {
     // module-scoped-phase-reports（code-r3 F3）：结果路径落在模块报告保留路径上时，runner 可能按原配置写入保留路径，
@@ -1481,31 +1537,44 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
 
   const fullResultPath = join(root, resultPath);
   ensureResultFileWhenPreRunFailed(fullResultPath, preRun);
+  // 结果来源（§2.104.3）：本次调用执行了任一预跑 / 两阶段命令为 executed，只读取既有结果为 reused
+  const resultSource: 'executed' | 'reused' = preRun.commands.some(cmd => cmd.status !== 'skipped') ? 'executed' : 'reused';
 
-  if (!existsSync(fullResultPath)) {
+  /** 进入执行后的既有早退（§2.104.4）：写 aborted 历史，沿用既有错误信封、错误码与退出码，附 error.details.history。 */
+  const abortWithHistory = (code: 'NO_TEST_RESULTS' | 'NO_TEST_CASES', jsonMessage: string, textMessage: string): never => {
+    const meta = writeHistoryRun(historyRun, {
+      ...historyBase(),
+      outcome: 'aborted',
+      gate: { result: null, reason: null },
+      errorCode: code,
+      counts: {},
+      resultSource,
+      resultPath: existsSync(fullResultPath) ? resultPath : null,
+      resultCapture: captureResultBytes(root, resultPath),
+      reportBytes: null,
+    });
+    resultLocks.release();
     if (format === 'json') {
-      console.error(JSON.stringify(makeErrorEnvelope(
-        'verify', 'NO_TEST_RESULTS', `No test results found at ${resultPath}.`,
-      )));
+      console.error(JSON.stringify(makeErrorEnvelope('verify', code, jsonMessage, { details: { history: meta } })));
       process.exit(1);
     }
-    console.error(`\nError: ${t(locale, 'verify.noResults', { path: resultPath })}`);
+    console.error(`\nError: ${textMessage}`);
+    console.error(historyTextLine(meta, locale));
     process.exit(1);
+  };
+
+  if (!existsSync(fullResultPath)) {
+    abortWithHistory('NO_TEST_RESULTS', `No test results found at ${resultPath}.`, t(locale, 'verify.noResults', { path: resultPath }));
   }
 
   const { ids: defined } = extractDefinedIds(root);
   if (defined.length === 0) {
-    if (format === 'json') {
-      console.error(JSON.stringify(makeErrorEnvelope(
-        'verify', 'NO_TEST_CASES', 'No test case specs found in logos/resources/test/.',
-      )));
-      process.exit(1);
-    }
-    console.error(`\nError: ${t(locale, 'verify.noCases')}`);
-    process.exit(1);
+    abortWithHistory('NO_TEST_CASES', 'No test case specs found in logos/resources/test/.', t(locale, 'verify.noCases'));
   }
 
-  const data = collectVerifyData(root, preRun, sliceVerification, scopeContext);
+  const data = collectVerifyData(root, preRun, sliceVerification, scopeContext, { deferReport: true });
+  // 采集当时的结果字节（code-r1 F3）：历史写入不再二次读取结果文件
+  const resultCapture = captureResultBytes(root, resultPath);
   data.sandbox = sandbox;
   if (sandbox.status === 'fail' && data.gate.result === 'PASS') {
     data.gate.result = 'FAIL';
@@ -1517,6 +1586,11 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
       });
     }
   }
+
+  // verification-history（§2.104.5）：全部门禁（smoke 覆盖预检、沙箱改判）裁决之后由最终数据渲染一次共用报告，
+  // 同一份字节稍后用作报告快照，不从共用路径回读
+  const reportBytes = writeAcceptanceReport(root, data);
+  testPauseAfterReport();
 
   // module-scoped-phase-reports：全部门禁（含沙箱改判）裁决之后写模块验收报告（§2.99.5）
   writeModuleAcceptanceReports(root, data, preRun, sandbox, scopeContext, sliceVerification);
@@ -1566,6 +1640,30 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
       }
     } catch { /* guard 文件读取失败时静默跳过 */ }
   }
+
+  // verification-history（§2.104.4）：最终门禁处写 completed 历史；写入失败只体现在 history 元数据
+  data.history = writeHistoryRun(historyRun, {
+    ...historyBase(),
+    outcome: 'completed',
+    gate: { result: data.gate.result, reason: data.gate.reason },
+    errorCode: null,
+    counts: {
+      defined: data.summary.defined_count,
+      executed: data.summary.executed_count,
+      passed: data.summary.passed_count,
+      failed: data.summary.failed_count,
+      skipped: data.summary.skipped_count,
+      uncovered: data.summary.uncovered_count,
+    },
+    failedIds: data.failed_cases.map(item => item.id).filter(id => id !== 'sandbox'),
+    skippedIds: data.skipped_cases,
+    uncoveredIds: data.uncovered_cases,
+    resultSource,
+    resultPath,
+    resultCapture,
+    reportBytes,
+  });
+  resultLocks.release();
 
   if (format === 'json') {
     console.log(JSON.stringify(makeEnvelope('verify', data)));
@@ -1649,7 +1747,8 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
     console.log(`\n❌ ${t(locale, 'verify.gateFailCoverage')}`);
   }
 
-  console.log(`\n📄 ${t(locale, 'verify.reportPath', { path: data.report_path })}\n`);
+  console.log(`\n📄 ${t(locale, 'verify.reportPath', { path: data.report_path })}`);
+  console.log(`${historyTextLine(data.history, locale)}\n`);
 
   if (pre_run.mode !== 'none' || pre_run.diagnostics.length > 0 || pre_run.suggestions.length > 0) {
     if (pre_run.mode === 'pre_run_command') {
@@ -1728,5 +1827,8 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
         }
       }
     } catch { /* guard 文件读取失败时静默跳过 */ }
+  }
+  } finally {
+    resultLocks.release();
   }
 }

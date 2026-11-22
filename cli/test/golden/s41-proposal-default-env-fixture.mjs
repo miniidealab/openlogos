@@ -31,6 +31,9 @@ function normalizer(root) {
   return text => {
     let out = text;
     for (const r of roots) out = out.split(r).join('<ROOT>');
+    // verification-history（§2.104.11）：verify / smoke 输出除新增 history 元数据与一行历史路径外与引入前一致；基准生成于引入前，比较前剔除
+    out = out.replace(/,"history":\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}/g, '')
+      .split('\n').filter(line => !/^(?:🗂 {2}(?:验收历史|Verification history)|⚠️ {2}(?:验收历史写入失败|Failed to write verification history))/.test(line)).join('\n');
     return out.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, '<TIME>');
   };
 }
