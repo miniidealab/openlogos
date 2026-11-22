@@ -1700,3 +1700,54 @@ public_release_commit: 3d851a71a17c86d081ce9d69adf2ea88331a94fe
 
 - 安装态 smoke：执行 `openlogos smoke --env test`，覆盖 SMOKE-core-324～325（runner `scripts/smoke-fix-phase-banner-api.js`）与通用用例 SMOKE-core-268～271。本工作单元不执行 smoke。
 - runner 的部署前置按本提案在部署账本中的成功部署记录（deploy `1e666d71`）与本机回执逐字段核验候选版本（0.16.19），两者已一致。
+
+## 部署记录 2026-11-22T07:36:04.131Z → test
+
+- 目标环境: test
+- 通道 / 执行方式: proposal / script
+- deploy_id: 0e07ad07-a17c-4de8-8670-85bdd43a76b9
+- ref_requested: 307579db16705ee8cbd667c994872c336d9a1ee0（HEAD）
+- ref: 307579db16705ee8cbd667c994872c336d9a1ee0
+- 执行脚本: scripts/deploy-local.mjs（workdir: worktree）
+- 耗时: 16126 ms
+- 结果: done
+- log_path: logos/.openlogos-runtime/deploy-logs/0e07ad07-a17c-4de8-8670-85bdd43a76b9.log
+- previous_ref: 000ac05634cbd606a2c61ee378e8cf2866ff7e81
+
+# 部署报告：verification-history / OpenLogos 0.16.20 本机全局发布（2026-11-22，**已部署：本机测试环境 test**）
+
+按部署方案「OpenLogos 0.16.20 本机测试环境发布（verification-history）」经 `openlogos deploy --env test` 提案通道部署（登记表 `test.deploy` = script，`scripts/deploy-local.mjs`，workdir: worktree）。目标环境取决策 C02（登记表 `proposal_default_env=test`）；本次执行以 `next --auto` 的 deliver 门 `gate_auto_passed=true` 为依据。不 npm publish、不打 tag、不 push。
+
+## 一、部署前置与实际取值
+
+- `openlogos verify` PASS（`VERIFY_PASS` 在场，Gate 3.5 PASS，2698 个用例、0 失败、0 未覆盖）。请求提交已提交：`3d2180d` 规格合并（需求、功能规格 §2.104、架构第五十八章、S13 / S19 场景与测试、部署方案与 smoke 用例、根规范 test-results / directory-convention / cli-json-output）、`e2be684` 代码（历史模块、结果路径运行锁、verify / smoke 接入、`openlogos history`、schema 目标字节、测试、安装态 runner、升版 0.16.20、CHANGELOG）、`307579d` 验收报告。部署前工作区干净。
+- 本仓历史目录：最终 verify 由部署前的全局 0.16.19 执行，尚无历史能力，`logos/resources/verify/history/` 不存在，本次没有需要 `git add -f` 的历史文件；部署后的 smoke 起会产生历史文件，随部署记录提交时按部署方案以 `git add -f -- logos/resources/verify/history/` 纳入。
+- 版本事实复核：部署前 `cli/package.json` 为 0.16.20（由 `node cli/scripts/bump-version.mjs 0.16.20` 写入，回滚常量随之为 0.16.19，未手改）；`npm view @miniidealab/openlogos@0.16.20` 返回 E404。**实际候选版本 = 规划值 0.16.20**。
+- 部署前账本 `test.current_ref` = `000ac05634cbd606a2c61ee378e8cf2866ff7e81`（0.16.19，deploy `1e666d71`），部署前全局 `openlogos --version` = 0.16.19。**实际回滚目标 = 规划值（提交 `000ac05` 的 0.16.19 安装态）**。
+- `openlogos env check`：未发现问题。`openlogos deploy --env test --dry-run`：全部检查通过。
+
+## 二、部署结果与安装态读回
+
+- `deploy_id` = `0e07ad07-a17c-4de8-8670-85bdd43a76b9`，`ref` = `307579db16705ee8cbd667c994872c336d9a1ee0`，`result=done`。
+- 落标：`DEPLOY_DONE` 由提案通道写入；`[deploy]` 由提案通道勾选（1/1），`next` 为 `ready-to-smoke`。按部署方案未再运行 `openlogos deploy-done`（提案通道已受控落标，重复执行属已知误用）。
+- 回执 `logos/.openlogos-runtime/local-install/last-deploy.json`：`candidate_version=0.16.20`，`previous_version=0.16.19`，`result=done`。
+- 复核：`openlogos --version` = 0.16.20；入口 realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js` 等于回执 `entry_realpath`；入口 SHA-256 `904452fafc86faecb2695c9c95205407af0032611732afb2a24f1fcb2be0c425` 等于回执 `candidate_entry_sha256`；全局 `openlogos history list` 可用。
+- 候选 tarball：`logos/.openlogos-runtime/local-install/candidates/0e07ad07-a17c-4de8-8670-85bdd43a76b9.tgz`，SHA-256 `df5c517de191dbc4159ff406093f55a973a230cd3f815840186087b2e7911e25`。
+- 回滚制品：`logos/.openlogos-runtime/local-install/rollback/0e07ad07-a17c-4de8-8670-85bdd43a76b9.tgz`，SHA-256 `f9065d5ce655e9fbd5d88b6756351138c0f8d5aeebe15ff509de71840cb7bf12`。与 deploy `1e666d71`（提交 `000ac05`）的候选 tarball 同哈希，即部署前的 0.16.19 安装态。
+- 环境视图：`test.current_ref` = `307579db1670…`；`previous_ref` = `000ac05634cb…`。
+
+## 三、本仓 sync
+
+- 本仓执行 `openlogos sync`（0.16.20）：AGENTS.md / CLAUDE.md 与 sync 前逐字节一致；17 个 Skill、26 份规范已同步。
+- 读回：`logos/spec/test-results.md`、`logos/spec/directory-convention.md`、`logos/spec/cli-json-output.md` 与根 `spec/` 同名文件逐字节一致。
+- 受版本控制的托管副本中只有 `logos/spec/cli-json-output.md` 发生变化，随本部署记录一并提交；其余副本被 `.gitignore` 排除。本次 sync 未改动 `.claude/settings.json`。
+- 不改写其他仓库（包括 runlogos）；其他项目需各自升级后才有验收历史能力。
+
+## 四、回滚
+
+- 成功部署后要回退：执行 `openlogos deploy --env test --rollback`，回到提交 `000ac05` 的 0.16.19 安装态，回退后在本仓执行一次 `openlogos sync`。回退后不再写新历史，已写出的历史文件保留。
+- 本次无数据迁移。
+
+## 五、后续
+
+- 安装态 smoke：执行 `openlogos smoke --env test`，覆盖 SMOKE-core-326～327（runner `scripts/smoke-verification-history.js`）与通用用例 SMOKE-core-268～271。本工作单元不执行 smoke。
