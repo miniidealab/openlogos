@@ -1783,3 +1783,19 @@ public_release_commit: 3d851a71a17c86d081ce9d69adf2ea88331a94fe
 
 - 修复提交 `c843e1321b018ce185d8eb9094c734c3863b9c3f` 的正式验收为 PASS：2697 项通过、1 项跳过、0 项失败、0 项未覆盖。验收历史为 `20261123T042041719Z-verify-ff5367`，记录中的工作区改动仅为上方待入库的部署报告。
 - macOS 跳过的 `ST-S13-26` 已在非 root Linux 全量回归和 Ubuntu 24.04 x86_64 定向复测中通过。Linux 全量回归为 3184 项通过、20 项跳过、0 项失败。六条公网 smoke 用例均已接入 runner，执行结果在正式部署后取证。
+
+# 部署报告：release-0-16-21 / OpenLogos 0.16.21 生产发布（档 C 完成）
+
+public_release_version: 0.16.21
+public_release_commit: 5263ff27e70da2e42e83da1a7523bf1beca4db42
+
+- RunLogos `drv-mwsrivjz-jwlj` 对本次 `deliver-entry` 自动放行。部署目标为 `prod`，冻结分支 `feat/ontology-layer` 相对原远端 `master` `2732259` 超前 2、落后 0。推送前确认 `v0.16.21` 空闲，npm 的 `latest` 为 `0.16.7`、`old` 为 `0.9.8`，`0.16.8`～`0.16.21` 逐项均为 E404。
+- 回滚包为 `/Users/huangxianglong/gitlab/openlogos/cli/rollback/miniidealab-openlogos-0.16.7.tgz`，重新从 registry 取包后字节一致，包名、版本和 integrity 均已核对。SHA-256 为 `d8cb1ddb1b9ee90ce00e481ae821319cbfbd03af57a3aac3ec2637b31f2b9997`。官网回滚点为 Cloudflare Production 部署 `f226566a-4c93-4843-8930-8637aa21e8ad`（提交 `6818cb7`）。
+- 门①通过。CLI lint、TypeScript 类型检查、构建和本地全量测试通过，3203 项通过、1 项跳过。官网完整构建、中英文十条新路由及字体产物通过。
+- 门②通过。干净克隆冻结提交，CLI 镜像 `sha256:4ef106618500c5819bee0a49eea485ee5caaf482e4dec7689d09efac31b770e0`，uid 1000、Node 20.20.2、sqlite3 3.40.1、cc 12.2.0。全量测试 3184 通过、20 跳过，`ST-S13-26` 实际执行并通过。build、版本、Release 正文、lint、类型检查和打包均通过。包内 937 个文件、26 项资产散列、dist 源码映射与 knowledge、history、branch、verification-history、result-path-lock 模块已核对。官网在同一提交、uid 1000、Node 22.12.0 的镜像 `sha256:0afa15c7a62eb5f219f8814407e85a76fff65f978c107974fc0a354df961212e` 环境中构建通过。
+- 门③和门④通过。GitHub CI 的 Linux 与 Windows 两项均成功，Linux 3204 项全过，`ST-S13-26` 实际执行通过。由 `miniidealab` 确认三个发布 secret 均已配置，只读取名称。发布工作流与 v0.16.0 一致。[CI 运行 45112616063](https://github.com/miniidealab/openlogos/actions/runs/45112616063)
+- 已推送 annotated tag `v0.16.21`，远端解析到冻结提交。原发布 run 的 npm Publish 和 GitHub Release 步骤成功，官网构建当时读到 registry 旧 `latestVersion=0.16.7`，校验失败并跳过 Cloudflare 部署。原 run 保留失败结论，官网按档 C 补做。[原发布运行 45114564537](https://github.com/miniidealab/openlogos/actions/runs/45114564537)
+- 档 C registry 核验通过。05:13:10 UTC 公开版本与 `latest` 均为 `0.16.21`，等待下载端点可用后从 registry 下载并复核 integrity。SLSA provenance 来源为 `miniidealab/openlogos` 的 `refs/tags/v0.16.21`，gitCommit 等于冻结提交。registry tarball、GitHub Release 唯一附件和本地预演包逐字节相同，SHA-256 为 `356cc90f5965154e102eebe36162ea9ecbfb1ebdf3f674ab4427769612cb8410`。Release 公开且为 latest，正文与 tag 上 CHANGELOG 对应节一致。[GitHub Release](https://github.com/miniidealab/openlogos/releases/tag/v0.16.21)
+- 档 C 官网补做成功。从同一 tag 干净检出，依次执行 `npm ci`、`npm run generate:releases -- --strict`、`npm run build`，核对 `latestVersion=0.16.21` 后执行 `wrangler pages deploy dist --project-name openlogos --branch master`。Cloudflare Production 部署为 `45cd4ca7-16b1-4273-bde8-412bd7ea44f8`，来源 `5263ff2`。中英文发布页均返回 200、显示 `v0.16.21` 并链接对应 Release。仓库的官网发布数据已从 registry 重新生成，共 87 个版本。[生产部署](https://45cd4ca7.openlogos.pages.dev)
+- 本机全局已从 registry 切换到 `0.16.21`。新 shell 的入口为 `/opt/homebrew/bin/openlogos`，解析至 npm 全局安装包。937 个文件与 registry 原包逐一比对相同，包内资产清单自洽，随包 guard 与本仓托管副本同源。部署目标为 `prod`，`test` 使用原部署 `307579db16705ee8cbd667c994872c336d9a1ee0`。
+- 本机证据目录为 `/tmp/openlogos-deploy-01621-final.errsn6`。正式公网 smoke 在本次部署落标后由后续节点执行。

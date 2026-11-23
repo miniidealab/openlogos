@@ -1,17 +1,63 @@
 {
   "packageName": "@miniidealab/openlogos",
-  "latestVersion": "0.16.7",
-  "updatedAt": "2026-10-18T03:30:21.929Z",
-  "generatedAt": "2026-10-18T03:30:21.929Z",
-  "versionCount": 86,
+  "latestVersion": "0.16.21",
+  "updatedAt": "2026-11-23T05:13:04.454Z",
+  "generatedAt": "2026-11-23T05:13:04.454Z",
+  "versionCount": 87,
   "distTags": {
     "old": "0.9.8",
-    "latest": "0.16.7"
+    "latest": "0.16.21"
   },
   "sourceUrl": "https://registry.npmjs.org/%40miniidealab%2Fopenlogos",
   "npmPackageUrl": "https://www.npmjs.com/package/@miniidealab/openlogos",
   "changelogUrl": "https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md",
   "versions": [
+    {
+      "version": "0.16.21",
+      "publishedAt": "2026-11-23T05:13:04.056Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.16.21",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.16.21",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.16.21.tgz",
+      "gitHead": null,
+      "size": 3257090,
+      "sizeLabel": "3.1 MB",
+      "unpackedSize": 12610090,
+      "unpackedSizeLabel": "12 MB",
+      "fileCount": 937,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3",
+        "pg-query-emscripten": "5.1.0",
+        "@hyperjump/json-schema": "1.17.7"
+      },
+      "distTags": [
+        "latest"
+      ],
+      "valueSummary": [
+        "企业知识库支持原文、条目、规则和场景引用。用 openlogos knowledge apply 批量校验和录入，任一候选不合规即整批拒绝。用 list、show、refs、index、check 查询、定位引用、生成索引及检查知识库；标签表记录标签与别名。",
+        "验收与冒烟逐次留存。用 openlogos history list 按提案、类型、结论和模块筛选，再用 openlogos history show <run_id> 定位本轮结果和报告，归档后仍可查询。通过 verify.history.raw_in_proposal: false 将提案历史中的报告快照与自由文本留在本机。",
+        "openlogos branch status 显示主分支及其来源、共同起点和领先/落后数；openlogos branch sync 同步已解析的本地主分支引用并处理生成文件冲突，两者均支持 --base 和 JSON。"
+      ],
+      "fixSummary": [
+        "管道或 socket 上的 CLI 输出在退出前排空，避免 JSON 信封被截断；部署与 watch 保留运行期超时和信号处理。",
+        "guard 可回收已经结束或已超期的后台执行记录。merge 合并基线通过独占临时文件入库，修复偶发长时间阻塞。",
+        "SessionStart API 阶段按模块进度检查看齐领域文件，避免误报逐场景 API 缺失。"
+      ],
+      "valueSummaryEn": [
+        "The first public release since 0.16.7 includes the changes from 0.16.8 through 0.16.20.",
+        "Build an enterprise knowledge base with `openlogos knowledge apply`, then find entries, check tags, or trace which scenarios reference a rule.",
+        "Every verify and smoke run can be traced with `openlogos history list` and `openlogos history show`, even after its proposal is archived."
+      ],
+      "fixSummaryEn": [
+        "Reports now reflect the final gate verdict, concurrent runs no longer truncate each other’s result files, and piped CLI output drains before exit.",
+        "SessionStart uses module API progress, while merge and guard fixes address stalled merges and stale background execution records."
+      ],
+      "summarySource": "bilingual",
+      "summaryFallbackReason": null
+    },
     {
       "version": "0.16.7",
       "publishedAt": "2026-10-18T03:30:21.548Z",
@@ -33,9 +79,7 @@
         "pg-query-emscripten": "5.1.0",
         "@hyperjump/json-schema": "1.17.7"
       },
-      "distTags": [
-        "latest"
-      ],
+      "distTags": [],
       "valueSummary": [
         "环境登记表与部署账本：在 logos/environments.yaml 登记部署环境（id、名称、层级、别名、健康检查地址等）；新增 openlogos env list | show | check [--probe] 查看与校验。openlogos deploy-done --env <id> --ref <revision> 记录部署到的环境与版本；openlogos smoke --env <id> 校验部署环境一致性，向 runner 注入 OPENLOGOS_SMOKE_ENV，并按结果行的 target_environment 判定环境证据。本机部署账本 logos/.openlogos-runtime/deployments.jsonl 记录每次部署与 smoke；status --format json 新增 environments 视图。",
         "环境部署执行：新增 openlogos deploy --env <id>，按登记表中该环境的 deploy 配置部署，支持三种方式——script（在请求版本的隔离工作树中以参数数组执行仓库内部署脚本）、ci（GitHub Actions 预设或触发 / 状态脚本适配，只认运行回报的实际部署提交）、agent（登记未决记录、返回部署方案位置，由执行者完成后 --complete 写入结果）。",
