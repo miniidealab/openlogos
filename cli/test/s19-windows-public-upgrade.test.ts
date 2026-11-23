@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -25,6 +25,32 @@ it('UT-S19-109: 目标目录去重后前移，保留其他条目及原始引用'
   expect(promoteUserPath(source, prefixFixture, expand)).toBe(
     prefixFixture + ';%USERPROFILE%\\tools;D:\\tools;%LOCALAPPDATA%\\Microsoft\\WindowsApps',
   );
+  const short = 'C:\\Users\\TESTUS~1\\AppData\\Roaming\\npm';
+  const realPath = (item: string) => item === short ? prefixFixture : item;
+  expect(promoteUserPath(short + ';D:\\tools;' + prefixFixture, prefixFixture, expand, realPath)).toBe(
+    prefixFixture + ';D:\\tools',
+  );
+});
+
+it('UT-S19-109: npm 短路径与 CMD 长入口为同一文件时保留现有 Path', () => {
+  const short = 'C:\\Users\\TESTUS~1\\AppData\\Roaming\\npm';
+  const entry = prefixFixture + '\\openlogos.cmd';
+  const writeUserPath = vi.fn();
+  const system = {
+    npmPath: () => 'npm.cmd',
+    runShim(_entry: string, args: string[]) {
+      if (args[0] === 'prefix') return short;
+      return args[0] === '--version' ? version : '';
+    },
+    expand: (value: string) => value,
+    realPath: (value: string) => value.replace(short, prefixFixture),
+    readPaths: () => ({ machine: '', user: { kind: 'String', value: short } }),
+    findEntry: () => entry,
+    commandVersion: () => version,
+    writeUserPath,
+  };
+  expect(runUpgrade(version, system)).toMatchObject({ version, entry, pathChanged: false });
+  expect(writeUserPath).not.toHaveBeenCalled();
 });
 
 describe.skipIf(process.platform !== 'win32')('真实 Windows 升级', () => {
@@ -93,11 +119,12 @@ describe.skipIf(process.platform !== 'win32')('真实 Windows 升级', () => {
     const result = runUpgrade(version, runtime);
     expect(result).toMatchObject({ version, target: join(prefix, 'openlogos.cmd'), pathChanged: false });
     expect(verify(actual.readPaths().user.value)).toBe(version);
+    expect(realpathSync.native(result.entry)).toBe(realpathSync.native(result.target));
     console.log('Windows upgrade ST-S19-35: CMD ' + version + ' | ' + result.entry);
   }, 180_000);
 
   it('ST-S19-36: 用户级旧入口可修复，机器级入口继续优先时保留原值', () => {
-    const { folder, prefix, actual, runtime, verify } = fixture('shadowed');
+    const { folder, prefix, actual, runtime, verify } = fixture('中文用户入口');
     const old = join(folder, 'old');
     mkdirSync(old);
     writeFileSync(join(old, 'openlogos.cmd'), '@echo off\r\necho 0.16.7\r\n');
@@ -113,14 +140,15 @@ describe.skipIf(process.platform !== 'win32')('真实 Windows 升级', () => {
 
     actual.writeUserPath(actual.readPaths().user, original);
     const blocked = { ...runtime, readPaths: () => ({ machine: old + ';' + dirname(process.execPath), user: actual.readPaths().user }) };
+    const oldEntry = realpathSync.native(join(old, 'openlogos.cmd'));
     expect(() => runUpgrade(version, blocked)).toThrow(
-      '新 CMD 仍会命中 ' + join(old, 'openlogos.cmd') + '。已验证新版入口为："' + join(prefix, 'openlogos.cmd') + '" --version。',
+      '新 CMD 仍会命中 ' + oldEntry + '。已验证新版入口为："' + join(prefix, 'openlogos.cmd') + '" --version。',
     );
     expect(actual.readPaths().user).toEqual(original);
 
     const cwdEntry = join(folder, 'openlogos.cmd');
     writeFileSync(cwdEntry, '@echo off\r\necho 0.16.7\r\n');
-    expect(() => runUpgrade(version, runtime)).toThrow(cwdEntry);
+    expect(() => runUpgrade(version, runtime)).toThrow(realpathSync.native(cwdEntry));
     expect(actual.readPaths().user).toEqual(original);
     console.log('Windows upgrade ST-S19-36: CMD ' + version + ', machine and current directory shadows reported | ' + result.entry);
   }, 180_000);

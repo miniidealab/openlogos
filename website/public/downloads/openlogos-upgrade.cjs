@@ -1,6 +1,7 @@
 'use strict';
 
 const { spawnSync } = require('node:child_process');
+const { lstatSync, realpathSync } = require('node:fs');
 const { win32: path } = require('node:path');
 
 const registry = 'https://registry.npmjs.org/';
@@ -14,14 +15,19 @@ function installArgs(version, prefix) {
     '--@miniidealab:registry=' + registry, '--prefer-online'];
 }
 
-function normalDirectory(value) {
-  return path.normalize(value.trim().replace(/^"|"$/g, '')).replace(/[\\/]+$/, '').toLowerCase();
+function comparablePath(value, realPath) {
+  let resolved = value.trim().replace(/^"|"$/g, '');
+  if (realPath && path.isAbsolute(resolved)) {
+    // 新 CMD 可能把 npm prefix 的 8.3 短路径显示为长路径。
+    try { resolved = realPath(resolved); } catch { /* 不存在或不可访问的 Path 项保留原有比较方式。 */ }
+  }
+  return path.normalize(resolved).replace(/[\\/]+$/, '').toLowerCase();
 }
 
-function promoteUserPath(raw, prefix, expand) {
+function promoteUserPath(raw, prefix, expand, realPath) {
   const parts = raw ? raw.split(';') : [];
-  const expected = normalDirectory(prefix);
-  const kept = parts.filter(item => normalDirectory(expand(item)) !== expected);
+  const expected = comparablePath(prefix, realPath);
+  const kept = parts.filter(item => comparablePath(expand(item), realPath) !== expected);
   return [prefix, ...kept].join(';');
 }
 
@@ -39,11 +45,12 @@ function runUpgrade(version, system) {
   }
 
   const original = system.readPaths();
+  const expectedEntry = comparablePath(target, system.realPath);
   const verify = (state) => {
     const tail = state.user.kind === 'ExpandString' ? system.expand(state.user.value ?? '') : state.user.value ?? '';
     const effective = [system.expand(state.machine ?? ''), tail].filter(Boolean).join(';');
     const entry = system.findEntry(effective);
-    const ok = Boolean(entry && normalDirectory(entry) === normalDirectory(target)
+    const ok = Boolean(entry && comparablePath(entry, system.realPath) === expectedEntry
       && system.commandVersion(effective).trim() === version);
     return { entry, ok };
   };
@@ -53,7 +60,7 @@ function runUpgrade(version, system) {
 
   const kind = original.user.kind ?? 'ExpandString';
   const expand = kind === 'ExpandString' ? system.expand : value => value;
-  const user = { value: promoteUserPath(original.user.value, prefix, expand), kind };
+  const user = { value: promoteUserPath(original.user.value, prefix, expand, system.realPath), kind };
   const projected = verify({ ...original, user });
   if (!projected.ok) {
     throw new Error('新 CMD 仍会命中 ' + (projected.entry ?? '未知入口')
@@ -88,13 +95,12 @@ function Read-Path($key) {
 function windowsOperations(registrySubkey = 'Environment', cwd = process.cwd()) {
   const system32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32');
   const cmd = path.join(system32, 'cmd.exe');
-  const where = path.join(system32, 'where.exe');
   const ps = path.join(system32, 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   const environment = new Map(Object.entries(process.env).map(([key, value]) => [key.toLowerCase(), value]));
 
-  function invoke(file, args, env = process.env, exitCodes = [0]) {
+  function invoke(file, args, env = process.env) {
     const result = spawnSync(file, args, { cwd, env, encoding: 'utf8', windowsHide: true, timeout: 240_000 });
-    if (result.error || !exitCodes.includes(result.status)) {
+    if (result.error || result.status !== 0) {
       const cause = result.error?.message ?? (result.stderr || result.stdout || '退出码 ' + result.status).trim();
       throw new Error(path.basename(file) + ' 执行失败：' + cause);
     }
@@ -113,10 +119,26 @@ function windowsOperations(registrySubkey = 'Environment', cwd = process.cwd()) 
     return env;
   }
 
-  const firstLine = output => output.split(/\r?\n/).map(line => line.trim()).find(Boolean) ?? null;
+  function findCommand(name, value, extensions) {
+    const directories = value.split(';').filter(Boolean);
+    if (!environment.has('nodefaultcurrentdirectoryinexepath')) directories.unshift(cwd);
+    // 直接读取文件系统中的路径，避免命令输出的 Windows 代码页损坏非 ASCII 目录名。
+    for (const directory of directories) {
+      const base = path.resolve(cwd, directory.trim().replace(/^"|"$/g, ''));
+      for (const extension of extensions) {
+        const candidate = path.join(base, name + extension);
+        const entry = lstatSync(candidate, { throwIfNoEntry: false });
+        if (!entry?.isFile() && !entry?.isSymbolicLink()) continue;
+        try { return realpathSync.native(candidate); } catch { return candidate; }
+      }
+    }
+    return null;
+  }
+
   return {
+    realPath: realpathSync.native,
     npmPath() {
-      const npm = firstLine(invoke(where, ['npm.cmd'], process.env, [0, 1]));
+      const npm = findCommand('npm', environment.get('path') ?? '', ['.cmd']);
       if (!npm) throw new Error('找不到 npm.cmd，请确认当前窗口可以运行 npm。');
       return npm;
     },
@@ -150,9 +172,8 @@ try {
 `, { OPENLOGOS_UPGRADE_EXPECTED: JSON.stringify(expected), OPENLOGOS_UPGRADE_REPLACEMENT: JSON.stringify(replacement) });
     },
     findEntry(value) {
-      const extensions = (environment.get('pathext') || '.COM;.EXE;.BAT;.CMD').toLowerCase().split(';');
-      return invoke(where, ['openlogos'], withPath(value), [0, 1]).split(/\r?\n/)
-        .map(line => line.trim()).find(entry => extensions.includes(path.extname(entry).toLowerCase())) ?? null;
+      const extensions = (environment.get('pathext') || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
+      return findCommand('openlogos', value, extensions);
     },
     commandVersion(value) {
       return invoke(cmd, ['/d', '/c', 'openlogos', '--version'], withPath(value));
