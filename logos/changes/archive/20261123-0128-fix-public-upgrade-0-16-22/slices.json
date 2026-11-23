@@ -1,0 +1,28 @@
+{
+  "slices": [
+    {
+      "slice_id": "slice-01-windows-public-upgrade",
+      "task_text": "单切片：交付 0.16.22 公开升级入口、Windows 原地升级验证、双语说明、公开 smoke 与制品升版。六维评分 8（影响 2、复杂度 2、契约 1、测试 1、发布风险 1、不确定性 1）。删后续自检：单独交付脚本或发布说明均无法在同一候选版本核验实际 CMD 入口和正式官网资产，单片独立交付可验收。（覆盖 UT-S19-108、UT-S19-109、ST-S19-35、ST-S19-36、SMOKE-core-334、SMOKE-core-335）",
+      "owned_test_ids": [
+        "SMOKE-core-334",
+        "SMOKE-core-335",
+        "ST-S19-35",
+        "ST-S19-36",
+        "UT-S19-108",
+        "UT-S19-109"
+      ],
+      "runner_selectors": [
+        "SMOKE-core-334",
+        "SMOKE-core-335",
+        "ST-S19-35",
+        "ST-S19-36",
+        "UT-S19-108",
+        "UT-S19-109"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S19-test-cases.md",
+        "logos/resources/test/smoke/core-smoke-test-cases.md"
+      ]
+    }
+  ]
+}
