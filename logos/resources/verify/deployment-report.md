@@ -1751,3 +1751,18 @@ public_release_commit: 3d851a71a17c86d081ce9d69adf2ea88331a94fe
 ## 五、后续
 
 - 安装态 smoke：执行 `openlogos smoke --env test`，覆盖 SMOKE-core-326～327（runner `scripts/smoke-verification-history.js`）与通用用例 SMOKE-core-268～271。本工作单元不执行 smoke。
+
+# 部署报告：release-0-16-21 / OpenLogos 0.16.21 公开发布尝试（档 A，未部署）
+
+- 时间：2026-11-23（UTC）。目标为 `prod`（npm、GitHub Release、Cloudflare Pages）。本次 RunLogos `deliver-entry` 已自动放行，`openlogos verify` Gate PASS（2697 通过、1 跳过、0 失败；索引 `20261123T021812041Z-verify-30b805.json`）。
+- 冻结候选 `ed85beccf652661918acb745d671e41a0d4cf7fd`，相对远端 master `abf55fdedadaeb660f928aa7258b9ec35d4ab003` 超前 68、落后 0。远端 `v0.16.*` 仅有 0.16.0、0.16.2、0.16.7。npm `latest=0.16.7`、`old=0.9.8`，0.16.8～0.16.21 逐项为 E404。
+- 本机全局入口 `/opt/homebrew/bin/openlogos`，realpath 为 `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，版本 0.16.20。停止时 `test.current_ref=307579db16705ee8cbd667c994872c336d9a1ee0`，`prod.current_ref=6818cb7bc94129707464f3c9f6e2d6d02a61bd71`，均沿用部署前账本。
+- 0.16.7 回滚包：`/Users/huangxianglong/gitlab/openlogos/cli/rollback/miniidealab-openlogos-0.16.7.tgz`。包名、版本和 registry integrity 均通过。SHA-256 `d8cb1ddb1b9ee90ce00e481ae821319cbfbd03af57a3aac3ec2637b31f2b9997`。
+- 门 ①通过：driver 本地全量验收 Gate PASS，CLI lint、tsc、build 与官网 npm ci、完整构建通过，读回复核十条双语路由和侧边栏。
+- 门 ②阻断：Linux 官网在 `sha256:0afa15c7a62eb5f219f8814407e85a76fff65f978c107974fc0a354df961212e`（Node 22.12.0，uid 1000）干净克隆中完成构建。CLI 在 `sha256:4ef106618500c5819bee0a49eea485ee5caaf482e4dec7689d09efac31b770e0`（Node 20.20.2、sqlite3 3.40.1、cc 12.2.0，uid 1000）同提交干净克隆中 `npm ci` 通过，`npm test` 退出 1（3176 通过、8 失败、20 跳过），因此本次预演未进入后续 CLI 构建和打包步骤。
+  - `ST-S45-02`、`ST-S45-04` 的临时 Git 仓库需要提交者身份。只在复测容器内补齐身份后，S45 的 25 项全部通过。
+  - `UT-S13-104`、`ST-S13-30`、`UT-S19-80`、`ST-S19-31`、`ST-S41-07` 的零回归基线把 macOS 沙箱根路径 `/private/tmp` 当作固定值，Linux 实际为 `/tmp`。串行复测覆盖其中四项，仍失败。
+  - `UT-S16-53` 在 `watch-ready` 后、发 SIGINT 前观测到 `watch` 已以 0 退出，期望进程仍常驻。串行复测亦复现。
+- 门 ③未执行。门 ④凭据预查以 `miniidealab` 确认三个必需 secrets 均存在，仅查询名称。工作流自 v0.16.0 起未变。已切回原 GitHub 登录。
+- 未推送 master 或 tag，未启动发布，未执行全局切换或 `deploy-done`。停止后复核 registry `latest=0.16.7` 且远端无 `v0.16.21`，无需回滚。后续先修正跨平台基线并验证 Linux 上 `watch` 的常驻与退出行为，再重新验收并执行四道发布门。
+- 本机日志：`/tmp/openlogos-deploy-1621.Aro0PP/linux-cli.log`、`/tmp/openlogos-deploy-1621.Aro0PP/linux-targeted.log`、`/tmp/openlogos-deploy-1621.Aro0PP/linux-site.log`。
