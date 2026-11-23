@@ -1766,3 +1766,20 @@ public_release_commit: 3d851a71a17c86d081ce9d69adf2ea88331a94fe
 - 门 ③未执行。门 ④凭据预查以 `miniidealab` 确认三个必需 secrets 均存在，仅查询名称。工作流自 v0.16.0 起未变。已切回原 GitHub 登录。
 - 未推送 master 或 tag，未启动发布，未执行全局切换或 `deploy-done`。停止后复核 registry `latest=0.16.7` 且远端无 `v0.16.21`，无需回滚。后续先修正跨平台基线并验证 Linux 上 `watch` 的常驻与退出行为，再重新验收并执行四道发布门。
 - 本机日志：`/tmp/openlogos-deploy-1621.Aro0PP/linux-cli.log`、`/tmp/openlogos-deploy-1621.Aro0PP/linux-targeted.log`、`/tmp/openlogos-deploy-1621.Aro0PP/linux-site.log`。
+
+# 部署报告：release-0-16-21 / OpenLogos 0.16.21 第二次公开发布尝试（档 A，未部署）
+
+- 本轮 RunLogos `drv-mwsp805v-inun` 的 `deliver-entry` 已自动放行，目标为 `prod`。冻结提交 `273225992d9ed1e0ca72da4ba4b3b78a9509719d`，相对原远端 master `abf55fdedadaeb660f928aa7258b9ec35d4ab003` 超前 72、落后 0。
+- 发布前：npm `latest=0.16.7`、`old=0.9.8`，0.16.8～0.16.21 逐项为 E404。0.16.7 回滚包 `cli/rollback/miniidealab-openlogos-0.16.7.tgz` 与当前 registry 下载字节及 integrity 完全一致，SHA-256 `d8cb1ddb1b9ee90ce00e481ae821319cbfbd03af57a3aac3ec2637b31f2b9997`。Cloudflare Pages 原生产部署 `f226566a-4c93-4843-8930-8637aa21e8ad` 对应提交 `6818cb7`，中英文发布页均显示 v0.16.7。
+- 门①通过：正式验收通过 2697 项、跳过 1 项、无失败，索引 `20261123T031611056Z-verify-263bad.json`。冻结提交仅在验收快照之上增加两条历史索引，发布源码与配置一致。CLI lint、tsc、build 和本地官网构建已核对。
+- 门②通过：从冻结提交干净克隆，CLI 使用 Node 20.20.2、sqlite3 3.40.1、cc 12.2.0，uid 1000，镜像 `sha256:4ef106618500c5819bee0a49eea485ee5caaf482e4dec7689d09efac31b770e0`。全量通过 3184 项、跳过 20 项、无失败，build、版本一致性、Release 正文提取、npm pack、lint、tsc 及源码映射、asset manifest 核验均通过。包内 937 个文件，SHA-256 `356cc90f5965154e102eebe36162ea9ecbfb1ebdf3f674ab4427769612cb8410`。官网在同一提交的 Node 22.12.0 干净克隆中构建通过（uid 1000，镜像 `sha256:0afa15c7a62eb5f219f8814407e85a76fff65f978c107974fc0a354df961212e`），十条双语路由在场。
+- 门③阻断：master 已快进并正常推送冻结提交。GitHub CI run [45105918446](https://github.com/miniidealab/openlogos/actions/runs/45105918446) 的 Windows regression 为 success。Linux Lint & Test 的首次执行及同一提交重跑均为 failure，两次都是 3203 项通过、1 项失败。唯一失败为 `ST-S13-26`：夹具刚启动的子进程消失，`cli/test/s13-sandbox-reuse.test.ts:1082` 在读取对应 `/proc/<pid>/stat` 时收到 ENOENT。本地 Linux 预演该用例通过。GitHub 两次失败均发生在沙箱复用功能断言之前。
+- 门④凭据预查通过：以 `miniidealab` 确认三个必需 secrets 存在，只读名称。发布工作流自 v0.16.0 未变。已恢复原 GitHub 登录。
+- 按档 A 停在门③。未创建或推送 `v0.16.21`，未触发 npm 发布、GitHub Release 或官网部署。停止后确认 registry 对 0.16.21 仍为 E404、`latest` 仍为 0.16.7。本机全局仍为 0.16.20，`test` 与 `prod` 未新增部署记录，未执行 `deploy-done`，无需回滚。
+- 后续先诊断并修复 GitHub Ubuntu runner 下 `ST-S13-26` 夹具子进程提前退出的问题，再重新验收；同一待发布提交的 Linux 与 Windows CI 均为 success 后才能推 tag。
+- 本机证据目录 `/tmp/openlogos-deploy-final-1621.8pDmrp`，包含 Linux 构建日志及 CI 两次失败日志。
+
+## 重新启动 driver 前的验收
+
+- 修复提交 `c843e1321b018ce185d8eb9094c734c3863b9c3f` 的正式验收为 PASS：2697 项通过、1 项跳过、0 项失败、0 项未覆盖。验收历史为 `20261123T042041719Z-verify-ff5367`，记录中的工作区改动仅为上方待入库的部署报告。
+- macOS 跳过的 `ST-S13-26` 已在非 root Linux 全量回归和 Ubuntu 24.04 x86_64 定向复测中通过。Linux 全量回归为 3184 项通过、20 项跳过、0 项失败。六条公网 smoke 用例均已接入 runner，执行结果在正式部署后取证。
