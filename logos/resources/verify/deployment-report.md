@@ -1788,6 +1788,7 @@ public_release_commit: 3d851a71a17c86d081ce9d69adf2ea88331a94fe
 
 public_release_version: 0.16.21
 public_release_commit: 5263ff27e70da2e42e83da1a7523bf1beca4db42
+public_release_old: 0.9.8
 
 - RunLogos `drv-mwsrivjz-jwlj` 对本次 `deliver-entry` 自动放行。部署目标为 `prod`，冻结分支 `feat/ontology-layer` 相对原远端 `master` `2732259` 超前 2、落后 0。推送前确认 `v0.16.21` 空闲，npm 的 `latest` 为 `0.16.7`、`old` 为 `0.9.8`，`0.16.8`～`0.16.21` 逐项均为 E404。
 - 回滚包为 `/Users/huangxianglong/gitlab/openlogos/cli/rollback/miniidealab-openlogos-0.16.7.tgz`，重新从 registry 取包后字节一致，包名、版本和 integrity 均已核对。SHA-256 为 `d8cb1ddb1b9ee90ce00e481ae821319cbfbd03af57a3aac3ec2637b31f2b9997`。官网回滚点为 Cloudflare Production 部署 `f226566a-4c93-4843-8930-8637aa21e8ad`（提交 `6818cb7`）。
