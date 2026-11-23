@@ -197,6 +197,8 @@ describe('S11 SessionStart 横幅 API 阶段按模块进度判定', () => {
     const { root } = multiProject({ scenarios: 104, teamTests: true });
     put(root, API_DIR, 'team-auth.yaml');
     put(root, API_DIR, 'team-requirements.yaml');
+    // 让目录探测的全部路径总长超出管道容量，覆盖提前关闭读端导致 find 收到 SIGPIPE 的场景。
+    for (let i = 0; i < 512; i++) put(root, join(TEST_DIR, 'support'), `case-${i}-${'fixture-'.repeat(25)}.txt`);
     const stub = stubBin(root, { kind: 'json', body: statusBody({ team: { done: true, skipped: false } }) });
     const { phase } = runProbe(root, { stub: stub.dir });
     expect(phase).not.toContain('missing');

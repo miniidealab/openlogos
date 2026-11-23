@@ -22,7 +22,7 @@ fi
 
 has_files() {
   local dir="$1"
-  [ -d "$dir" ] && find "$dir" -type f ! -name '.gitkeep' -maxdepth 3 2>/dev/null | head -1 | grep -q .
+  [ -d "$dir" ] && [ -n "$(find "$dir" -maxdepth 3 -type f ! -name '.gitkeep' -print -quit 2>/dev/null)" ]
 }
 
 # 从 logos-project.yaml 读取 scenarios[].id 列表，空格分隔

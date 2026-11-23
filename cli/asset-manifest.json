@@ -83,7 +83,7 @@
     },
     {
       "path": "claude-plugin-template/bin/openlogos-phase",
-      "sha256": "a1616f79ff01e2c63bf86a39f0b5e1dac17dacd2e4b639552dac8941ff7ae48b"
+      "sha256": "aa3c84f3947308d01df03d0ce5b43fbd129d06edcbfc26ebd3af48870d168090"
     },
     {
       "path": "claude-plugin-template/skills/change-writer/SKILL.md",
@@ -114,5 +114,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "ceab949044323739905f320ce2aab84e91522b0ebd3cea5b2617550096292c22"
+  "payloadHash": "3a2ef7d211f39e17f95915a2283fe724b2127436cc1b984622f2ee5eeed403c6"
 }
