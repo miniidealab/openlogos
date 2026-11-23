@@ -1,4 +1,13 @@
 export const RELEASE_SUMMARIES_EN = {
+  '0.16.22': {
+    valueSummaryEn: [
+      'Use the Windows upgrade script to install the specified OpenLogos release from the official npm registry.',
+    ],
+    fixSummaryEn: [
+      'The script verifies which executable CMD resolves, repairs user-level Path ordering when possible, and reports shadowing that requires a separate fix.',
+      'Windows release tests now cover an in-place upgrade from 0.16.7 and competing command entries.',
+    ],
+  },
   '0.16.21': {
     valueSummaryEn: [
       'The first public release since 0.16.7 includes the changes from 0.16.8 through 0.16.20.',

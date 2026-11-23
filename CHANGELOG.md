@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.22] - 2026-11-23
+
+### Fixed
+
+- 官网提供 Windows 升级入口，从 npm 官方源安装指定版本并验证新 CMD 实际调用的 OpenLogos。当前用户 Path 存在旧入口遮蔽时，升级入口可调整优先级。遇到系统级或当前目录遮蔽时报告实际命中的路径。
+- 官网与 README 的升级命令明确指定 npm 官方源。镜像可用性按目标版本和 tarball 单独验证。
+- Windows 发布验证覆盖从 0.16.7 原地升级，以及旧入口仍在 Path 前方时的行为。
+
 ## [0.16.21] - 2026-11-22
 
 自 0.16.7 以来的首个公开版本，同步发布 npm、GitHub Release 与官网文档。

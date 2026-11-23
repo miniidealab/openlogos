@@ -22,14 +22,24 @@ Get your first OpenLogos project up and running — from install to your first A
 ## Step 1: Install
 
 ```bash
-npm install -g @miniidealab/openlogos
+npm install -g @miniidealab/openlogos@latest --registry=https://registry.npmjs.org/ --prefer-online
 ```
 
-Verify the installation — this guide is written for `0.16.0`:
+Check the installed version.
 
 ```bash
 openlogos --version
 ```
+
+### Windows still runs an older version
+
+Run this command in CMD. The script installs the specified version from the official npm registry, checks the command Windows resolves, and reorders your user Path when that resolves the conflict. You can [review the script](/downloads/openlogos-upgrade.cjs) first.
+
+```cmd
+curl.exe -fsSL -o "%TEMP%\openlogos-upgrade.cjs" "https://openlogos.ai/downloads/openlogos-upgrade.cjs" && node "%TEMP%\openlogos-upgrade.cjs" 0.16.22
+```
+
+Open a new CMD from the Start menu and check that `openlogos --version` prints `0.16.22`.
 
 :::note[Upgrading an existing installation?]
 If you already use OpenLogos 0.13.x, follow [Upgrading from 0.13.x](/getting-started/upgrade-from-0-13) instead — every existing project also needs `openlogos sync`.

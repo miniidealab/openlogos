@@ -22,14 +22,24 @@ import { Tabs, TabItem, Steps } from '@astrojs/starlight/components';
 ## 第 1 步：安装
 
 ```bash
-npm install -g @miniidealab/openlogos
+npm install -g @miniidealab/openlogos@latest --registry=https://registry.npmjs.org/ --prefer-online
 ```
 
-验证安装——本指南基于 `0.16.0` 编写：
+检查刚安装的版本。
 
 ```bash
 openlogos --version
 ```
+
+### Windows 升级后仍显示旧版本
+
+在 CMD 执行下面这条命令。脚本从 npm 官方源安装指定版本，检查实际运行入口，并在能通过当前用户 Path 解决旧入口遮蔽时调整顺序。你可以先[查看脚本](/downloads/openlogos-upgrade.cjs)。
+
+```cmd
+curl.exe -fsSL -o "%TEMP%\openlogos-upgrade.cjs" "https://openlogos.ai/downloads/openlogos-upgrade.cjs" && node "%TEMP%\openlogos-upgrade.cjs" 0.16.22
+```
+
+从开始菜单重新打开 CMD，运行 `openlogos --version`，确认输出 `0.16.22`。
 
 :::note[升级已有安装？]
 如果你已经在用 OpenLogos 0.13.x，请改看[从 0.13.x 升级](/zh/getting-started/upgrade-from-0-13)——每个已有项目还需要执行一次 `openlogos sync`。

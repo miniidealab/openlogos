@@ -10,11 +10,11 @@ OpenLogos 0.16.0 是 0.13.24 之后的首个公开版本。0.13.25～0.15.20 这
 ### 1. 更新全局 CLI
 
 ```bash
-npm install -g @miniidealab/openlogos@latest
+npm install -g @miniidealab/openlogos@latest --registry=https://registry.npmjs.org/ --prefer-online
 openlogos --version
 ```
 
-`openlogos --version` 应输出 `0.16.0`。
+`openlogos --version` 应输出当前发布版本。若 Windows 仍执行旧版，请使用[Windows 升级入口](/zh/getting-started/quick-start/#windows-升级后仍显示旧版本)。
 
 ### 2. 在每个已有项目中执行 `openlogos sync`
 

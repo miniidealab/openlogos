@@ -92,9 +92,11 @@ Learn more: [Orchestratable Flow](https://openlogos.ai/deep-dive/orchestratable-
 Requires `Node.js >= 18`.
 
 ```bash
-npm install -g @miniidealab/openlogos
+npm install -g @miniidealab/openlogos@latest --registry=https://registry.npmjs.org/ --prefer-online
 openlogos --version
 ```
+
+If Windows still runs an older version, follow the [Windows upgrade instructions](https://openlogos.ai/getting-started/quick-start/#windows-still-runs-an-older-version).
 
 See [cli/README.md](./cli/README.md) for the CLI package overview.
 
@@ -152,7 +154,7 @@ At minimum, verify the following:
 
 General recommendations:
 
-- Install and verify the `openlogos` CLI first: `npm install -g @miniidealab/openlogos`
+- Install and verify the `openlogos` CLI first: `npm install -g @miniidealab/openlogos@latest --registry=https://registry.npmjs.org/ --prefer-online`
 - Then install the host AI tool and make sure its command works in the same terminal environment
 - Run `openlogos init` or `openlogos sync` at the project root
 - Fully quit and reopen the AI tool

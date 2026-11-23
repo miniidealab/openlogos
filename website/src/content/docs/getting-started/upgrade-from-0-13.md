@@ -10,11 +10,11 @@ OpenLogos 0.16.0 is the first public release after 0.13.24. Versions 0.13.25–0
 ### 1. Update the global CLI
 
 ```bash
-npm install -g @miniidealab/openlogos@latest
+npm install -g @miniidealab/openlogos@latest --registry=https://registry.npmjs.org/ --prefer-online
 openlogos --version
 ```
 
-`openlogos --version` should print `0.16.0`.
+`openlogos --version` should print the current release. If Windows still runs an older version, use the [Windows upgrade instructions](/getting-started/quick-start/#windows-still-runs-an-older-version).
 
 ### 2. Run `openlogos sync` in each existing project
 
