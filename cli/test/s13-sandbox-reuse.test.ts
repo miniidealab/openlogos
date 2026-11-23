@@ -1071,23 +1071,66 @@ fs.writeFileSync(${JSON.stringify(RESULT)}, ${JSON.stringify(PASS_LEDGER)});
   }, 120_000);
 
   const linuxNonRoot = process.platform === 'linux' && typeof process.getuid === 'function' && process.getuid() !== 0;
-  // 臂 ⑤ 需编译一个 leader pthread_exit、工作线程继续运行的原生程序（Node / shell 无法构造该线程形态）
+  // 需编译不可转储夹具，以及臂 ⑤ 中 leader 已退出、工作线程仍存活的夹具。
   const hasCc = linuxNonRoot && spawnSync('cc', ['--version'], { stdio: 'ignore' }).status === 0;
   it.skipIf(!(REUSE_CAPABLE && linuxNonRoot && hasCc))('ST-S13-26: Linux 真实不可转储进程下的复用', async () => {
-    // 构造不可转储进程：exec 一份去掉读权限、仅保留执行权限的 sleep 副本
+    // 自行编译仅保留执行权限的 sleep 夹具。非转储状态设置成功后才发布就绪标记。
     const binDir = tmp('openlogos-s13-nodump-');
     const sleepBin = join(binDir, 'sleep-xonly');
-    writeFileSync(sleepBin, readFileSync(execFileSync('sh', ['-c', 'command -v sleep'], { encoding: 'utf8' }).trim()));
+    put(binDir, 'sleep.c', `#include <fcntl.h>
+#include <stdio.h>
+#include <sys/prctl.h>
+#include <unistd.h>
+
+int main(int argc, char **argv) {
+  if (argc != 2) return 2;
+  if (prctl(PR_SET_DUMPABLE, 0L, 0L, 0L, 0L) == -1) {
+    perror("PR_SET_DUMPABLE");
+    return 1;
+  }
+  int fd = open(argv[1], O_WRONLY | O_CREAT | O_EXCL, 0600);
+  if (fd == -1) {
+    perror(argv[1]);
+    return 1;
+  }
+  close(fd);
+  alarm(600);
+  for (;;) pause();
+}
+`);
+    execFileSync('cc', ['-o', sleepBin, join(binDir, 'sleep.c')]);
     chmodSync(sleepBin, 0o111);
     const statStart = (pid: number) => parseProcStatStartSeconds(readFileSync(`/proc/${pid}/stat`, 'utf8'));
     const uptime = () => Number(readFileSync('/proc/uptime', 'utf8').split(/\s+/)[0]);
     const environCode = (pid: number) => { try { readFileSync(`/proc/${pid}/environ`); return 'readable'; } catch (e) { return (e as NodeJS.ErrnoException).code; } };
-    const pre = spawn(sleepBin, ['600'], { stdio: 'ignore' });
-    pids.push(pre.pid!);
+    const fixturePids = new Set<number>();
+    const preReady = join(binDir, 'pre.ready');
+    const pre = spawn(sleepBin, [preReady], { stdio: ['ignore', 'ignore', 'pipe'] });
+    if (pre.pid !== undefined) fixturePids.add(pre.pid);
+    let preError: Error | undefined;
+    let preStderr = '';
+    pre.once('error', error => { preError = error; });
+    pre.stderr.setEncoding('utf8').on('data', chunk => { preStderr += chunk; });
+    const preIsReady = () => {
+      if (preError) throw preError;
+      if (pre.exitCode !== null || pre.signalCode !== null) {
+        throw new Error(`不可转储前置进程提前退出（${pre.signalCode ?? pre.exitCode}） ${preStderr.trim()}`);
+      }
+      return existsSync(preReady);
+    };
     try {
-      await waitFor(() => existsSync(`/proc/${pre.pid}/stat`), 5_000, 'pre process');
+      await waitFor(preIsReady, 5_000, '不可转储前置进程就绪');
       expect(environCode(pre.pid!), '① 同用户读取其 environ 得 EACCES').toBe('EACCES');
-      await waitFor(() => uptime() - statStart(pre.pid!) > 2, 10_000, 'pre process age > 2s');
+      await waitFor(() => {
+        if (!preIsReady()) return false;
+        try {
+          return uptime() - statStart(pre.pid!) > 2;
+        } catch (error) {
+          // 进程先被内核回收时，让下一轮轮询报告实际退出状态。
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          return false;
+        }
+      }, 10_000, '不可转储前置进程存活超过两秒');
 
       // ② 存在早于命令启动 1 秒以上的不可转储进程：连续两次 verify 为 created / reused
       const f = cliProject();
@@ -1099,15 +1142,29 @@ fs.writeFileSync(${JSON.stringify(RESULT)}, ${JSON.stringify(PASS_LEDGER)});
 
       // ③ 命令以 detached 启动脱组的不可转储后代后退出
       const pidFile = join(binDir, 'child.pid');
+      const childReady = join(binDir, 'child.ready');
       setVerify(f.root, { pre_run_command: passRunner(f.root, 'spawn', `
 const { spawn } = require('child_process');
-const c = spawn(${JSON.stringify(sleepBin)}, ['600'], { detached: true, stdio: 'ignore' });
-fs.writeFileSync(${JSON.stringify(pidFile)}, String(c.pid));
-c.unref();
+const c = spawn(${JSON.stringify(sleepBin)}, [${JSON.stringify(childReady)}], { detached: true, stdio: 'ignore' });
+c.once('error', error => { throw error; });
+c.once('exit', (code, signal) => { throw new Error('不可转储后代提前退出（' + (signal ?? code) + '）'); });
+if (c.pid !== undefined) fs.writeFileSync(${JSON.stringify(pidFile)}, String(c.pid));
+const deadline = Date.now() + 5000;
+const readyPoll = setInterval(() => {
+  if (fs.existsSync(${JSON.stringify(childReady)})) {
+    clearInterval(readyPoll);
+    c.unref();
+  } else if (Date.now() > deadline) {
+    c.kill('SIGKILL');
+    throw new Error('等待不可转储后代就绪超时');
+  }
+}, 25);
 `) });
       const r3 = verifyJson(f.root);
-      const child = Number(readFileSync(pidFile, 'utf8'));
-      pids.push(child);
+      const child = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : 0;
+      if (child > 0) fixturePids.add(child);
+      expect(existsSync(childReady), JSON.stringify(r3.data?.pre_run ?? r3.stderr)).toBe(true);
+      expect(child).toBeGreaterThan(0);
       const projectDir = projectDirOf(f);
       const lockDir = join(projectDir, 'lock');
       const names = readdirSync(lockDir).filter(n => /^gen-\d{12}$/.test(n)).sort();
@@ -1134,6 +1191,7 @@ c.unref();
       // ⑤ 脱组后代的 leader 已 pthread_exit（stat 为 Z、带 PF_EXITING）而工作线程仍存活并稍后写入旧世代：
       //    不得因 leader 状态按已退出跳过——释放为 tainted，--fresh-sandbox 不删除旧世代，旧线程的写入不进入新世代
       process.kill(child, 'SIGKILL');
+      fixturePids.delete(child);
       put(binDir, 'lt.c', `#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1158,7 +1216,7 @@ c.unref();
 `) });
       const r5 = verifyJson(f.root);
       const leader = Number(readFileSync(ltPidFile, 'utf8'));
-      pids.push(leader);
+      fixturePids.add(leader);
       const oldWorkspace = readFileSync(ltCwdFile, 'utf8');
       expect(r5.data.gate.result).toBe('PASS');
       const leaderStat = parseProcStat(readFileSync(`/proc/${leader}/stat`, 'utf8'));
@@ -1186,7 +1244,7 @@ c.unref();
       expect(existsSync(join(projectDir, r6.data.sandbox.reuse.generation, 'workspace', 'stale-marker.txt')), '旧线程写入不进入新世代').toBe(false);
       expect(existsSync(join(f.root, 'stale-marker.txt'))).toBe(false);
     } finally {
-      for (const pid of pids) { try { process.kill(pid, 'SIGKILL'); } catch { /* 已退出 */ } }
+      for (const pid of fixturePids) { try { process.kill(pid, 'SIGKILL'); } catch { /* 已退出 */ } }
     }
   }, 120_000);
 });
