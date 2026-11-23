@@ -1,0 +1,44 @@
+{
+  "schema": "openlogos/verification-run@1",
+  "run_id": "20261123T030721876Z-verify-5d3420",
+  "kind": "verify",
+  "started_at": "2026-11-23T03:07:21.876Z",
+  "finished_at": "2026-11-23T03:13:02.666Z",
+  "outcome": "completed",
+  "gate": {
+    "result": "FAIL",
+    "reason": "failed_cases"
+  },
+  "error_code": null,
+  "proposal": {
+    "slug": "release-0-16-21",
+    "run_dir": "verify-runs/20261123T030721876Z-verify-5d3420"
+  },
+  "module_scope": null,
+  "verify_mode": null,
+  "attempted_slice_id": null,
+  "environment": null,
+  "deploy_id": null,
+  "counts": {
+    "defined": 2698,
+    "executed": 2698,
+    "passed": 2696,
+    "failed": 1,
+    "skipped": 1,
+    "uncovered": 0
+  },
+  "failed_ids": [
+    "UT-S09-317"
+  ],
+  "skipped_ids": [
+    "ST-S13-26"
+  ],
+  "uncovered_ids": [],
+  "result_source": "executed",
+  "commit": {
+    "head": "b8d1c46ed3fde1d1cdd8763e2ce1c12734fb88d0",
+    "dirty": true
+  },
+  "cli_version": "0.16.21",
+  "raw_location": "proposal"
+}
