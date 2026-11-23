@@ -3077,3 +3077,12 @@ SMOKE-core-21 / 23 的既有认领者是 `website/scripts/smoke-releases.mjs`（
 - Docker 不可用、网络不可达、缺少 `gh` 认证或缺发布记录时，相关用例写显式 skip 并记录缺失项。此类缺口可补齐，不标记 `platform-unavailable`；本组任一未通过不得作为 `SMOKE_PASS` 的放行证据。窗口外的其他提案 runner 仍按各自契约记账。
 - 每个 owned ID 向 smoke reporter 写一条结果，含 `id`、`status`、`timestamp`、`duration_ms`、`environment`、证据或缺失项；正式运行的 pass/fail 带 `target_environment=prod`（取自 `OPENLOGOS_SMOKE_ENV`），skip 行省略该字段。证据按用例记录 V、tag 提交号、tarball 散列、子进程退出码与信封摘要、容器身份或 HTTP 状态与页面摘录。覆盖预检确认 SMOKE-core-328～333 均有 runner。
 - 追溯至部署方案「OpenLogos 0.16.21 公开发布方案（npm / GitHub Release / 官网，含官网文档补齐）」和提案 C05～C09。安装态夹具对应 S45 知识直接录入（SMOKE-core-322、323）、S13/S19 验收历史（SMOKE-core-327）、S44 分支状态及模块限定 verify（SMOKE-core-281、283）。
+
+## OpenLogos 0.16.22 Windows 公开升级 smoke
+
+| ID | 场景 | 操作 | 期望 |
+|---|---|---|---|
+| SMOKE-core-334 | 公开制品与升级入口 | 从 prod 部署记录读取版本与提交，读取官方 npm、GitHub Release、官网中英文升级页及官网下载脚本 | 官方版本可下载，GitHub 资产与 registry 制品一致；官网脚本与发布提交同源，升级指引指定官方源与目标版本 |
+| SMOKE-core-335 | 真实 Windows 升级证据 | 按部署 ref 查询 GitHub Windows CI 的升级用例与部署证据，核对候选包版本及实际 CMD 输出 | Windows 旧版原地升级、多入口遮蔽与不可修复分支实际执行，通过证据绑定发布提交与版本，用户重新打开 CMD 后的版本断言在场 |
+
+公开 smoke 由既有 dispatcher 发现并记录当前目标环境。镜像传播的版本与 tarball 可用性附在 334 证据中。公告指向经过核验的官方源。
