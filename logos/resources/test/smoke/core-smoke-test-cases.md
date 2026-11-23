@@ -3031,3 +3031,49 @@ SMOKE-core-21 / 23 的既有认领者是 `website/scripts/smoke-releases.mjs`（
 - 自测模式只接受仓库之外的独立结果账本，并在正式 smoke 上下文（已注入 `OPENLOGOS_SMOKE_ENV` / `OPENLOGOS_SMOKE_MODULE`）中拒绝运行；自测结果不声明 `target_environment`。
 - 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-326～SMOKE-core-327 均被 runner 覆盖。
+
+## OpenLogos 0.16.21 公开发布 smoke（SMOKE-core-328～333）
+
+本组核验 npm registry、GitHub Release 与 Cloudflare Pages 官网是否同源，并用 registry 安装的 CLI 验证本次公开能力。判据沿用 SMOKE-core-272～279；实际 V 和完整 tag 提交号从 `logos/resources/verify/deployment-report.md` 标题含 `release-0-16-21` 的发布记录节读取 `public_release_version` 与 `public_release_commit`，并与 `v<V>` 核对。初始计划版本为 0.16.21，档 B2 前滚按实际 V 取证。
+
+### 一、冒烟测试用例
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-328 | Registry 身份与 provenance | 发布记录有 V 和完整提交号；对应 tag 的 publish run 已有 Publish success | 查询 `npm view @miniidealab/openlogos dist-tags --json` 与 `@<V>` 的 `version`、`gitHead`、`dist.integrity`、`dist.attestations`；读取 provenance；下载并解包 registry tarball；逐个查询 0.16.8～0.16.20 | `latest=V`、`old` 与部署前一致；provenance 的源码引用为本仓 `refs/tags/v<V>`、提交等于发布记录，有 `gitHead` 时一致；tarball 符合 registry integrity，包版本和 asset manifest 为 V 且自洽，包含 knowledge、history、branch 命令与 verification-history、result-path-lock 模块；本机发布的 13 个旧号均为 E404；留存 SHA-256 供 Release 核对 | 身份、散列或制品不符记 fail，停止放行并按发布方案处理；有网络错误时记录缺失项 |
+| SMOKE-core-329 | macOS registry 隔离安装态功能验收 | SMOKE-core-328 已取得 registry 版本与制品身份；宿主机具备 node、npm 与 git | 在一次性 prefix 从 registry 安装 `@miniidealab/openlogos@<V>`，核对入口 realpath 和 `--version`；从该入口执行下文四个夹具 | 入口位于隔离安装包内，版本等于 V；知识可录入并查询，verify 和 smoke 的历史可追溯，branch status 与已知提交拓扑一致，verify 的模块范围与 `--all` 可区分 | 任一能力断言失败记 fail，留存该夹具的退出码及 JSON 摘要 |
+| SMOKE-core-330 | Linux registry 隔离安装态功能验收 | SMOKE-core-328 已取得 registry 版本与制品身份；docker 可启动 `node:20` | 在一次性 Linux 容器内以非 root 用户从 registry 装同一 V 至临时 prefix，按 SMOKE-core-329 执行四个夹具 | uid 非 0，入口和版本同 SMOKE-core-329，各夹具行为一致；留存镜像摘要、uid 和各子步骤退出码 | Docker 或镜像不可用记显式 skip；可执行但安装或功能断言失败记 fail |
+| SMOKE-core-331 | GitHub Release 与 registry 同源 | SMOKE-core-328 已取得 tarball SHA-256；`gh` 已认证 | 读取 `v<V>` Release、仓库 latest Release 及 tag 指向；下载 Release 的 CLI tarball；按 publish.yml 规则从该 tag 提取 V 的 CHANGELOG 节 | Release 为公开正式版且最新 tag 为 `v<V>`；tag 提交等于部署记录，唯一 CLI tarball 的 SHA-256 等于 registry；正文去首尾空白后与同一 CHANGELOG 节相同，含从 0.16.7 升级指引，无「未发布到 npm」 | 缺 Release/附件按档 C 核对和补做；同源性不符记 fail，停止放行 |
+| SMOKE-core-332 | 官网 latest 与英文摘要 | 对应版本的官网已由原 run 或档 C 部署 | HTTP GET 首页及英文 `/releases`、中文 `/zh/releases`；与 tag 内 `website/src/data/release-summaries-en.mjs` 的 V 条目和 Release 链接核对 | HTTP 200；首页最近发布与中英文发布页的最新版本均为 V；英文页呈现 V 的英文摘要并指向 `v<V>` Release；0.16.8～0.16.20 的本机发布号未被列为公开发布 | 保留 HTTP 结果与摘录；错版、缺摘要或错链记 fail，并按官网发布事实处理 |
+| SMOKE-core-333 | 官网中英文新页、侧边栏与版本一致 | 同 SMOKE-core-332；tag 内包含提案指定的官网文档 | 以 HTTP GET 读取下文五个双语路由，核对各语言侧边栏链接和发布 tag 中对应页面的关键内容 | 中英文路由均返回 200，侧边栏指向同语言、同主题页面，关键命令、配置键与 V 对应的 tag 文档一致 | 404、错链、缺关键内容或语言错配记 fail；只涉及文档时按官网修正路径处理 |
+
+### 二、隔离安装态夹具（SMOKE-core-329、330）
+
+每组夹具用独立临时项目，所有 CLI 调用指向隔离 prefix 的绝对入口。指定 JSON 输出的步骤先核对退出码和输出通道，再解析信封。Git 夹具使用本地提交。
+
+1. **知识直接录入**。复用 SMOKE-core-322 的无提案、显式 `guard.exempt: []` 夹具和项目外有效候选，候选含 `core-K01-refund.md` 与 `sources/refund-v3.md`；如需标签表，同批准备其词条和首次启用参数。运行 `knowledge apply <候选目录> --format json`，需退出 0、`data.result=applied`，知识条目与原文实际落在项目资源路径；`knowledge list --module core --format json` 的 `data.entries` 含 K01 与落盘路径。
+2. **verify 与 smoke 历史**。复用 SMOKE-core-327 的已合并临时提案、可记录结果的 runner、test 登记表与一次性部署脚本。第一次 verify 由夹具产生一个失败 ID，第二次通过；两次均加 `--format json` 并取各自 `data.history.run_id`，期望退出 1、0 且在 stdout 给出门禁数据。第二次通过后提交临时项目以获得干净 HEAD，用隔离 CLI 执行 `deploy --env test --format json`（退出 0，保存 `data.deploy_id`），再执行两次 `smoke --env test --format json`（退出 1、0，均读 stdout 门禁数据）。runner 为结果声明 test 的 `target_environment`。`history list --slug <夹具提案> --format json` 返回按时间倒序的两条 verify 和两条 smoke，`--kind smoke` 只返回 smoke；两轮 smoke 记录的 `environment=test`、`deploy_id` 等于夹具部署，属于各自的运行 ID。`history show <第一次的 run_id> --format json` 验证失败用例 ID，并实际打开该轮结果文件和报告快照核对失败证据。
+3. **分支状态**。在单独的已初始化 Git 夹具从共同提交分出 `main` 和检查分支，两侧各增加一个提交。在检查分支执行 `branch status --base main --format json`，断言 `ahead=1`、`behind=1`、`up_to_date=false`，`head`、`base.commit` 和 `merge_base` 与夹具三个提交相符。
+4. **按模块限定 verify**。复用 SMOKE-core-281、283 的多模块夹具，声明 `core`、`portal-web` 的非空 `paths` 和独立记录型命令，活跃提案归属 `portal-web`，工作区只改该模块。比较 `verify --format json` 与 `verify --all --format json` 的 `data.scope.mode`（分别为 `module`、`all`）、模块集合与 runner 调用日志；后者必须实际执行两个模块的命令。
+
+### 三、官网路由与复用用例
+
+新页覆盖下表列出的英文路由及其 `/zh/` 对应路径。检查正文及侧边栏实际链接，关键内容以发布 tag 中该语言的页面为比对基准，允许 HTML 转义。
+
+| 路由 | 内容证据 |
+|---|---|
+| `/cli/knowledge/` | `knowledge apply`、`knowledge list` |
+| `/cli/history/` | `history list`、`history show`、运行 ID |
+| `/cli/branch/` | `branch status`、`branch sync` |
+| `/specs/branch-sync/` | `branch_sync` 与生成文件处理规则 |
+| `/concepts/enterprise-knowledge/` | 企业知识条目和引用约定、`logos/resources/knowledge/` |
+
+复用既有通用用例定义。SMOKE-core-01、02 使用 SMOKE-core-329 的隔离入口与一次性 init 项目，SMOKE-core-04 使用 SMOKE-core-328 解包的 registry 制品，SMOKE-core-07、08、15 使用 SMOKE-core-332 的双语发布页和首页，SMOKE-core-21 复用中文站点路由断言并补核 SMOKE-core-333 的中文新页。复用 ID 沿用原定义及原有结果归属。
+
+### 四、执行边界与自动化证据
+
+- 新 runner 为 `scripts/smoke-public-release-0-16-21.js`，由既有 `scripts/run-smoke.js` 发现，显式分派 SMOKE-core-328～333。窗口为活跃提案 `release-0-16-21` 或 `OPENLOGOS_PR1621_SMOKE=1`，本 runner 自有环境变量统一用 `OPENLOGOS_PR1621_`。窗口外按既有留痕机制为本组用例写 skip。
+- 公网只读：查询 registry、下载临时 tarball、查询/下载 GitHub Release、HTTP GET。宿主安装只使用一次性 prefix，容器用 `--rm`，夹具、临时发布目录及账本随用例清理。本机 npm 全局切换、正式 prod 账本落标与所有公网写入均属于部署方案。子进程隔离继承的 `OPENLOGOS_DEPLOY_*`、`OPENLOGOS_SMOKE_ENV` 与 `OPENLOGOS_SMOKE_RESULT_PATH`，各夹具只用自己的运行路径。
+- Docker 不可用、网络不可达、缺少 `gh` 认证或缺发布记录时，相关用例写显式 skip 并记录缺失项。此类缺口可补齐，不标记 `platform-unavailable`；本组任一未通过不得作为 `SMOKE_PASS` 的放行证据。窗口外的其他提案 runner 仍按各自契约记账。
+- 每个 owned ID 向 smoke reporter 写一条结果，含 `id`、`status`、`timestamp`、`duration_ms`、`environment`、证据或缺失项；正式运行的 pass/fail 带 `target_environment=prod`（取自 `OPENLOGOS_SMOKE_ENV`），skip 行省略该字段。证据按用例记录 V、tag 提交号、tarball 散列、子进程退出码与信封摘要、容器身份或 HTTP 状态与页面摘录。覆盖预检确认 SMOKE-core-328～333 均有 runner。
+- 追溯至部署方案「OpenLogos 0.16.21 公开发布方案（npm / GitHub Release / 官网，含官网文档补齐）」和提案 C05～C09。安装态夹具对应 S45 知识直接录入（SMOKE-core-322、323）、S13/S19 验收历史（SMOKE-core-327）、S44 分支状态及模块限定 verify（SMOKE-core-281、283）。

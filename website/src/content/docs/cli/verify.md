@@ -259,3 +259,9 @@ See [CLI JSON Output](/specs/cli-json-output) for the contract.
 - [`smoke`](/cli/smoke): post-deployment smoke verification (Gate 3.8)
 - [`status`](/cli/status): shows where the proposal stands
 - [`launch`](/cli/launch): usually run after the first verify passes, to activate change management
+
+## Module scope and run history
+
+In a multi-module project with at least one nonempty `modules[].paths`, verify can run only the affected modules and shared tests. Use `openlogos verify --all` to force full scope. JSON reports the selection in `data.scope`; missing or unusable proposal baselines can trigger full scope. `data.history` identifies the run, and an occupied result path returns `RESULT_PATH_BUSY` (exit 2).
+
+See [history](/cli/history/) for the saved evidence.

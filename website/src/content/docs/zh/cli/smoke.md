@@ -221,3 +221,7 @@ Required smoke cases without evidence (skip):
 - [`deploy`](/zh/cli/deploy) / [`env`](/zh/cli/env)：执行部署，查看各环境最近的部署与 smoke
 - [`status`](/zh/cli/status)：在提案生命周期中显示 smoke 门状态
 - [`archive`](/zh/cli/archive)：smoke 通过后归档提案
+
+## 模块目标与运行历史
+
+可在 `deployment_gates.<module>.environments` 声明模块环境，在 `smoke.modules.<id>` 覆盖命令、结果及报告路径。配置独立命令的模块按该模块前缀规格与适用提案例判定，无独立命令时仍可运行项目共用用例。执行后 JSON 返回 `data.history.run_id`，用 `openlogos history list --kind smoke` 查看记录的环境与部署。

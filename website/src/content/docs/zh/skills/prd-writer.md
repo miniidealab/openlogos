@@ -87,3 +87,7 @@ description: 编写带 GIVEN/WHEN/THEN 验收标准的场景驱动需求文档�
 
 - 上一步：[`project-init`](/zh/skills/project-init) —— 初始化项目
 - 下一步：[`product-designer`](/zh/skills/product-designer) —— 创建产品设计规格
+
+## 加载相关企业知识
+
+撰写需求前按模块和标签查询适用规则、术语和约束。引用条目 ID；用户诉求与生效规则冲突时，提交用户决策。

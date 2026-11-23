@@ -87,3 +87,7 @@ Standard structure: Product Background → Pain Points → Scenario Overview →
 
 - Previous: [`project-init`](/skills/project-init) — initialize the project
 - Next: [`product-designer`](/skills/product-designer) — create product design specs
+
+## Load relevant enterprise knowledge
+
+Before writing requirements, look up applicable business rules, terms and constraints by module and tag. Cite their IDs and ask for a decision if requested behavior conflicts with an active rule.

@@ -124,3 +124,7 @@ When the validator rejects the input, every violation is printed with its `code`
 - [Test Slice Manifest](/specs/test-slice-manifest): manifest format, checkpoints and recovery
 - [`verify`](/cli/verify): slice checkpoints and final acceptance (Gate 3.6)
 - [`merge`](/cli/merge): must have run before slices are planned
+
+## Frozen checkpoint scope
+
+`openlogos slice plan --file <path>` reports `verify_scope` and `verify_scope_source`. `verify.slice_scope` accepts `auto`, `baseline`, or `owned`. In `auto`, the configured `verify.slice_scope_threshold` (default 1,000) selects `owned` when the number of automated UT/ST cases reaches it. Replanning the same slice identities retains the frozen scope; final verify runs the full suite.

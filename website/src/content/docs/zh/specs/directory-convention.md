@@ -130,3 +130,7 @@ project-root/
 - [项目结构](/zh/specs/project-structure)——配置文件格式与字段定义
 - [模块命名约定](/zh/specs/module-naming-convention)——详细的模块前缀规则
 - [logos-project.yaml](/zh/specs/logos-project)——AI 协作索引 schema
+
+## 知识与验收历史
+
+知识条目位于 `logos/resources/knowledge/`，原文位于 `logos/resources/reference/knowledge/`，提案变更位于 `deltas/knowledge/`。验收索引存 `logos/resources/verify/history/`，提案产物在 `verify-runs/<run_id>/`。多模块项目的 initial 模块在 verify 目录使用 `<module>-acceptance-report.md`、`<module>-deployment-report.md`、`<module>-smoke-report.md`。

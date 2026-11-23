@@ -111,3 +111,7 @@ From the ledger, every environment gets a `current_ref` (last successful, confir
 - [`env`](/cli/env) · [`deploy`](/cli/deploy) · [`approve`](/cli/approve) · [`deploy-done`](/cli/deploy-done) · [`smoke`](/cli/smoke)
 - [Change Management](/specs/change-management) · [PreToolUse Guard](/specs/pretooluse-guard)
 - [deployment-designer](/skills/deployment-designer) · [deployment-executor](/skills/deployment-executor)
+
+## Environment ownership in multi-module projects
+
+`deployment_gates.<module>.environments` declares which registry environments belong to a module. Smoke can select a target module and apply `smoke.modules.<id>` overrides. A dedicated module command uses module-prefixed smoke specs. Version-context smoke keeps deployment identity without changing unrelated proposal milestones.

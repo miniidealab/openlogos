@@ -102,3 +102,7 @@ Each document contains: sequence diagram + step descriptions + exception cases.
 
 - Previous: [`architecture-designer`](/skills/architecture-designer) — design architecture
 - Next: [`api-designer`](/skills/api-designer) — design API specifications
+
+## Record applicable business constraints
+
+In each affected scenario, list the applicable business constraints and connect `KXX` or `KXX-Rn` to the steps they constrain. Validate references against the effective knowledge view, including relevant proposal changes.

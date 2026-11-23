@@ -249,3 +249,7 @@ conventions:
 - `openlogos sync` updates `AGENTS.md` based on `logos-project.yaml` content
 
 See [AGENTS.md Specification](/specs/agents-md) for the instruction file format.
+
+## Per-module paths and environments
+
+`modules[].paths` provides repository-relative ownership patterns for verification and managed guards. `deployment_gates.<module>.environments` ties modules to environments from `logos/environments.yaml`. Use distinct module prefixes for test and report artifacts to preserve phase ownership.

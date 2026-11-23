@@ -261,3 +261,9 @@ verify 生成 `logos/resources/verify/acceptance-report.md`，包含：
 - [`smoke`](/zh/cli/smoke)：部署后冒烟验收（Gate 3.8）
 - [`status`](/zh/cli/status)：查看提案当前所处位置
 - [`launch`](/zh/cli/launch)：通常在首轮 verify 通过后运行，以启用变更管理
+
+## 模块范围与运行历史
+
+多模块项目至少有一个模块声明非空 `modules[].paths` 时，verify 可只执行受影响模块及共享测试。`openlogos verify --all` 强制全量，JSON 在 `data.scope` 中说明范围。提案基线不可用时可能回落全量。`data.history` 给出运行标识，结果路径已占用时返回 `RESULT_PATH_BUSY`（退出码 2）。
+
+持久化结果见[验收历史](/zh/cli/history/)。

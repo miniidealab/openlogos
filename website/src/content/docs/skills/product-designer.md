@@ -81,3 +81,7 @@ Prototype file extensions vary by type: `.html` (Web), `-terminal.md` (CLI), `-d
 
 - Previous: [`prd-writer`](/skills/prd-writer) — write requirements
 - Next: [`architecture-designer`](/skills/architecture-designer) — design technical architecture
+
+## Use approved knowledge in design
+
+Use the effective knowledge view to check how rules and terms affect onboarding, forms and error states. Carry relevant entry or rule IDs into design decisions and preserve links to the underlying evidence.

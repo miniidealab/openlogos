@@ -102,3 +102,7 @@ sequenceDiagram
 
 - 上一步：[`architecture-designer`](/zh/skills/architecture-designer) —— 设计架构
 - 下一步：[`api-designer`](/zh/skills/api-designer) —— 设计 API 规格
+
+## 记录适用业务约束
+
+在相关场景的「适用业务约束」中列出 `KXX` 或 `KXX-Rn`，并注明约束的步骤。按有效知识视图核对引用，视图包含适用的提案变更。

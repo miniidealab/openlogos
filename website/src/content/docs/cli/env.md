@@ -102,3 +102,7 @@ openlogos env check --probe --format json
 - [`deploy-done`](/cli/deploy-done) — Record a deployment done outside `openlogos deploy`
 - [`smoke`](/cli/smoke) — Post-deployment check with `--env`
 - [Environments](/specs/environments) — Registry format, ledger and gates
+
+## Inspecting module environments
+
+In a multi-module project you can declare an environment list per module with `deployment_gates.<module>.environments` in `logos-project.yaml`. `env list` and `env show` still read the project registry; the module declarations guide deploy and smoke scope.

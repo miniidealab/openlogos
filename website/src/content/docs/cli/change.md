@@ -184,3 +184,7 @@ openlogos archive <slug>                 →  moves to archive/, removes the gua
 - [`slice`](/cli/slice) — Plan `[code]` slices after merge
 - [`archive`](/cli/archive) — Archive the completed proposal
 - [`launch`](/cli/launch) — Activate change management for a module
+
+## Proposal baseline and knowledge
+
+In a Git project with a commit, `change` records `baseRef` in the guard so verification can resolve affected modules. `deltas/knowledge/` is for knowledge changes delivered with a proposal. Use [knowledge apply](/cli/knowledge/) for standalone intake.

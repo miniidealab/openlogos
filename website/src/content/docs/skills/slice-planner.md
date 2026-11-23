@@ -103,3 +103,7 @@ Run slice-planner for this proposal's [code] slices. Read the merged specs and r
 - [Test Slice Manifest](/specs/test-slice-manifest): manifest, checkpoints and recovery
 - Previous: [`merge-executor`](/skills/merge-executor) / [`openlogos merge`](/cli/merge)
 - Next: [`code-implementor`](/skills/code-implementor): implements the slices one by one
+
+## Plan from merged test IDs
+
+After spec-complete, supply actual owned test IDs, selectors and spec targets to `openlogos slice plan --file <path>`. The manifest records the frozen verification scope. Keep any capabilities that cannot pass a checkpoint independently in one end-to-end slice.

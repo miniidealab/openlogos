@@ -249,3 +249,7 @@ conventions:
 - `openlogos sync` 会基于 `logos-project.yaml` 内容更新 `AGENTS.md`
 
 指令文件格式见 [AGENTS.md 规格](/zh/specs/agents-md)。
+
+## 模块路径与环境
+
+`modules[].paths` 以仓库相对规则声明路径归属，供 verify 与托管 guard 使用。`deployment_gates.<module>.environments` 将模块关联到 `logos/environments.yaml` 的环境。测试与报告产物使用模块前缀以保持进度归属。

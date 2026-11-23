@@ -110,3 +110,7 @@ description: 在代码生成前设计单元测试与场景测试用例。
 - 上一步：[`api-designer`](/zh/skills/api-designer) / [`db-designer`](/zh/skills/db-designer) —— 设计规格
 - 下一步（API 项目）：[`test-orchestrator`](/zh/skills/test-orchestrator) —— 设计 API 编排测试
 - 下一步（所有项目）：[`code-implementor`](/zh/skills/code-implementor) —— 忠于规格生成代码（Phase 3 Step 4）
+
+## 按规则追溯测试
+
+读取场景的适用业务约束，按引用的规则设计正例与反例。在测试描述或证据中保留规则 ID，便于规则变更时定位用例。

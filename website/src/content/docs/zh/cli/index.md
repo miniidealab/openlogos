@@ -169,3 +169,9 @@ openlogos archive fix-redirect-bug
 ```
 
 半自动模式下，`merge`、`verify`、部署、`smoke`、`archive` 与 `git push` 只在你明确授权后执行；`openlogos next --auto` 对整条链路给出 standing 授权（见 [`next`](/zh/cli/next)）。
+
+## 新增命令组
+
+用 `openlogos knowledge` 录入和查询业务知识，用 `openlogos history` 追溯验收运行，用 `openlogos branch status` 或 `openlogos branch sync` 检查并同步主分支。
+
+[企业知识](/zh/cli/knowledge/) · [验收历史](/zh/cli/history/) · [分支同步](/zh/cli/branch/)

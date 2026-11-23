@@ -81,3 +81,7 @@ description: 根据产品类型创建交互规格与原型。
 
 - 上一步：[`prd-writer`](/zh/skills/prd-writer) —— 编写需求
 - 下一步：[`architecture-designer`](/zh/skills/architecture-designer) —— 设计技术架构
+
+## 设计时引用已确认知识
+
+使用有效知识视图核对规则与术语如何影响引导、表单和异常状态。将适用条目或规则 ID 保留在设计决策中，便于追溯原文。

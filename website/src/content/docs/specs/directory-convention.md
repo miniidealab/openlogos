@@ -130,3 +130,7 @@ Stored in `logos/resources/test/smoke/`.
 - [Project Structure](/specs/project-structure) — Configuration file formats and field definitions
 - [Module Naming Convention](/specs/module-naming-convention) — Detailed module prefix rules
 - [logos-project.yaml](/specs/logos-project) — AI collaboration index schema
+
+## Knowledge and verification history
+
+Knowledge entries are in `logos/resources/knowledge/`, supporting materials in `logos/resources/reference/knowledge/`, and proposal changes in `deltas/knowledge/`. The verification index is under `logos/resources/verify/history/`; proposal artifacts use `verify-runs/<run_id>/`. Initial modules in a multi-module project use `<module>-acceptance-report.md`, `<module>-deployment-report.md`, and `<module>-smoke-report.md` in the verify directory.

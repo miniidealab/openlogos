@@ -281,3 +281,7 @@ func ReportResult(id, status string, durationMs int64, err string) {
 | [项目结构](/zh/specs/project-structure) | 定义 `logos/resources/verify/` 目录位置 |
 | `logos.config.json` | `verify.result_path` 可覆盖默认路径 |
 | [`openlogos verify`](/zh/cli/verify) | 读取此格式并生成验收报告 |
+
+## 运行历史与并发
+
+`logos/resources/verify/history/<run_id>.json` 是单次运行的结构化索引。有活跃提案时，`verify-runs/<run_id>/` 保留结果与最终报告快照，随提案归档。`verify.history.raw_in_proposal: false` 将自由文本和报告快照留在 `logos/.openlogos-runtime/verify-runs/`。最近结果仍独立保留，verify 和 smoke 在访问结果文件前取得路径锁。

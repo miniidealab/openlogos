@@ -388,3 +388,7 @@ if openlogos verify --format json 2>/dev/null | jq -e '.data.gate.result == "PAS
   echo "All tests passed!"
 fi
 ```
+
+## Module and history fields
+
+Verify may include `data.scope`, and smoke may include module scope plus `environment_evidence`. A completed run reports `data.history`; an execution-time early error may report `error.details.history` on stderr. The `branch sync`, `branch status`, `knowledge …`, `history list` and `history show` command groups use the standard command envelope. A completed FAIL gate can return exit 1 with a data envelope on stdout.

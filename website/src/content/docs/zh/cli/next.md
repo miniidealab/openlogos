@@ -78,3 +78,7 @@ Next Step
 - [`change`](/zh/cli/change) — 创建变更提案
 - [`verify`](/zh/cli/verify) — 运行 Gate 3.6 验收
 - [可编排研发流程](/zh/concepts/orchestratable-flow) — 门、循环与两档授权
+
+## 环境与切片验收路由
+
+部署记录含环境时，`next --auto` 可路由到 `openlogos smoke --env <id>`。多切片验收的 `slice_verification_state.verify_scope` 表示已冻结的 checkpoint 范围，最终验收仍覆盖全部用例。

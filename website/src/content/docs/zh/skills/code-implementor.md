@@ -141,3 +141,7 @@ test-writer 不写代码；code-implementor 不设计测试用例；code-reviewe
 
 - 上一步：[`test-writer`](/zh/skills/test-writer) / [`test-orchestrator`](/zh/skills/test-orchestrator) —— 设计测试规格
 - 下一步：[`code-reviewer`](/zh/skills/code-reviewer) —— 对照规格审查生成的代码
+
+## 按冻结范围执行切片验收
+
+按批准的 `[code]` 顺序实现，每片同时交付代码、归属用例和 OpenLogos reporter。`owned` 模式的 checkpoint 聚焦当前与已确认切片，最终全量回归由 driver 执行。

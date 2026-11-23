@@ -110,3 +110,7 @@ This table is a writing practice: it shows that every acceptance criterion has a
 - Previous: [`api-designer`](/skills/api-designer) / [`db-designer`](/skills/db-designer) — design specs
 - Next (API projects): [`test-orchestrator`](/skills/test-orchestrator) — design API orchestration tests
 - Next (all projects): [`code-implementor`](/skills/code-implementor) — generate code with spec fidelity (Phase 3 Step 4)
+
+## Trace tests to business rules
+
+Read the scenario’s applicable business constraints and design positive and negative cases based on the referenced rules. Keep rule IDs in case descriptions or evidence so an update can be traced back to the affected cases.

@@ -221,3 +221,7 @@ With a registry, `data` also includes `environment_evidence`: `target`, `deploy_
 - [`deploy`](/cli/deploy) / [`env`](/cli/env): run deployments and see each environment's last deploy and smoke
 - [`status`](/cli/status): shows the smoke gate state in the proposal lifecycle
 - [`archive`](/cli/archive): archive the proposal after smoke passes
+
+## Module targeting and run history
+
+A module can declare its environments in `deployment_gates.<module>.environments` and override its command, result path and report path in `smoke.modules.<id>`. A module with a dedicated command uses its own prefixed specs and applicable proposal cases; a module without a dedicated command can still run the shared project suite. JSON includes `data.history.run_id` after execution and the recorded environment and deployment can be queried with `openlogos history list --kind smoke`.

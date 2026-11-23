@@ -232,3 +232,7 @@ When the project has a `logos/environments.yaml` registry (see [Environment Regi
 - [`module`](/cli/module) — Manage modules (list / add / rename / remove)
 - [`launch`](/cli/launch) — Activate change management (suggested when all phases are done)
 - [`verify`](/cli/verify) — Run Gate 3.6 acceptance (Phase 3-6)
+
+## Module phase evidence
+
+For initial modules in multi-module projects, phase progress uses module-prefixed acceptance, deployment and smoke reports. The SessionStart API banner uses each initial module’s API progress from `status --format json` when available. API files are grouped by domain, so the banner does not require a file per scenario.

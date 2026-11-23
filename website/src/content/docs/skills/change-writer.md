@@ -153,3 +153,7 @@ change-lint is read-only and needs no authorization. Passing it does **not** aut
 
 - After the deltas: [`merge-executor`](/skills/merge-executor) — review, run and follow up `openlogos merge`
 - After merge: [`slice-planner`](/skills/slice-planner) — plan `[code]` slices
+
+## Separate knowledge intake from proposal changes
+
+Use `knowledge apply` for recording standalone materials. For a behavior-changing proposal that also updates knowledge, declare the affected entries and use `deltas/knowledge/` so the references are checked together.

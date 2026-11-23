@@ -108,3 +108,7 @@ openlogos deploy --env prod --ref v1.2.0 --format json
 - [`smoke`](/zh/cli/smoke) —— 以 `--env` 验证部署
 - [`deploy-done`](/zh/cli/deploy-done) —— 记录在 `openlogos deploy` 之外完成的部署
 - [deployment-executor](/zh/skills/deployment-executor) —— 驱动部署的 Skill
+
+## 模块环境与部署报告
+
+启用模块环境范围后，提案通道适用于所属模块声明的环境。版本通道按自身 ref 记录部署证据。针对 initial 模块的部署成功后，也可写入带模块前缀的部署报告供该模块的进度判定使用。

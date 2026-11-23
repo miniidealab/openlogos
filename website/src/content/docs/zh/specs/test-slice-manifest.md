@@ -137,3 +137,7 @@ verify、`status`、`next` 共用同一个校验器，它在任何测试命令�
 - [`openlogos verify`](/zh/cli/verify)：切片 checkpoint 与最终全量验收（Gate 3.6）
 - [切片规划](/zh/specs/slice-planner)：如何切片
 - [CLI JSON 输出](/zh/specs/cli-json-output)：`slice_verification_state` 与 `contract.version`
+
+## Checkpoint 验收范围
+
+规划清单时将 `verify_scope` 冻结为 `baseline` 或 `owned`。`owned` checkpoint 验收当前与已确认切片，最终 verify 仍包含基线回归。旧清单缺字段时按 `baseline`，重建同一划分保留原决定。

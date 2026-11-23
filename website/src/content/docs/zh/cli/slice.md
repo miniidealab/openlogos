@@ -124,3 +124,7 @@ openlogos slice plan --file <slices.json> --format json
 - [测试切片清单](/zh/specs/test-slice-manifest)：manifest 格式、checkpoint 与恢复
 - [`verify`](/zh/cli/verify)：切片 checkpoint 与最终全量验收（Gate 3.6）
 - [`merge`](/zh/cli/merge)：规划切片前必须已完成
+
+## 冻结 checkpoint 验收范围
+
+`openlogos slice plan --file <path>` 返回 `verify_scope` 和 `verify_scope_source`。`verify.slice_scope` 支持 `auto`、`baseline`、`owned`。`auto` 下自动化 UT/ST 数量达到 `verify.slice_scope_threshold`（默认 1000）时选 `owned`。同一划分重跑保留冻结值，最终 verify 跑全量。

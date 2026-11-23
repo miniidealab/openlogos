@@ -1,4 +1,17 @@
 export const RELEASE_SUMMARIES_EN = {
+  '0.16.21': {
+    valueSummaryEn: [
+      'The first public release since 0.16.7 includes the changes from 0.16.8 through 0.16.20.',
+      'Build an enterprise knowledge base with `openlogos knowledge apply`, then find entries, check tags, or trace which scenarios reference a rule.',
+      'Every verify and smoke run can be traced with `openlogos history list` and `openlogos history show`, even after its proposal is archived.',
+      'Use `openlogos branch status` to inspect divergence and `openlogos branch sync` to handle generated-file conflicts. In multi-module projects, scope verification, environments, smoke and guards by module.',
+      'After upgrading from 0.16.7, run `openlogos sync` in each project to refresh the managed guard, session banner and Skills.',
+    ],
+    fixSummaryEn: [
+      'Reports now reflect the final gate verdict, concurrent runs no longer truncate each other’s result files, and piped CLI output drains before exit.',
+      'SessionStart uses module API progress, while merge and guard fixes address stalled merges and stale background execution records.',
+    ],
+  },
   '0.16.7': {
     valueSummaryEn: [
       'First public release since 0.16.2 (0.16.3 through 0.16.6 were only installed locally; everything in them is included here). Register your deployment environments in `logos/environments.yaml` and inspect them with `openlogos env list | show | check`; `openlogos deploy-done --env --ref` and `openlogos smoke --env` record which version reached which environment in a local deployment ledger, and `status --format json` gains an `environments` view.',

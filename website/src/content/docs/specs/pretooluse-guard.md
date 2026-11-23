@@ -116,3 +116,7 @@ No `guard.exempt` entry and no whitelist can release these:
 - [`openlogos sync`](/cli/sync) — redeploy guard scripts and hooks
 - [Cursor Plugin](/specs/cursor-plugin) — Cursor asset layout and hooks
 - [Change Management](/specs/change-management) — the Delta workflow the guard enforces
+
+## Module ownership, knowledge and background runs
+
+In mixed-lifecycle projects, guard resolves file ownership before applying the corresponding module lifecycle; shared or unowned files remain protected. Use `knowledge apply` for proposal-free knowledge writes that require validation. The managed hook can close stale background-run entries when the host no longer reports them, or after the established expiry. Run `openlogos sync` after upgrading to refresh project hooks.

@@ -184,3 +184,7 @@ openlogos archive <slug>                 →  移入 archive/，删除 guard
 - [`slice`](/zh/cli/slice) — merge 后规划 `[code]` 切片
 - [`archive`](/zh/cli/archive) — 归档已完成的提案
 - [`launch`](/zh/cli/launch) — 为模块激活变更管理
+
+## 提案基线与企业知识
+
+Git 项目已有提交时，`change` 在 guard 中记录 `baseRef`，供 verify 识别受影响模块。随提案交付的知识变化写在 `deltas/knowledge/`；单独录入走 [knowledge apply](/zh/cli/knowledge/)。

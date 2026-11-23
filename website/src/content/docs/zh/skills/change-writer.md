@@ -153,3 +153,7 @@ change-lint 只读，运行无需授权。通过它**不等于**授权合并—�
 
 - delta 完成后：[`merge-executor`](/zh/skills/merge-executor)——复核、执行并跟进 `openlogos merge`
 - 合并后：[`slice-planner`](/zh/skills/slice-planner)——规划 `[code]` 切片
+
+## 区分知识录入和提案变更
+
+单独录入材料使用 `knowledge apply`。行为变更同时涉及知识时，在提案中声明受影响条目并使用 `deltas/knowledge/`，使规则和引用一起校验。

@@ -100,3 +100,7 @@ OpenLogos deploy-done
 - [`deploy`](/zh/cli/deploy) — 按环境配置执行部署
 - [`env`](/zh/cli/env) — 查看各环境当前运行的版本
 - [`archive`](/zh/cli/archive) — 归档已完成的提案
+
+## 按模块登记部署证据
+
+目标为 initial 模块时，成功登记会在共用部署状态之外写入该模块的部署报告。报告在成功记录完整提交后写出，晋级门禁与部署账本仍按各自契约处理。

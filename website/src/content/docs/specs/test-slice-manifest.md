@@ -137,3 +137,7 @@ Never delete or rename `TEST_SLICE_MANIFEST.json`, edit `[code]` by hand, or for
 - [`openlogos verify`](/cli/verify): slice checkpoints and final acceptance (Gate 3.6)
 - [Slice Planner](/specs/slice-planner): how slices are cut
 - [CLI JSON Output](/specs/cli-json-output): `slice_verification_state` and `contract.version`
+
+## Checkpoint verification scope
+
+`verify_scope` is `baseline` or `owned` and is frozen when the manifest is planned. `owned` checks the active slice and already confirmed slices at checkpoint time. Final verify always includes baseline regression. A legacy manifest without the field uses `baseline`; regenerating an unchanged plan preserves the original decision.

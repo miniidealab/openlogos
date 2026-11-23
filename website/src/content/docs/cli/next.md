@@ -78,3 +78,7 @@ Next Step
 - [`change`](/cli/change) — Create a change proposal
 - [`verify`](/cli/verify) — Run Gate 3.6 acceptance
 - [Orchestratable flow](/concepts/orchestratable-flow) — Gates, loops and the two authorization tiers
+
+## Environment and checkpoint routing
+
+When a deployment records its environment, `next --auto` can route smoke to `openlogos smoke --env <id>`. For multi-slice verification, `slice_verification_state.verify_scope` describes the frozen checkpoint scope. Final verification still covers the full suite.

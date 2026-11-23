@@ -98,3 +98,7 @@ No tasks are checked, no marker is written and nothing is added to the ledger wh
 - [`deploy`](/cli/deploy) — Run the configured deployment for an environment
 - [`env`](/cli/env) — See what each environment is running
 - [`archive`](/cli/archive) — Archive the completed proposal
+
+## Module-scoped deployment evidence
+
+A successful record for a targeted initial module updates its module-prefixed deployment report alongside the shared deployment state. The report is written after the success records are complete; it does not enforce promotion or replace the deployment ledger.

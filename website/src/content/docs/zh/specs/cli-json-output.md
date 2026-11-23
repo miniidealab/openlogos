@@ -388,3 +388,7 @@ if openlogos verify --format json 2>/dev/null | jq -e '.data.gate.result == "PAS
   echo "All tests passed!"
 fi
 ```
+
+## 模块范围与历史字段
+
+verify 可带 `data.scope`，smoke 可带模块范围与 `environment_evidence`。已完成的运行给出 `data.history`，执行中的早退可能会在 stderr 的 `error.details.history` 给出历史字段。`branch sync`、`branch status`、`knowledge …`、`history list`、`history show` 沿用标准命令信封。门禁已裁决为 FAIL 时，退出码可以是 1，数据仍在 stdout。

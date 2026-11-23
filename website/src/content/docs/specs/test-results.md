@@ -281,3 +281,7 @@ func ReportResult(id, status string, durationMs int64, err string) {
 | [Project Structure](/specs/project-structure) | Defines the `logos/resources/verify/` directory location |
 | `logos.config.json` | `verify.result_path` can override the default path |
 | [`openlogos verify`](/cli/verify) | Reads this format and generates the acceptance report |
+
+## Run history and concurrent runs
+
+`logos/resources/verify/history/<run_id>.json` is the per-run structured index. With an active proposal, `verify-runs/<run_id>/` holds results and a snapshot of the final report; archive moves the directory with the proposal. A `verify.history.raw_in_proposal: false` setting keeps raw text and the report snapshot in `logos/.openlogos-runtime/verify-runs/`. Latest result files remain separate. Verification and smoke acquire result-path locks before touching those files.

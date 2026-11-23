@@ -116,3 +116,7 @@ git 判据不生效时——项目不是 git 仓库、缺少 `git` 或 `node`、
 - [`openlogos sync`](/zh/cli/sync) —— 重新部署 guard 脚本与 hooks
 - [Cursor 插件](/zh/specs/cursor-plugin) —— Cursor 资产布局与 hooks
 - [变更管理](/zh/specs/change-management) —— guard 所守护的 Delta 工作流
+
+## 模块归属、知识与后台执行
+
+混合生命周期项目先按路径识别文件归属，再应用所在模块的生命周期规则；共享与未归属路径仍受保护。无需立案且需要校验的知识写入使用 `knowledge apply`。托管 hook 可在宿主不再报告该任务或记录到期时关闭后台记录。升级后用 `openlogos sync` 刷新项目 hook。

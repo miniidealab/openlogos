@@ -141,3 +141,7 @@ This Skill does not produce files under `logos/resources/` — code goes to the 
 
 - Previous: [`test-writer`](/skills/test-writer) / [`test-orchestrator`](/skills/test-orchestrator) — design test specs
 - Next: [`code-reviewer`](/skills/code-reviewer) — audit generated code against specs
+
+## Implement against the frozen scope
+
+Consume the approved `[code]` slices in order. Keep implementation, owned tests and the OpenLogos reporter together. In `owned` mode, checkpoint focuses on eligible tests for the active and confirmed slices; the driver runs full regression at final verify.

@@ -232,3 +232,7 @@ openlogos status --module admin
 - [`module`](/zh/cli/module) — 管理模块（list / add / rename / remove）
 - [`launch`](/zh/cli/launch) — 激活变更管理（所有阶段完成时建议）
 - [`verify`](/zh/cli/verify) — 运行 Gate 3.6 验收（Phase 3-6）
+
+## 模块阶段证据
+
+多模块项目的 initial 模块以带模块前缀的验收、部署和冒烟报告判定进度。SessionStart 横幅优先使用 `status --format json` 的逐模块 API 进度。API 文件按领域组织，横幅无需逐场景匹配文件。

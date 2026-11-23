@@ -102,3 +102,7 @@ openlogos env check --probe --format json
 - [`deploy-done`](/zh/cli/deploy-done) —— 记录在 `openlogos deploy` 之外完成的部署
 - [`smoke`](/zh/cli/smoke) —— 带 `--env` 的部署后检查
 - [环境登记表](/zh/specs/environments) —— 登记表格式、账本与门禁
+
+## 查看模块环境
+
+多模块项目可在 `logos-project.yaml` 通过 `deployment_gates.<module>.environments` 声明模块的环境列表。`env list` 和 `env show` 仍读取项目登记表，模块声明用于指导 deploy 和 smoke 选取范围。

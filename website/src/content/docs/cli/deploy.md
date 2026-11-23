@@ -108,3 +108,7 @@ Warnings `DEPLOY_REF_UNCONFIRMED` (succeeded but the deployed version could not 
 - [`smoke`](/cli/smoke) — Verify the deployment with `--env`
 - [`deploy-done`](/cli/deploy-done) — Record a deployment done outside `openlogos deploy`
 - [deployment-executor](/skills/deployment-executor) — The Skill that drives deployments
+
+## Module environments and deployment reports
+
+When module environment scoping is enabled, the proposal channel applies to environments declared for the proposal module. Version deployments keep their own ref and deployment evidence. A successful deployment for a targeted initial module can also write a module-prefixed deployment report for its progress.

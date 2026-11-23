@@ -169,3 +169,9 @@ openlogos archive fix-redirect-bug
 ```
 
 In semi-auto mode, `merge`, `verify`, deployment, `smoke`, `archive` and `git push` are run only after you explicitly authorize them; `openlogos next --auto` grants a standing authorization for the whole chain (see [`next`](/cli/next)).
+
+## New command groups
+
+Use `openlogos knowledge` to record and query business rules, `openlogos history` to inspect verification runs, and `openlogos branch status` or `openlogos branch sync` to work with your base branch.
+
+[Knowledge](/cli/knowledge/) · [History](/cli/history/) · [Branch](/cli/branch/)

@@ -111,3 +111,7 @@ smoke 记录只有在以下条件同时满足时才是**已验证**（`verified`
 - [`env`](/zh/cli/env) · [`deploy`](/zh/cli/deploy) · [`approve`](/zh/cli/approve) · [`deploy-done`](/zh/cli/deploy-done) · [`smoke`](/zh/cli/smoke)
 - [变更管理](/zh/specs/change-management) · [PreToolUse Guard](/zh/specs/pretooluse-guard)
 - [deployment-designer](/zh/skills/deployment-designer) · [deployment-executor](/zh/skills/deployment-executor)
+
+## 多模块项目的环境归属
+
+`deployment_gates.<module>.environments` 声明模块拥有的登记环境。Smoke 可定位目标模块并应用 `smoke.modules.<id>` 覆盖，独立模块命令使用带模块前缀的 smoke 规格。版本上下文 smoke 关联其部署身份，其他提案的阶段标记不受影响。

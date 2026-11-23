@@ -103,3 +103,7 @@ openlogos slice plan --file slices.json
 - [测试切片清单](/zh/specs/test-slice-manifest)：manifest、checkpoint 与恢复
 - 上一步：[`merge-executor`](/zh/skills/merge-executor) / [`openlogos merge`](/zh/cli/merge)
 - 下一步：[`code-implementor`](/zh/skills/code-implementor)：逐片实现切片
+
+## 基于已合并测试编号规划
+
+规格合并后将真实测试编号、选择器和规格路径交给 `openlogos slice plan --file <path>`。清单记录冻结的验收范围。无法独立通过 checkpoint 的能力保留在同一个端到端切片。

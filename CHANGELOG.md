@@ -7,9 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.21] - 2026-11-22
+
+自 0.16.7 以来的首个公开版本，同步发布 npm、GitHub Release 与官网文档。
+
+### Added
+
+- 企业知识库支持原文、条目、规则和场景引用。用 `openlogos knowledge apply` 批量校验和录入，任一候选不合规即整批拒绝。用 `list`、`show`、`refs`、`index`、`check` 查询、定位引用、生成索引及检查知识库；标签表记录标签与别名。
+- 验收与冒烟逐次留存。用 `openlogos history list` 按提案、类型、结论和模块筛选，再用 `openlogos history show <run_id>` 定位本轮结果和报告，归档后仍可查询。通过 `verify.history.raw_in_proposal: false` 将提案历史中的报告快照与自由文本留在本机。
+- `openlogos branch status` 显示主分支及其来源、共同起点和领先/落后数；`openlogos branch sync` 同步已解析的本地主分支引用并处理生成文件冲突，两者均支持 `--base` 和 JSON。
+- 官网中英文文档补齐企业知识、验收历史、分支同步与本次新增的配置和工作流。
+
+### Changed
+
+- 多模块项目可通过 `modules[].paths` 让 verify 聚焦受影响模块，`--all` 强制全量。guard 按文件归属模块的生命周期判定，SessionStart 显示混合生命周期项目的模块提示。
+- 项目可为各模块声明部署环境，并用 `smoke.modules.<id>.command` 独立运行冒烟。多模块项目的 initial 模块按模块生成验收、部署与冒烟报告，用于自身进度判定。
+- 多切片提案可冻结为 `baseline` 或 `owned` checkpoint 范围。后者聚焦当前及已通过切片的用例，最终 verify 仍全量回归。
+- 共用验收与冒烟报告在最终门禁裁决后写出。并发运行共享结果路径时，后到者以 `RESULT_PATH_BUSY` 拒绝，避免互相截断。
+
+### Fixed
+
+- 管道或 socket 上的 CLI 输出在退出前排空，避免 JSON 信封被截断；部署与 watch 保留运行期超时和信号处理。
+- guard 可回收已经结束或已超期的后台执行记录。merge 合并基线通过独占临时文件入库，修复偶发长时间阻塞。
+- SessionStart API 阶段按模块进度检查看齐领域文件，避免误报逐场景 API 缺失。
+
+### 从 0.16.7 升级
+
+- 升级全局包后，在各项目根目录执行 `openlogos sync`，刷新托管 guard、SessionStart 模板、规范副本和 Skill。
+- 多模块项目按需设置 `modules[].paths`、`deployment_gates.<module>.environments` 与 `smoke.modules.<id>.command`。各模块的 smoke 规格使用模块前缀；旧活跃提案没有 `baseRef` 时 verify 回落全量。initial 模块如需新的进度证据，应重跑对应验收、部署及冒烟。
+- 中央历史索引在 `logos/resources/verify/history/`。随项目提交，若被忽略规则覆盖，可按输出路径用 `git add -f` 纳入；旧记录不会回填。提案历史默认包含完整结果与报告；如需限制未来共享的自由文本，在运行前设置 `verify.history.raw_in_proposal: false`，并审查仍按既有路径写出的最近结果与共用报告。
+- 已有知识条目可在首次录入或执行 `openlogos knowledge apply --init-tags` 时初始化标签表。知识的资料与规则变动仍须按条目引用和退役约定处理。
+
 ## [0.16.20] - 2026-11-22
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.21。
 
 ### Added
 
@@ -29,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.19] - 2026-11-22
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.21。
 
 ### Fixed
 
@@ -41,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.18] - 2026-11-21
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.21。
 
 ### Added
 
@@ -60,7 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.17] - 2026-11-21
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.21。
 
 ### Added
 
@@ -76,7 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.16] - 2026-11-17
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.21。
 
 ### Added
 
@@ -93,7 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.15] - 2026-11-13
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.21。
 
 ### Fixed
 
@@ -108,7 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.14] - 2026-11-12
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.21。
 
 ### Added
 
@@ -130,7 +161,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.13] - 2026-10-31
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.21。
 
 ### Fixed
 
@@ -148,7 +179,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.12] - 2026-10-25
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.21。
 
 ### Fixed
 
@@ -172,7 +203,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.11] - 2026-10-20
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.21。
 
 ### Changed
 
@@ -188,7 +219,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.10] - 2026-10-19
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.21。
 
 ### Added
 
@@ -212,7 +243,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.9] - 2026-10-19
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.21。
 
 ### Changed
 
@@ -234,7 +265,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.16.8] - 2026-10-18
 
-本机全局发布（未发布到 npm）。
+本机全局发布（未发布到 npm），内容并入 0.16.21。
 
 ### Added
 
