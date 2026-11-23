@@ -6,12 +6,12 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 2702 |
+| Defined cases | 2706 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 2702 |
-| Passed | 2699 |
+| Executed cases | 2706 |
+| Passed | 2702 |
 | Failed | 0 |
-| Skipped | 3 |
+| Skipped | 4 |
 | Uncovered | 0 |
 | Coverage | 100% |
 | Pass rate | 100% |
@@ -20,6 +20,7 @@
 ## Skipped Cases
 
 - ST-S13-26
+- ST-S19-37
 - ST-S19-35
 - ST-S19-36
 

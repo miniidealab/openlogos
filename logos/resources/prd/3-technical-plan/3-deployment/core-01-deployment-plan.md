@@ -6159,3 +6159,27 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 在双 CI 成功的同一提交创建并推送 annotated tag。确认官方 npm 目标版本、可下载 tarball 和来源证明，GitHub Release 附件同源。官网中英文升级说明提供指定官方源的命令与 Windows 升级脚本，脚本属于同一提交。官网生成数据因 registry 传播过早读到旧版时沿用档 C，等待正式制品可取后补做站点。npmmirror 滞后时调用其现有同步通道并分别复核 `latest` 和 tarball URI，发布说明明确实际可用的来源。
 
 将部署证据、官网发布数据和 Windows 验收状态写入仓库，依据实际 prod ref 落部署标记。公网 smoke 按现行门禁运行。公开回滚保留已发 tag，回退目标为 0.16.21 和上一生产站点。
+
+## 公开 tag 发布的 Windows 公网升级就绪门
+
+### 适用范围与任务顺序
+
+本节适用于 `.github/workflows/publish.yml` 处理的每次公开版本 tag。沿用生产发布前的候选制品验证。从本次 tag 提取目标版本 V，版本校验继续绑定 tag、候选制品与发布提交。tag 发布的顺序为官方 npm 发布、真实 Windows 双源就绪检查、公开 GitHub Release 与部署新版官网。公开 Release 和官网部署都以同一 tag、同一发布提交的双源检查成功为前置。任一来源失败、取消、跳过或缺失结果时，公开分发保持待就绪。官网继续校验生成的最新版本等于 V。
+
+官方 npm `latest` 在发布成功后可能先对外可见。此时版本处于公开分发待就绪，官方源和镜像均通过 Windows 验收后才可宣告就绪。
+
+### 真实 Windows 双源检查
+
+1. 分别在真实 Windows 上校验 npm 官方源 `https://registry.npmjs.org/` 和 npmmirror `https://registry.npmmirror.com/`，各用独立临时前缀和 npm 缓存。先从官方源安装 `@miniidealab/openlogos@0.16.7` 并核对该前缀的旧入口版本。
+2. 对各自来源执行 `npm install -g @miniidealab/openlogos@latest`，显式指定本臂的 registry、包作用域 registry 和原安装前缀，优先获取在线数据。registry 查到 `latest=V` 只表明可以尝试升级。就绪由实际安装与 CMD 输出裁决。
+3. npm 升级返回 0 后读取安装包的名称及版本。在隔离工作目录和临时前缀优先的进程级 PATH 下启动新 CMD，核对命中的入口按 Windows 路径解析后与该前缀内 npm 安装的 `openlogos.cmd` 为同一文件，并运行裸 `openlogos --version`。实际安装的包必须为 `@miniidealab/openlogos`，包版本和 CMD 输出必须均为 V，CMD 检查的退出码必须为 0。检查过程只调整验收进程的 PATH，结束后清理临时前缀和缓存。
+4. 每源使用自验证任务开始起最多 15 分钟的总预算进行准备、等待和验证，单次查询、安装和 CMD 调用均受剩余预算约束。镜像返回旧版或暂时不可达时等待同步并在预算内重试。重试一次升级时重新核对该次前缀的旧版起点。截止仍未得到 V 的实际安装和 CMD 证据，或入口断言失败时，该来源失败。日志至少包含 tag、提交、来源、升级前版本、最后观测的 `latest`、实际包版本、CMD 入口及版本和失败阶段中的可得项。
+
+### 制品交接和恢复
+
+将打好的 tarball、对应 tag 的发布说明及制品校验值在 npm 发布前留存供后续任务使用。公开 Release 附件使用同一份 tarball，官网以同一 tag 构建。同步失败后重试 Windows 验证及未完成的分发任务，复用已成功发布的版本与同源制品。沿用档 C 补做公开分发时，同样核对同一 tag 和提交的双源 Windows 成功证据，缺少证据先补跑就绪检查。重试分发时，已公开的同 tag Release 及附件先核对身份和字节，再继续未完成的官网部署。制品身份不符或已发布结果不确定时保持待就绪，按既有 registry 与来源证明核验流程处置。
+
+### 追溯
+
+- 提案 `windows-latest-release-gate` C01、C02。沿用 S19 的 Windows 候选包回归及当前发布来源核验。
+- UT-S19-110～UT-S19-112、ST-S19-37。

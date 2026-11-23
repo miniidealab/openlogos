@@ -7,18 +7,22 @@ on:
 
 jobs:
   publish:
-    name: Build, Publish, and Sync Website Releases
+    name: Build and publish npm package
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: cli
     permissions:
-      contents: write
+      contents: read
       id-token: write
       actions: read
+    outputs:
+      release-bundle-id: ${{ steps.release-bundle.outputs.artifact-id }}
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
       - uses: actions/setup-node@v7
         with:
@@ -77,25 +81,65 @@ jobs:
       - name: Pack CLI
         run: rm -f miniidealab-openlogos-*.tgz && npm pack
 
+      - name: Freeze release bundle
+        working-directory: .
+        run: node scripts/release-publish-bundle.mjs freeze release-bundle
+
+      - name: Keep release bundle for distribution retries
+        id: release-bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-bundle-${{ github.run_attempt }}
+          path: release-bundle/
+          if-no-files-found: error
+
       - name: Publish
-        run: npm publish miniidealab-openlogos-*.tgz --provenance --access public
+        run: npm publish ../release-bundle/miniidealab-openlogos-*.tgz --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Create GitHub Release
-        working-directory: .
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "${GITHUB_REF_NAME}" \
-            --notes-file release-notes.md \
-            --latest \
-            cli/miniidealab-openlogos-*.tgz
+  windows-latest:
+    name: Windows latest readiness (${{ matrix.source }})
+    needs: publish
+    runs-on: windows-latest
+    timeout-minutes: 18
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [official, npmmirror]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
-      - name: Prepare website environment
-        working-directory: website
-        run: npm ci
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Upgrade on Windows from the public registry
+        env:
+          RELEASE_SOURCE: ${{ matrix.source }}
+        run: node scripts/windows-latest-release-gate.mjs --tag $env:GITHUB_REF_NAME --commit $env:GITHUB_SHA --source $env:RELEASE_SOURCE
+
+  distribute:
+    name: Publish GitHub Release and website
+    needs: [publish, windows-latest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.publish.outputs.release-bundle-id }}
+          merge-multiple: true
+          path: release-bundle
 
       - name: Setup Node.js for website build
         uses: actions/setup-node@v7
@@ -103,6 +147,15 @@ jobs:
           node-version: 22.12.0
           cache: npm
           cache-dependency-path: website/package-lock.json
+
+      - name: Create or verify GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-publish-bundle.mjs distribute release-bundle
+
+      - name: Prepare website environment
+        working-directory: website
+        run: npm ci
 
       - name: Generate release data (strict)
         working-directory: website
