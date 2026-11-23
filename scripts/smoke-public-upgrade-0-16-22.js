@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 import { checked, execute, requireExit } from './lib/public-release-1621-install.mjs';
 import { provenanceSourceProblems } from './lib/public-release-checks.mjs';
 import { recordSmokeNotApplicable, smokeResultPath } from './lib/smoke-not-applicable.mjs';
@@ -97,7 +98,7 @@ function checkWindows({ version, commit }) {
   const { jobs } = JSON.parse(command('gh', [...args, '--json', 'jobs']));
   const job = jobs.find(candidate => candidate.name === 'Windows regression' && candidate.conclusion === 'success');
   checked(job, '该次 CI 缺少成功的 Windows 回归');
-  const log = command('gh', [...args, '--job', String(job.databaseId), '--log']);
+  const log = stripVTControlCharacters(command('gh', [...args, '--job', String(job.databaseId), '--log']));
   const evidence = [
     'Windows upgrade ST-S19-35: CMD ' + version + ' | ',
     'Windows upgrade ST-S19-36: CMD ' + version + ', machine and current directory shadows reported | ',

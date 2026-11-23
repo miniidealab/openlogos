@@ -39,7 +39,12 @@ describe.skipIf(process.platform !== 'win32')('真实 Windows 升级', () => {
   beforeAll(() => {
     temporary = mkdtempSync(join(tmpdir(), 'openlogos-windows-upgrade-'));
     const checkout = join(temporary, 'candidate');
-    execFileSync('git', ['clone', '--quiet', '--no-local', resolve('..'), checkout], { timeout: 90_000 });
+    execFileSync('git', ['clone', '--quiet', '--no-local', '--sparse', '--config', 'core.longpaths=true',
+      resolve('..'), checkout], { timeout: 90_000 });
+    // 只检出 npm prepack 的输入，避免历史归档的长路径进入 Windows 夹具。
+    execFileSync('git', ['sparse-checkout', 'set', 'cli', 'skills', 'spec', 'plugin', 'plugin-codex',
+      'plugin-opencode', 'plugin-cursor', 'plugin-qoder', 'plugin-workbuddy', 'plugin-zcode'],
+    { cwd: checkout, timeout: 90_000 });
     const cli = join(checkout, 'cli');
     cmd(['npm', 'ci', '--no-audit', '--no-fund'], cli);
     cmd(['npm', 'pack', '--json'], cli);
