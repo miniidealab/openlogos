@@ -135,8 +135,10 @@ function fixture(o: FixtureOpts = {}): Fixture {
   put(root, `logos/changes/${slug}/PLAN_APPROVED`, '{}');
   if (o.git) {
     git(root, ['init', '-q', '-b', 'main']);
+    git(root, ['config', '--local', 'user.email', 't@e']);
+    git(root, ['config', '--local', 'user.name', 't']);
     git(root, ['add', '-A']);
-    git(root, ['-c', 'user.email=t@e', '-c', 'user.name=t', 'commit', '-qm', 'base']);
+    git(root, ['commit', '-qm', 'base']);
   }
   return { root, slug, dir };
 }
@@ -764,15 +766,15 @@ describe('S45 企业知识 — 场景测试（ST）', () => {
     git(f.root, ['checkout', '-qb', 'proposal-a']);
     put(f.root, K01_REFUND, entry('K01', '退款'));
     git(f.root, ['add', '-A']);
-    git(f.root, ['-c', 'user.email=t@e', '-c', 'user.name=t', 'commit', '-qm', 'A: K01 refund']);
+    git(f.root, ['commit', '-qm', 'A: K01 refund']);
     git(f.root, ['checkout', '-q', 'main']);
     git(f.root, ['merge', '-q', '--no-ff', '-m', 'merge A', 'proposal-a']);
     // 分支 B（本提案）从旧起点分出、新增 K01-customer-id，再同步主线
     git(f.root, ['checkout', '-qb', 'proposal-b', 'HEAD~1']);
     writeDeltas(f, knowledgeDelta('core-K01-customer-id.md', entry('K01', '客户编号')));
     git(f.root, ['add', '-A']);
-    git(f.root, ['-c', 'user.email=t@e', '-c', 'user.name=t', 'commit', '-qm', 'B: K01 customer id']);
-    git(f.root, ['-c', 'user.email=t@e', '-c', 'user.name=t', 'merge', '-q', '-m', 'sync main', 'main']);
+    git(f.root, ['commit', '-qm', 'B: K01 customer id']);
+    git(f.root, ['merge', '-q', '-m', 'sync main', 'main']);
     expect(existsSync(join(f.root, ...K01_REFUND.split('/')))).toBe(true);
 
     const r = lintJson(f.root);
@@ -985,12 +987,12 @@ describe('S45 企业知识 — 退役保护场景（ST）', () => {
     put(f.root, K01_REFUND, k01Retired);
     put(f.root, `${KDIR}/core-${nextId}-customer-id.md`, entry(nextId, '客户编号'));
     git(f.root, ['add', '-A']);
-    git(f.root, ['-c', 'user.email=t@e', '-c', 'user.name=t', 'commit', '-qm', 'A: retire K01, add K02']);
+    git(f.root, ['commit', '-qm', 'A: retire K01, add K02']);
     git(f.root, ['checkout', '-q', 'main']);
     git(f.root, ['merge', '-q', '--no-ff', '-m', 'merge A', 'proposal-a']);
     // 分支 B（本提案）基于旧版本新增引用 K01 的退款场景，再同步主线
     git(f.root, ['checkout', '-qb', 'proposal-b', 'HEAD~1']);
-    git(f.root, ['-c', 'user.email=t@e', '-c', 'user.name=t', 'merge', '-q', '-m', 'sync main', 'main']);
+    git(f.root, ['merge', '-q', '-m', 'sync main', 'main']);
     const r = lintJson(f.root);
     expect(r.status).toBe(0);
     expect(knowledgeViolations(r.data)).toEqual([]);

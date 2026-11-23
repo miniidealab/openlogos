@@ -363,6 +363,34 @@ describe.skipIf(!POSIX)('S16 EX-2.8 — 消费方暂停读取时运行期区间�
   }, TIMEOUT);
 
   it('UT-S16-53: watch 暂缓读取时 SIGINT 仍及时退出', async () => {
+    // 首帧完全被消费后，轮询也必须持续到下一次真实状态变化。
+    const small = makeTempRoot();
+    cleanups.push(small.cleanup);
+    scaffoldProject(small.root, { locale: 'en' });
+    const registry = join(small.root, 'logos/logos-project.yaml');
+    const core = { id: 'core', name: 'Core', lifecycle: 'launched' };
+    writeFileSync(registry, stringifyYaml({ modules: [core] }));
+    const polling = start([CLI, 'watch', '--format', 'json', '--interval', '1'], small.root);
+    let stdout = '';
+    polling.stdout!.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
+    const pollExit = exited(polling);
+    try {
+      await waitFor(() => stdout.includes('\n'), 10_000, 'watch 小快照已读取');
+      writeFileSync(registry, stringifyYaml({ modules: [core, { id: 'another', name: 'Another', lifecycle: 'launched' }] }));
+      await waitFor(() => stdout.split('\n').length > 2 || polling.exitCode !== null, 10_000, 'watch 继续输出变更');
+      expect(polling.exitCode).toBeNull();
+      const [snapshot, change] = stdout.split('\n').slice(0, 2).map(line => JSON.parse(line).data);
+      expect(snapshot).toMatchObject({ seq: 0, event: 'snapshot' });
+      expect(change).toMatchObject({ seq: 1, event: 'change' });
+      expect(change.status.modules).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'another' })]));
+      polling.kill('SIGINT');
+      expect(await within(pollExit, 10_000, 'SIGINT 后停止轮询')).toEqual({ code: 0, signal: null });
+    } finally {
+      if (polling.exitCode === null && polling.signalCode === null) polling.kill('SIGKILL');
+      polling.stdout!.destroy();
+      polling.stderr!.destroy();
+    }
+
     const { root, cleanup } = makeTempRoot();
     cleanups.push(cleanup);
     scaffoldProject(root, { locale: 'en' });
@@ -372,20 +400,23 @@ describe.skipIf(!POSIX)('S16 EX-2.8 — 消费方暂停读取时运行期区间�
     }));
     const trace = join(tempDir('s16-watch-'), 'trace.log');
     const child = start([CLI, 'watch', '--format', 'json', '--interval', '60'], root, { OPENLOGOS_STDIO_TRACE: trace });
-    // 就绪 = 已进入常驻异步区间、初始快照（> 65536 字节）已写出并积压在未读取的管道里、SIGINT 处理已注册。
-    // 以 watch-ready 观测点判定，不以固定等待猜测（全量负载下 400 模块的初始快照派生可能耗时数秒）。
-    await waitFor(() => readTrace(trace).some(e => e.event === 'watch-ready'), 60_000, 'watch 常驻区间就绪');
-    const events = readTrace(trace);
-    const asyncIdx = events.findIndex(e => e.event === 'async');
-    expect(asyncIdx).toBeGreaterThanOrEqual(0);
-    expect(asyncIdx).toBeLessThan(events.findIndex(e => e.event === 'watch-ready'));
-    expect(events.slice(asyncIdx).some(e => e.event === 'blocking'), '常驻期未恢复阻塞').toBe(false);
-    expect(child.exitCode).toBeNull();
-    child.kill('SIGINT');
-    const result = await within(exited(child), 10_000, 'SIGINT 后 watch 退出');
-    expect(result).toEqual({ code: 0, signal: null });
-    child.stdout!.destroy();
-    child.stderr!.destroy();
+    const childExit = exited(child);
+    try {
+      // 使用 watch-ready 确认初始快照已写出、SIGINT 已注册。父进程暂不消费大快照。
+      await waitFor(() => readTrace(trace).some(e => e.event === 'watch-ready'), 60_000, 'watch 常驻区间就绪');
+      const events = readTrace(trace);
+      const asyncIdx = events.findIndex(e => e.event === 'async');
+      expect(asyncIdx).toBeGreaterThanOrEqual(0);
+      expect(asyncIdx).toBeLessThan(events.findIndex(e => e.event === 'watch-ready'));
+      expect(events.slice(asyncIdx).some(e => e.event === 'blocking'), '常驻期未恢复阻塞').toBe(false);
+      expect(child.exitCode).toBeNull();
+      child.kill('SIGINT');
+      expect(await within(childExit, 10_000, 'SIGINT 后 watch 退出')).toEqual({ code: 0, signal: null });
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      child.stdout!.destroy();
+      child.stderr!.destroy();
+    }
   }, TIMEOUT);
 
   it('UT-S16-55: ci 模式 script provider 嵌套区间下外层观察超时仍推进', async () => {

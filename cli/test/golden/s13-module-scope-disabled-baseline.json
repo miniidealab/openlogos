@@ -55,7 +55,7 @@
               "stderr_tail": "",
               "sandbox": {
                 "mode": "off",
-                "root": "/private/tmp",
+                "root": "<SANDBOX_ROOT>",
                 "isolated": false,
                 "workspace_write_denied": true,
                 "status": "skipped",
@@ -85,7 +85,7 @@
         },
         "sandbox": {
           "mode": "off",
-          "root": "/private/tmp",
+          "root": "<SANDBOX_ROOT>",
           "isolated": false,
           "workspace_write_denied": true,
           "status": "skipped",
@@ -173,7 +173,7 @@
               "stderr_tail": "",
               "sandbox": {
                 "mode": "off",
-                "root": "/private/tmp",
+                "root": "<SANDBOX_ROOT>",
                 "isolated": false,
                 "workspace_write_denied": true,
                 "status": "skipped",
@@ -203,7 +203,7 @@
         },
         "sandbox": {
           "mode": "off",
-          "root": "/private/tmp",
+          "root": "<SANDBOX_ROOT>",
           "isolated": false,
           "workspace_write_denied": true,
           "status": "skipped",
@@ -291,7 +291,7 @@
               "stderr_tail": "",
               "sandbox": {
                 "mode": "off",
-                "root": "/private/tmp",
+                "root": "<SANDBOX_ROOT>",
                 "isolated": false,
                 "workspace_write_denied": true,
                 "status": "skipped",
@@ -321,7 +321,7 @@
         },
         "sandbox": {
           "mode": "off",
-          "root": "/private/tmp",
+          "root": "<SANDBOX_ROOT>",
           "isolated": false,
           "workspace_write_denied": true,
           "status": "skipped",
@@ -404,7 +404,7 @@
               "stderr_tail": "",
               "sandbox": {
                 "mode": "off",
-                "root": "/private/tmp",
+                "root": "<SANDBOX_ROOT>",
                 "isolated": false,
                 "workspace_write_denied": true,
                 "status": "skipped",
@@ -434,7 +434,7 @@
         },
         "sandbox": {
           "mode": "off",
-          "root": "/private/tmp",
+          "root": "<SANDBOX_ROOT>",
           "isolated": false,
           "workspace_write_denied": true,
           "status": "skipped",

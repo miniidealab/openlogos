@@ -148,11 +148,10 @@ export function watch(format: OutputFormat = 'text', moduleId?: string, interval
     return;
   }
 
+  // 首帧写完后，轮询仍需保持进程存活，直到 stop 或 SIGINT 清理定时器。
   const timer = setInterval(() => {
     tickOrFail(timer);
   }, intervalMs);
-  // 让定时器不阻止进程在其它退出路径下结束（CLI 常驻由事件循环保持）
-  if (typeof timer.unref === 'function') timer.unref();
 
   const stop = () => {
     clearInterval(timer);

@@ -10,6 +10,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { stringify as stringifyYaml } from 'yaml';
+import { normalizeDefaultSandboxRoot } from './golden/normalize-default-sandbox-root.mjs';
 
 export const CLI_DIST = resolve(dirname(fileURLToPath(import.meta.url)), '../dist/index.js');
 export const MES_BASELINE_FILE = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/s19-module-env-baseline.json');
@@ -187,7 +188,7 @@ export function normalizeOutput(text: string, root: string): string {
   out = out
     .replace(/,"history":\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}/g, '')
     .split('\n').filter(line => !/^(?:🗂 {2}(?:验收历史|Verification history)|⚠️ {2}(?:验收历史写入失败|Failed to write verification history))/.test(line)).join('\n');
-  return out
+  return normalizeDefaultSandboxRoot(out)
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, '<TS>')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<UUID>')
     .replace(/\b[0-9a-f]{64}\b/g, '<HASH>')

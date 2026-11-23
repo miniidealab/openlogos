@@ -19,6 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { normalizeDefaultSandboxRoot } from './normalize-default-sandbox-root.mjs';
 
 export const GIT_ENV = {
   GIT_AUTHOR_NAME: 'msv', GIT_AUTHOR_EMAIL: 'msv@example.invalid',
@@ -176,7 +177,7 @@ export function normalizer(root) {
     out = out.replace(/on \d{4}-\d{2}-\d{2}/g, 'on <DATE>');
     out = out.replace(/\b[0-9a-f]{40}\b/g, '<COMMIT>');
     out = out.replace(/"(duration_ms|elapsed_ms|durationMs)":\s*\d+/g, '"$1":"<N>"');
-    return out;
+    return normalizeDefaultSandboxRoot(out);
   };
 }
 
