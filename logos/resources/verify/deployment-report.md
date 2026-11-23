@@ -1800,3 +1800,15 @@ public_release_old: 0.9.8
 - 档 C 官网补做成功。从同一 tag 干净检出，依次执行 `npm ci`、`npm run generate:releases -- --strict`、`npm run build`，核对 `latestVersion=0.16.21` 后执行 `wrangler pages deploy dist --project-name openlogos --branch master`。Cloudflare Production 部署为 `45cd4ca7-16b1-4273-bde8-412bd7ea44f8`，来源 `5263ff2`。中英文发布页均返回 200、显示 `v0.16.21` 并链接对应 Release。仓库的官网发布数据已从 registry 重新生成，共 87 个版本。[生产部署](https://45cd4ca7.openlogos.pages.dev)
 - 本机全局已从 registry 切换到 `0.16.21`。新 shell 的入口为 `/opt/homebrew/bin/openlogos`，解析至 npm 全局安装包。937 个文件与 registry 原包逐一比对相同，包内资产清单自洽，随包 guard 与本仓托管副本同源。部署目标为 `prod`，`test` 使用原部署 `307579db16705ee8cbd667c994872c336d9a1ee0`。
 - 本机证据目录为 `/tmp/openlogos-deploy-01621-final.errsn6`。正式公网 smoke 在本次部署落标后由后续节点执行。
+
+
+# 部署报告：fix-public-upgrade-0-16-22 / OpenLogos 0.16.22 生产发布（档 C 完成）
+public_release_version: 0.16.22
+public_release_commit: bca7fa49f12a69c2d3c1c3b19b1bfb7c7103bcd6
+
+- 生产目标为 prod，发布 ref 为 `v0.16.22`。发布前 npm 指针为 `latest=0.16.21`、`old=0.9.8`。上一生产站点部署为 `45cd4ca7-16b1-4273-bde8-412bd7ea44f8`。官方 0.16.21 回滚包 SHA-256 为 `356cc90f5965154e102eebe36162ea9ecbfb1ebdf3f674ab4427769612cb8410`。
+- 本机 `verify` 通过，2,699 项通过、0 失败、0 未覆盖，运行 ID 为 `20261123T083624584Z-verify-613ab6`。独立 Windows 主机运行 5 项全部通过，覆盖真实 npm 原地升级、中文入口、8.3 路径、用户 Path 可修复分支和系统或当前目录遮蔽。真实用户及机器 Path 保留原值。
+- 同一提交的非 root Linux 干净克隆通过 CLI 测试、构建、lint、类型检查及打包，3,187 项通过。中英文站点及下载脚本构建通过。[GitHub Linux 与 Windows CI](https://github.com/miniidealab/openlogos/actions/runs/45140927703) 均成功，Windows 共 59 项通过。核对了发布凭据的存在性。
+- [发版工作流](https://github.com/miniidealab/openlogos/actions/runs/45142818654) 的测试、npm 上传和 GitHub Release 步骤成功。官网版本校验读取到传播中的 `0.16.21`，停止站点部署。待官方 registry 提供 `0.16.22` 后，核验 tag、来源证明和 tarball，按档 C 仅补做官网。
+- npm 官方 `latest` 为 `0.16.22`，官方 tarball 和 GitHub Release 附件字节一致，SHA-256 为 `8d52db506326bacede726fb338ecdf57a7a795bf99e8d15f032368c19f86dde1`。npmmirror 的 `latest` 同步到 `0.16.22`，镜像 tarball 下载后 SHA-256 相同。[镜像 tarball](https://registry.npmmirror.com/@miniidealab/openlogos/-/openlogos-0.16.22.tgz)
+- 从同一 tag 干净检出，严格生成最新版本数据并完成官网构建。Cloudflare Pages 生产部署为 `6ece0062-41a5-4e37-a13a-739b4cd606c5`，来源为 `bca7fa4`。中英文快速开始与发布页均核验通过。官网升级脚本的 SHA-256 为 `c9dbe5a8fa837fa4ec6d3205fc858f07c76143563469519adae2fce5a0c8379d`，与 tag 原始字节相同。[生产部署](https://6ece0062.openlogos.pages.dev)

@@ -1,17 +1,57 @@
 {
   "packageName": "@miniidealab/openlogos",
-  "latestVersion": "0.16.21",
-  "updatedAt": "2026-11-23T05:13:04.454Z",
-  "generatedAt": "2026-11-23T05:13:04.454Z",
-  "versionCount": 87,
+  "latestVersion": "0.16.22",
+  "updatedAt": "2026-11-23T09:18:59.823Z",
+  "generatedAt": "2026-11-23T09:18:59.823Z",
+  "versionCount": 88,
   "distTags": {
     "old": "0.9.8",
-    "latest": "0.16.21"
+    "latest": "0.16.22"
   },
   "sourceUrl": "https://registry.npmjs.org/%40miniidealab%2Fopenlogos",
   "npmPackageUrl": "https://www.npmjs.com/package/@miniidealab/openlogos",
   "changelogUrl": "https://github.com/miniidealab/openlogos/blob/master/CHANGELOG.md",
   "versions": [
+    {
+      "version": "0.16.22",
+      "publishedAt": "2026-11-23T09:18:59.466Z",
+      "npmUrl": "https://www.npmjs.com/package/@miniidealab/openlogos/v/0.16.22",
+      "githubReleaseUrl": "https://github.com/miniidealab/openlogos/releases/tag/v0.16.22",
+      "tarballUrl": "https://registry.npmjs.org/@miniidealab/openlogos/-/openlogos-0.16.22.tgz",
+      "gitHead": null,
+      "size": 3257091,
+      "sizeLabel": "3.1 MB",
+      "unpackedSize": 12610130,
+      "unpackedSizeLabel": "12 MB",
+      "fileCount": 937,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "dependencies": {
+        "yaml": "^2.8.3",
+        "pg-query-emscripten": "5.1.0",
+        "@hyperjump/json-schema": "1.17.7"
+      },
+      "distTags": [
+        "latest"
+      ],
+      "valueSummary": [],
+      "fixSummary": [
+        "官网提供 Windows 升级入口，从 npm 官方源安装指定版本并验证新 CMD 实际调用的 OpenLogos。当前用户 Path 存在旧入口遮蔽时，升级入口可调整优先级。遇到系统级或当前目录遮蔽时报告实际命中的路径。",
+        "官网与 README 的升级命令明确指定 npm 官方源。镜像可用性按目标版本和 tarball 单独验证。",
+        "Windows 发布验证覆盖从 0.16.7 原地升级，以及旧入口仍在 Path 前方时的行为。"
+      ],
+      "valueSummaryEn": [
+        "Use the Windows upgrade script to install the specified OpenLogos release from the official npm registry."
+      ],
+      "fixSummaryEn": [
+        "The script verifies which executable CMD resolves, repairs user-level Path ordering when possible, and reports shadowing that requires a separate fix.",
+        "Windows release tests now cover an in-place upgrade from 0.16.7 and competing command entries."
+      ],
+      "summarySource": "fallback",
+      "summaryFallbackReason": "v0.16.22: Chinese value summary entries are missing."
+    },
     {
       "version": "0.16.21",
       "publishedAt": "2026-11-23T05:13:04.056Z",
@@ -33,9 +73,7 @@
         "pg-query-emscripten": "5.1.0",
         "@hyperjump/json-schema": "1.17.7"
       },
-      "distTags": [
-        "latest"
-      ],
+      "distTags": [],
       "valueSummary": [
         "企业知识库支持原文、条目、规则和场景引用。用 openlogos knowledge apply 批量校验和录入，任一候选不合规即整批拒绝。用 list、show、refs、index、check 查询、定位引用、生成索引及检查知识库；标签表记录标签与别名。",
         "验收与冒烟逐次留存。用 openlogos history list 按提案、类型、结论和模块筛选，再用 openlogos history show <run_id> 定位本轮结果和报告，归档后仍可查询。通过 verify.history.raw_in_proposal: false 将提案历史中的报告快照与自由文本留在本机。",
