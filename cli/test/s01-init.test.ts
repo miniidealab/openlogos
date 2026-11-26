@@ -1309,7 +1309,8 @@ describe('S01 Scenario Tests — init command', () => {
     expect(parsed.systemMessage).toContain('NO active change proposal');
   });
 
-  it('ST-S01-11: init with all includes codex assets and keeps shared logos skills for compatibility', async () => {
+  // 重型端到端用例（多宿主完整部署 / 大量真实子进程）：单独运行约 1 秒，全量并发负载下会超过默认 10 秒，显式放宽超时（不改断言）。
+  it('ST-S01-11: init with all includes codex assets and keeps shared logos skills for compatibility', { timeout: 60_000 }, async () => {
     await init('all-project', { locale: 'en', aiTool: 'all' });
 
     expect(existsSync(join(root, '.agents', 'plugins', 'openlogos', 'skills', 'prd-writer', 'SKILL.md'))).toBe(true);
@@ -1388,7 +1389,8 @@ describe('S01 Scenario Tests — init command', () => {
     expect(claude.match(/OPENLOGOS:BEGIN/g)).toHaveLength(1);
   });
 
-  it('ST-S01-13: existing project can add all targets and writes stable aiTool array', async () => {
+  // 重型端到端用例（多宿主完整部署 / 大量真实子进程）：单独运行约 1 秒，全量并发负载下会超过默认 10 秒，显式放宽超时（不改断言）。
+  it('ST-S01-13: existing project can add all targets and writes stable aiTool array', { timeout: 60_000 }, async () => {
     scaffoldProject(root, { locale: 'en' });
     const configPath = join(root, 'logos', 'logos.config.json');
     const config = JSON.parse(readFileSync(configPath, 'utf-8'));

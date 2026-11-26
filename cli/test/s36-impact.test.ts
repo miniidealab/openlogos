@@ -507,7 +507,8 @@ describe('S36 impact — CLI 端到端（ST）', () => {
     }
   });
 
-  it('ST-S36-03: --stdin 端到端（非 git 目录）— 与 git 模式逐字段一致、全程未调用 git', () => {
+  // 重型端到端用例（真实 CLI 子进程 + 归档夹具）：单独运行约 2 秒，全量并发负载下会超过默认超时，显式放宽超时（不改断言）。
+  it('ST-S36-03: --stdin 端到端（非 git 目录）— 与 git 模式逐字段一致、全程未调用 git', { timeout: 60_000 }, () => {
     const root = makeTmpDir('st03-repo');
     const { c1, c2 } = buildArchiveFixture(root);
     const gitResult = spawnCli(root, ['impact', '--base', c1, '--head', c2, '--format', 'json']);

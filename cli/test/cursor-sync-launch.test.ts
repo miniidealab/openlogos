@@ -160,7 +160,8 @@ describe('Cursor sync/launch — S08 幂等同步迁移 / S14 launched 刷新', 
     expect(after).toBe(before);
   });
 
-  it('UT-S08-58: 其余宿主计划与输出结构不受 cursor 刷新影响', async () => {
+  // 重型端到端用例（多宿主完整部署 / 大量真实子进程）：单独运行约 1 秒，全量并发负载下会超过默认 10 秒，显式放宽超时（不改断言）。
+  it('UT-S08-58: 其余宿主计划与输出结构不受 cursor 刷新影响', { timeout: 60_000 }, async () => {
     await init('demo', { locale: 'en', aiTool: 'all' });
     const claude = treeSnapshot(join(root, '.claude'));
     const codex = treeSnapshot(join(root, '.agents'));

@@ -777,3 +777,116 @@ sequenceDiagram
 
 - 需求：Claude guard hook 项目根定位与 sync 补齐需求「sync 资产面要求」。
 - 测试：UT-S08-59～60、ST-S08-37。
+
+## S08 sync 按封闭表迁移 Claude hook 时序
+
+> 来源变更：fix-claude-hook-windows-powershell-fallback（决策 C01、C03、C04、C05）。规则权威见功能规格 §2.105.2、§2.105.4、§2.105.5。
+
+### 场景目标
+
+存量项目升级 CLI 后执行一次 `openlogos sync`：把 settings.json 中旧形态的事后检查托管条目（`node "$CLAUDE_PROJECT_DIR/…/guard-post-check.cjs" check` 及用户手工改成的已知 exec 写法）迁移为 `${CLAUDE_PROJECT_DIR}` 现行形态，每个托管事件一条；托管识别只认托管分组内与封闭表完全相同的条目，用户条目与其它宿主的条目字节保真，重复 sync 零 diff。Windows 上 Claude Code 可能找不到 Git Bash 时，sync 同样输出前提警告。
+
+### 参与者
+
+- **用户**：升级全局 CLI 后运行 `openlogos sync`。
+- **OpenLogos CLI（sync）**：托管资产比对刷新、hook 合并、Git Bash 前提检查。
+- **`.claude/settings.json`**：部署目标。
+
+### 前置条件
+
+项目为 Claude Code 适配；settings.json 可解析（不可解析时按既有规则零写入）。
+
+### 成功后置条件
+
+- PreToolUse、SessionStart、PostToolUse、PostToolUseFailure、Stop 各有且只有一条托管条目，命令为功能规格 §2.105.2 的现行形态。
+- 封闭表之外的条目字节与相对顺序不变。
+- 再次 sync，settings.json 零变化。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant C as OpenLogos CLI（sync）
+    participant S as .claude/settings.json
+    U->>C: Step 1: openlogos sync
+    C->>C: Step 2: 刷新托管 bin（既有行为）
+    C->>S: Step 3: 读取 hooks
+    alt settings.json 不可解析或顶层非对象
+        C->>C: Step 3a: 按既有规则跳过 hook 合并，零写入
+    else 可解析
+        loop 每个托管事件
+            C->>C: Step 4: 确定托管分组（PreToolUse 按现行 / 历史 matcher；SessionStart、Stop 为无 matcher 分组；PostToolUse / PostToolUseFailure 为含封闭表完整调用的分组）
+            C->>C: Step 5: 在托管分组内找与封闭表某一行完全相同的 hook 对象
+            C->>S: Step 6: 以最小文本编辑写回——托管条目改写为现行行（移除 args）；混合分组的托管条目移入标准分组；多条只留第一条位置；无托管条目则追加标准分组
+        end
+    end
+    opt 平台为 win32
+        C-->>U: Step 7: Git Bash 前提检查未命中 → stderr 输出前提警告
+    end
+    C-->>U: Step 8: 完成；重复 sync 零 diff
+```
+
+### 步骤说明
+
+1. **用户** 在 Claude 适配项目运行 sync。
+2. **CLI** 刷新托管 bin（既有行为，不新增托管资产）。
+3. **CLI** 读取 settings.json。
+4. **CLI** 逐事件确定托管分组（功能规格 §2.105.4 第 1 条）。PreToolUse 只认现行 `Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell` 与历史 `Edit|Write|Bash` 两种 matcher 的分组。
+5. **CLI** 只认与封闭表某一行完全相同的 hook 对象：shell 字符串形式逐字比较 `command`；exec 形式逐个比较 `command` 与 `args` 元素，`args` 元素中的 `\` 视同 `/`；带其它字段（如 `timeout`）的条目不算托管条目。
+6. **CLI** 迁移：整个 hook 对象替换为 `{ "type": "command", "command": <现行命令> }`；matcher 需要校正时，只含托管条目的分组就地校正，托管条目与用户条目同组的混合分组保留原 matcher 与用户条目，只把托管条目移入标准分组（功能规格 §2.105.4「matcher 校正与混合分组」）；同一事件多条托管条目只留第一条的位置；托管分组中没有托管条目时追加标准分组。
+7. **CLI**（仅 win32）执行与 init 相同的 Git Bash 前提检查（功能规格 §2.105.5），未命中时只向 stderr 输出前提警告；stdout 的既有输出与退出码不变。
+8. **CLI** 以对原文的最小文本编辑写回（功能规格 §2.105.4「写回方式」）：托管片段之外的字节不变，不把 settings.json 解析后整文件重新序列化。紧随其后的回复语言设置合并（`core-S08-sync.md`「S08 sync 合并 Claude Code 项目回复语言设置时序」）同样只插入或替换 `language` 片段；第二次 sync 零 diff。
+
+### 异常与边界
+
+#### EX-HB-S08-1：0.16.22 及以前的事后检查形态
+- **触发条件**：PostToolUse / PostToolUseFailure 为 `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check`，Stop 附 `--stop`。
+- **期望响应**：三条全部改写为 `${CLAUDE_PROJECT_DIR}` 现行形态，各一条；PreToolUse / SessionStart 不变。
+- **副作用**：无。
+
+#### EX-HB-S08-2：用户手工改成的已知 exec 写法
+- **触发条件**：`{"type":"command","command":"node","args":["${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs","check","--stop"]}`，或 `args` 中路径使用 `\`。
+- **期望响应**：识别为托管条目，改写为现行字符串形态并移除 `args`；不另外追加，不出现两套 hook。
+- **副作用**：手工写法被现行形态替代（属托管条目，不是用户条目）。
+
+#### EX-HB-S08-3：未收录的手工写法
+- **触发条件**：如 `{"type":"command","command":"bash","args":["C:/proj/.claude/openlogos/bin/guard-check"]}`，或带 `timeout` 字段的托管命令。
+- **期望响应**：按用户条目原样保留；该事件的托管分组中没有托管条目时照常追加标准分组。
+- **副作用**：可能与标准条目并存，由用户自行清理（封闭表不猜测未知写法）。
+
+#### EX-HB-S08-4：用户分组里出现托管路径或托管命令
+- **触发条件**：只匹配 `Edit` 的 PreToolUse 用户分组含 `node audit.cjs "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-check"`，或含与现行行逐字相同的 guard-check 命令。
+- **期望响应**：用户分组原样保留；标准 PreToolUse 分组存在且唯一，覆盖 Write 等全部 matcher 工具。
+- **副作用**：无。
+
+#### EX-HB-S08-5：RunLogos 的 SessionStart launcher
+- **触发条件**：SessionStart 含 `node ".claude/openlogos/bin/openlogos-phase-launcher.cjs"`。
+- **期望响应**：字节不变；OpenLogos 自己的 SessionStart 托管条目存在且唯一。
+- **副作用**：无。
+
+#### EX-HB-S08-6：旧版 CLI 再次追加旧形态
+- **触发条件**：混合版本团队中旧版 CLI 执行过 sync，同一事件同时出现旧形态与现行形态托管条目。
+- **期望响应**：收敛为一条现行形态，保留第一条的位置。
+- **副作用**：无。
+
+#### EX-HB-S08-8：托管条目与用户条目同组
+- **触发条件**：PostToolUse 中只匹配 `Bash` 的分组依次含旧版事后检查命令与用户的 `node audit.cjs`。
+- **期望响应**：原分组保留 matcher `Bash` 与 `audit.cjs`；事后检查命令移入标准分组并改为现行形态。迁移后 `Bash` 调用触发 `audit.cjs` 与事后检查各一次，PowerShell 调用只触发事后检查。
+- **副作用**：无。
+
+#### EX-HB-S08-9：用户条目使用紧凑格式或 Unicode 转义
+- **触发条件**：中文项目的 settings.json 为紧凑格式，用户命令写作 `"echo \u0061udit"`，同一文件另有一条旧形态 Stop 托管条目，顶层没有 `language` 键。
+- **期望响应**：同一次 sync 中，hook 合并只改写 Stop 托管条目所在区间，语言合并只在顶层末尾插入 `"language": "chinese"`；用户命令的原始文本（含 `\u0061`）与文件其余部分的格式逐字节不变。
+- **副作用**：无。
+
+#### EX-HB-S08-7：非 Claude 宿主项目
+- **触发条件**：项目未选择 claude-code 适配。
+- **期望响应**：不触碰 settings.json，不做 Git Bash 前提检查（既有宿主分流）。
+- **副作用**：无。
+
+### 追溯
+
+- 需求：「Windows Git Bash 前提与 PowerShell 宿主需求」托管识别要求、Git Bash 前提要求、S08 验收条件。
+- 功能规格：§2.105.2、§2.105.4、§2.105.5。
+- 测试：UT-S08-84～89、ST-S08-44～45。

@@ -2,6 +2,7 @@
  * guard-versioned-content-scope [code] 切片 3：Claude 事后检查 hook 注册与引擎分发（S01 / S08）。
  *
  * 覆盖 UT-S01-145、UT-S08-75、UT-S08-76（与 logos/resources/test/core-S01-test-cases.md、core-S08-test-cases.md 对齐）。
+ * fix-claude-hook-windows-powershell-fallback：事后检查命令改为 ${CLAUDE_PROJECT_DIR} 占位符形态，托管条目按封闭表识别。
  * init / sync 走真实命令入口（mockCwd + captureConsole），合并函数与 manifest 校验以函数层调用真实实现。
  * 结果由全局 OpenLogos reporter 写入 logos/resources/verify/test-results.jsonl。
  */
@@ -51,8 +52,8 @@ function expectManagedPostHooks(hooks: Record<string, Group[]>): void {
   expect(stop).toHaveLength(1);
   expect('matcher' in stop[0]).toBe(false);
   expect(stop[0].hooks.map(h => h.command)).toEqual([CLAUDE_STOP_CHECK_COMMAND]);
-  expect(CLAUDE_POST_CHECK_COMMAND).toBe('node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check');
-  expect(CLAUDE_STOP_CHECK_COMMAND).toBe('node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check --stop');
+  expect(CLAUDE_POST_CHECK_COMMAND).toBe('node "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs" check');
+  expect(CLAUDE_STOP_CHECK_COMMAND).toBe('node "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs" check --stop');
   expect(hooks.SessionEnd).toBeUndefined();
 }
 
@@ -69,14 +70,18 @@ function runSync(base: string): void {
 }
 
 const USER_POST = { matcher: 'Bash', hooks: [{ type: 'command', command: 'echo user-post' }] };
+/** 0.16.22 及以前的事后检查形态（封闭表历史行）。 */
+const OLD_POST = 'node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check';
+const OLD_STOP = `${OLD_POST} --stop`;
 const USER_STOP = { hooks: [{ type: 'command', command: 'echo user-stop' }] };
 
-/** 预置：用户自有 PostToolUse / Stop 条目在托管条目之前；托管条目 matcher 多出 / 缺少工具名。 */
+/** 预置：用户自有 PostToolUse / Stop 条目在托管条目之前；托管条目 matcher 多出 / 缺少工具名，且为历史命令形态。 */
 function presetMismatch(base: string, extra: Record<string, Group[]> = {}): void {
   const s = JSON.parse(readFileSync(join(base, '.claude', 'settings.json'), 'utf-8')) as { hooks: Record<string, unknown[]> };
-  s.hooks.PostToolUse = [USER_POST, { matcher: 'Bash', hooks: [{ type: 'command', command: CLAUDE_POST_CHECK_COMMAND }] }];
+  s.hooks.PostToolUse = [USER_POST, { matcher: 'Bash', hooks: [{ type: 'command', command: OLD_POST }] }];
   s.hooks.PostToolUseFailure = [{ matcher: 'Bash|PowerShell|Edit', hooks: [{ type: 'command', command: CLAUDE_POST_CHECK_COMMAND }] }];
-  s.hooks.Stop = [USER_STOP, { matcher: 'X', hooks: [{ type: 'command', command: CLAUDE_STOP_CHECK_COMMAND }] }];
+  // Stop 的托管分组为无 matcher 分组（§2.105.4）；历史命令形态就地改写为现行行
+  s.hooks.Stop = [USER_STOP, { hooks: [{ type: 'command', command: OLD_STOP }] }];
   Object.assign(s.hooks, extra);
   writeFileSync(join(base, '.claude', 'settings.json'), JSON.stringify(s, null, 2));
 }
@@ -124,7 +129,7 @@ describe('S08 sync 补齐事后检查 hook 与引擎', () => {
     // matcher 不一致就地校正；同一事件两条托管条目收敛为一条；用户条目字节与相对顺序不变
     presetMismatch(root, {
       PostToolUse: [USER_POST, { matcher: 'Bash', hooks: [{ type: 'command', command: CLAUDE_POST_CHECK_COMMAND }] },
-        { matcher: 'Bash|PowerShell', hooks: [{ type: 'command', command: 'node .claude/openlogos/bin/guard-post-check.cjs check' }] }],
+        { matcher: 'Bash|PowerShell', hooks: [{ type: 'command', command: OLD_POST }] }],
     });
     runSync(root);
     const after = settings(root);

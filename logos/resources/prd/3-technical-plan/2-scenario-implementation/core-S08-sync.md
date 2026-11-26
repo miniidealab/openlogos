@@ -168,7 +168,7 @@ sequenceDiagram
 
 1. **Step H1 manifest**：`plugin/bin/guard-post-check.cjs` 作为新托管资产登记进 asset-manifest（版本化哈希），升版脚本同步重算；Cursor 副本 `.cursor/hooks/openlogos-guard-post.cjs` 登记为同一源字节的另一部署目标。
 2. **Step H2 bin 刷新**：沿用「sync 托管 guard 资产」既有规则：缺失或哈希漂移即以随包字节重写，非 Claude 宿主项目不部署、不触碰 `settings.json`。
-3. **Step H3 Claude hook 合并**：托管条目与 init 相同（见 S01「S01 guard 事后检查 hook 注册与引擎部署时序」的条目表）：PostToolUse matcher `Bash|PowerShell|BashOutput|TaskOutput|KillShell|TaskStop`、PostToolUseFailure matcher `Bash|PowerShell`、Stop 无 matcher，command 为 `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check`（Stop 附 `--stop`）。托管身份以 command 包含 `.claude/openlogos/bin/guard-post-check.cjs` 识别：缺失则追加；matcher 或 command 与当前版本不一致则就地校正（含旧版 matcher 中的多余工具名）；同一事件多条托管条目收敛为一条；用户自有条目字节与相对顺序不变。既有 PreToolUse、SessionStart 条目的迁移规则不变；SessionStart 不新增条目，由随包刷新后的 phase launcher 内部调用 `check --session-start` 接管上一会话留下的执行记录。不注册 SessionEnd。
+3. **Step H3 Claude hook 合并**：托管条目与 init 相同（见 S01「S01 guard 事后检查 hook 注册与引擎部署时序」的条目表）：PostToolUse matcher `Bash|PowerShell|BashOutput|TaskOutput|KillShell|TaskStop`、PostToolUseFailure matcher `Bash|PowerShell`、Stop 无 matcher，command 为 `node "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs" check`（Stop 附 `--stop`）。托管身份按「S08 sync 按封闭表迁移 Claude hook 时序」（`core-S08-sync-ai-tools.md`）的封闭表与托管分组识别（fix-claude-hook-windows-powershell-fallback 取代原“command 包含 `.claude/openlogos/bin/guard-post-check.cjs`”口径；旧 `"$CLAUDE_PROJECT_DIR"` 形态与已知 exec 写法属封闭表历史行）：缺失则追加；matcher 或 command 与当前版本不一致则就地校正（含旧版 matcher 中的多余工具名；托管条目与用户条目同组时改为把托管条目移入标准分组、原分组保留原 matcher，并以最小文本编辑写回，见 `core-S08-sync-ai-tools.md`「S08 sync 按封闭表迁移 Claude hook 时序」）；同一事件多条托管条目收敛为一条；用户自有条目字节与相对顺序不变。既有 PreToolUse、SessionStart 条目的迁移规则不变；SessionStart 不新增条目，由随包刷新后的 phase launcher 内部调用 `check --session-start` 接管上一会话留下的执行记录。不注册 SessionEnd。
 4. **Step H4 Cursor 资产**：`openlogos-runtime.cjs`（含新增的 `shell-after` 模式与同口径规则表）与引擎副本随同一事务刷新、读回校验。
 5. **Step H5 Cursor hooks 合并**：事件集合只由 `CURSOR_HOOK_EVENTS` 派生，新增 `afterShellExecution` 条目 `{ "type": "command", "command": "node .cursor/hooks/openlogos-runtime.cjs shell-after" }`；沿用既有托管身份锚 `openlogos-runtime.cjs` 与幂等合并：第二次 sync 零 diff，用户条目（含用户自己的 `afterShellExecution` 条目）与未知字段字节不变；hooks.json 不可解析时按既有规则回滚、零写入。
 6. **Step H6 文案更正**：`cursor-adapter.ts` 写入的托管指令文案与 `CURSOR_GUARD_STRENGTH_NOTICE_ZH` 能力提示行改为按 C11 分层声明：保护对象与 Claude Code 一致；shell 写入为 `beforeShellExecution` 事前轻判 + `afterShellExecution` 事后检查；文件编辑（IDE 与 cursor-agent CLI）均为 `afterFileEdit` 事后报告，不承诺事前阻断。存量项目经一次 sync 即替换旧文案，托管片段外用户内容不变。
@@ -263,7 +263,7 @@ sequenceDiagram
    - L5b 已等于当前映射值 → 不写盘；
    - L5c 为托管值集合 `{"chinese","english"}` 中的另一个值（locale 改过）→ 更新为当前映射值；
    - L5d 为其它值（含大小写不同的写法与非字符串值）→ 保留并提示，见 EX-LANG-S08-2。
-   只有发生变更时才以 `JSON.stringify(data, null, 2)` 重写；其它字段的值与用户 hook 条目顺序不变。
+   只有发生变更时才写回，且以最小文本编辑完成（功能规格 §2.89.2、§2.105.4「写回方式」）：只插入或替换 `language` 片段，其它字段与用户 hook 条目的原始字节、顺序均不变（fix-claude-hook-windows-powershell-fallback）。
 6. **Step L6**：其余同步步骤（AGENTS.md / CLAUDE.md、specs、`.gitignore` 托管区块、版本戳等）照常；`language` 合并结果不改变退出码。
 
 ### 异常与边界

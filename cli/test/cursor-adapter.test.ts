@@ -255,7 +255,8 @@ describe('Cursor Adapter — S01 三件套初始化', () => {
     expect(createCursorAgentsInstruction('zh', 'launched')).toContain('preToolUse');
   });
 
-  it('ST-S01-28: all 展开含 cursor 且重复部署收敛为零漂移', async () => {
+  // 重型端到端用例（多宿主完整部署 / 大量真实子进程）：单独运行约 1 秒，全量并发负载下会超过默认 10 秒，显式放宽超时（不改断言）。
+  it('ST-S01-28: all 展开含 cursor 且重复部署收敛为零漂移', { timeout: 60_000 }, async () => {
     await init('demo', { locale: 'en', aiTool: 'all' });
     const first = snapshot(join(root, '.cursor'));
     deployAiToolAssets(root, expandAiTools('all'), 'en', false);

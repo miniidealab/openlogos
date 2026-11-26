@@ -45,6 +45,9 @@ import {
   preflightCursorTarget,
 } from '../lib/cursor-adapter.js';
 import { removeTree } from '../lib/fs-remove.js';
+import { CLAUDE_HOOK_EVENT_SPECS, mergeClaudeHookEvent, type ClaudeHookEventSpec } from '../lib/claude-hook-registry.js';
+import { memberOf, nodeValue, parseJsonText, setObjectMember } from '../lib/json-text-edit.js';
+import { defaultGitBashDeps, warnIfGitBashMissing } from '../lib/git-bash-prerequisite.js';
 import { acceptedEntries, applyIgnoreBlock, managedBlockPrecheck, planIgnoreSuggestions } from '../lib/ignore-suggest.js';
 
 export type { AiTool } from '../lib/ai-tool-adapter.js';
@@ -985,241 +988,79 @@ export function findClaudePluginTemplateSource(): string | null {
   return null;
 }
 
-// fix-claude-guard-hook-project-dir-and-sync-deploy：hook 注册统一为 Claude Code 官方项目根
-// 环境变量形态——相对路径 command 在非项目根 cwd 会话下不可解析（缺陷①），属缺陷而非可选写法。
-export const CLAUDE_GUARD_HOOK_COMMAND = '"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/guard-check';
-export const CLAUDE_GUARD_HOOK_LEGACY_COMMAND = '.claude/openlogos/bin/guard-check';
-export const CLAUDE_PHASE_HOOK_COMMAND = '"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/openlogos-phase';
-export const CLAUDE_PHASE_HOOK_LEGACY_COMMAND = '.claude/openlogos/bin/openlogos-phase';
+// fix-claude-guard-hook-project-dir-and-sync-deploy：hook 注册统一为 Claude Code 官方项目根定位。
+// fix-claude-hook-windows-powershell-fallback：托管 hook 的命令、封闭表识别与迁移集中在 claude-hook-registry；
+// `.claude/settings.json` 的全部写回（SessionStart、PreToolUse、事后检查、回复语言）都以原文最小文本编辑完成
+// （功能规格 §2.105.4「写回方式」、§2.89.2），不整文件重新序列化。
+export {
+  CLAUDE_GUARD_HOOK_COMMAND, CLAUDE_GUARD_HOOK_LEGACY_COMMAND, CLAUDE_PHASE_HOOK_COMMAND, CLAUDE_PHASE_HOOK_LEGACY_COMMAND,
+  CLAUDE_GUARD_HOOK_MATCHER, CLAUDE_ENGINE_REL, CLAUDE_POST_CHECK_COMMAND, CLAUDE_STOP_CHECK_COMMAND,
+} from '../lib/claude-hook-registry.js';
 
-/**
- * hook 数组内的幂等注册 + 旧相对路径条目就地迁移：
- * legacy command → 改写为新形态；新形态重复条目去重收敛为一条；皆无则不追加（由调用方决定 group 结构）。
- * 用户自有条目（command 不在新旧集合内）字节不变。返回是否发生修改与新形态是否在场。
- */
-function migrateClaudeHookEntries(
-  groups: unknown[],
-  command: string,
-  legacyCommands: string[],
-): { changed: boolean; present: boolean } {
-  let changed = false;
-  let seen = 0;
-  for (const group of groups) {
-    if (typeof group !== 'object' || group === null) continue;
-    const g = group as Record<string, unknown>;
-    if (!Array.isArray(g['hooks'])) continue;
-    const kept: unknown[] = [];
-    for (const item of g['hooks'] as unknown[]) {
-      if (typeof item !== 'object' || item === null) { kept.push(item); continue; }
-      const h = item as Record<string, unknown>;
-      let cmd = h['command'];
-      if (typeof cmd === 'string' && legacyCommands.includes(cmd)) {
-        h['command'] = command;
-        cmd = command;
-        changed = true;
-      }
-      if (cmd === command) {
-        seen += 1;
-        if (seen > 1) { changed = true; continue; } // 历史异常态：新旧并存/重复 → 收敛为唯一新形态
-      }
-      kept.push(item);
-    }
-    if (kept.length !== (g['hooks'] as unknown[]).length) g['hooks'] = kept;
-  }
-  return { changed, present: seen > 0 };
-}
-
-/**
- * Merges the openlogos PreToolUse guard hook into .claude/settings.json.
- * Idempotent: appends only when absent; legacy relative-path entries are migrated in place.
- */
-/**
- * PreToolUse matcher（spec/pretooluse-guard.md §hook 注册形态）：MultiEdit / NotebookEdit 与 Edit / Write 同类，
- * PowerShell 为 Windows 版 Claude Code 的 shell 工具。旧 matcher 的托管条目原地升级。
- */
-export const CLAUDE_GUARD_HOOK_MATCHER = 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell';
-const CLAUDE_GUARD_HOOK_LEGACY_MATCHER = 'Edit|Write|Bash';
+export const CLAUDE_POST_HOOKS: ReadonlyArray<{ event: string; matcher: string | null; command: string }> = [
+  CLAUDE_HOOK_EVENT_SPECS.PostToolUse, CLAUDE_HOOK_EVENT_SPECS.PostToolUseFailure, CLAUDE_HOOK_EVENT_SPECS.Stop,
+].map(spec => ({ event: spec.event, matcher: spec.matcher, command: spec.current }));
 
 /** settings.json 顶层必须是 JSON 对象；数组 / 标量与非法 JSON 同样按损坏处理（sync-claude-response-language C03）。 */
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function readSettingsObjectText(settingsPath: string): string | null {
+  if (!existsSync(settingsPath)) return null;
+  const text = readFileSync(settingsPath, 'utf-8');
+  try {
+    if (parseJsonText(text).kind !== 'object') return null; // 顶层非对象按损坏处理，原样保留
+  } catch {
+    return null; // Malformed JSON — leave file intact, skip merge
+  }
+  return text;
 }
 
-function mergeClaudePreToolUseGuard(root: string): boolean {
+/** 依次对若干事件做封闭表迁移；只在原文发生变化时写回。 */
+function mergeClaudeHookEvents(root: string, specs: ClaudeHookEventSpec[]): boolean {
   const settingsPath = join(root, '.claude', 'settings.json');
-  if (!existsSync(settingsPath)) return false; // SessionStart merge creates it first
+  const before = readSettingsObjectText(settingsPath);
+  if (before === null) return false;
+  let text = before;
+  for (const spec of specs) text = mergeClaudeHookEvent(text, spec);
+  if (text === before) return false;
+  writeFileSync(settingsPath, text);
+  return true;
+}
 
-  let data: Record<string, unknown> = {};
-  try {
-    data = JSON.parse(readFileSync(settingsPath, 'utf-8'));
-  } catch {
-    return false; // Malformed JSON — skip
-  }
-  if (!isJsonObject(data)) return false; // 顶层非对象按损坏处理，原样保留
-
-  if (!data['hooks'] || typeof data['hooks'] !== 'object') {
-    data['hooks'] = {};
-  }
-  const hooksObj = data['hooks'] as Record<string, unknown>;
-  if (!Array.isArray(hooksObj['PreToolUse'])) {
-    hooksObj['PreToolUse'] = [];
-  }
-  const groups = hooksObj['PreToolUse'] as unknown[];
-  const { changed, present } = migrateClaudeHookEntries(
-    groups, CLAUDE_GUARD_HOOK_COMMAND, [CLAUDE_GUARD_HOOK_LEGACY_COMMAND],
-  );
-  let updated = changed;
-  // 旧 matcher 的托管条目原地升级（不新增第二条）；用户自有 group 不动。
-  for (const group of groups) {
-    if (typeof group !== 'object' || group === null) continue;
-    const g = group as Record<string, unknown>;
-    const managed = Array.isArray(g['hooks']) && (g['hooks'] as unknown[]).some(item =>
-      typeof item === 'object' && item !== null && (item as Record<string, unknown>)['command'] === CLAUDE_GUARD_HOOK_COMMAND);
-    if (managed && g['matcher'] === CLAUDE_GUARD_HOOK_LEGACY_MATCHER) {
-      g['matcher'] = CLAUDE_GUARD_HOOK_MATCHER;
-      updated = true;
-    }
-  }
-  if (!present) {
-    groups.push({
-      matcher: CLAUDE_GUARD_HOOK_MATCHER,
-      hooks: [{ type: 'command', command: CLAUDE_GUARD_HOOK_COMMAND }],
-    });
-    updated = true;
-  }
-  if (updated) writeFileSync(settingsPath, JSON.stringify(data, null, 2));
-  return updated;
+/** PreToolUse guard hook（spec/pretooluse-guard.md §hook 注册形态）：封闭表识别、纯托管分组 matcher 原地升级。 */
+function mergeClaudePreToolUseGuard(root: string): boolean {
+  return mergeClaudeHookEvents(root, [CLAUDE_HOOK_EVENT_SPECS.PreToolUse]); // SessionStart merge creates the file first
 }
 
 /**
  * guard-versioned-content-scope：事后检查引擎 hook（spec/pretooluse-guard.md「Claude Code hook 注册与引擎分发」）。
- * 托管身份以 command 含 `.claude/openlogos/bin/guard-post-check.cjs` 识别；Stop 无 matcher。
- */
-export const CLAUDE_ENGINE_REL = '.claude/openlogos/bin/guard-post-check.cjs';
-export const CLAUDE_POST_CHECK_COMMAND = `node "$CLAUDE_PROJECT_DIR/${CLAUDE_ENGINE_REL}" check`;
-export const CLAUDE_STOP_CHECK_COMMAND = `${CLAUDE_POST_CHECK_COMMAND} --stop`;
-export const CLAUDE_POST_HOOKS: ReadonlyArray<{ event: string; matcher: string | null; command: string }> = [
-  { event: 'PostToolUse', matcher: 'Bash|PowerShell|BashOutput|TaskOutput|KillShell|TaskStop', command: CLAUDE_POST_CHECK_COMMAND },
-  { event: 'PostToolUseFailure', matcher: 'Bash|PowerShell', command: CLAUDE_POST_CHECK_COMMAND },
-  { event: 'Stop', matcher: null, command: CLAUDE_STOP_CHECK_COMMAND },
-];
-
-function isManagedEngineHook(item: unknown): boolean {
-  return typeof item === 'object' && item !== null
-    && typeof (item as Record<string, unknown>)['command'] === 'string'
-    && ((item as Record<string, unknown>)['command'] as string).includes(CLAUDE_ENGINE_REL);
-}
-
-/**
- * 幂等合并 PostToolUse / PostToolUseFailure / Stop 托管条目：缺失则追加；matcher 或 command 与当前版本不一致则
- * 就地校正；同一事件多条托管条目收敛为一条（因收敛变空的托管 group 移除）；用户自有条目与相对顺序不变。
+ * PostToolUse / PostToolUseFailure / Stop 按封闭表迁移：缺失则追加标准分组；纯托管分组 matcher 就地校正；
+ * 混合分组保留原 matcher 与用户条目、托管条目移入标准分组；同一事件多条托管条目收敛为一条。
  * settings.json 不存在或不可解析时不写。返回是否发生变更。
  */
 export function mergeClaudePostCheckHooks(root: string): boolean {
-  const settingsPath = join(root, '.claude', 'settings.json');
-  if (!existsSync(settingsPath)) return false;
-  let data: Record<string, unknown>;
-  try {
-    data = JSON.parse(readFileSync(settingsPath, 'utf-8'));
-  } catch {
-    return false;
-  }
-  if (!isJsonObject(data)) return false;
-  if (!data['hooks'] || typeof data['hooks'] !== 'object') data['hooks'] = {};
-  const hooksObj = data['hooks'] as Record<string, unknown>;
-  let changed = false;
-  for (const spec of CLAUDE_POST_HOOKS) {
-    if (!Array.isArray(hooksObj[spec.event])) { hooksObj[spec.event] = []; changed = true; }
-    const groups = hooksObj[spec.event] as unknown[];
-    let seen = false;
-    for (let gi = 0; gi < groups.length; gi++) {
-      const g = groups[gi];
-      if (typeof g !== 'object' || g === null || !Array.isArray((g as Record<string, unknown>)['hooks'])) continue;
-      const group = g as Record<string, unknown>;
-      const items = group['hooks'] as unknown[];
-      if (!items.some(isManagedEngineHook)) continue;
-      const kept: unknown[] = [];
-      for (const item of items) {
-        if (!isManagedEngineHook(item)) { kept.push(item); continue; }
-        if (seen) { changed = true; continue; }
-        seen = true;
-        const h = item as Record<string, unknown>;
-        if (h['command'] !== spec.command) { h['command'] = spec.command; changed = true; }
-        if (h['type'] !== 'command') { h['type'] = 'command'; changed = true; }
-        kept.push(item);
-        if (spec.matcher === null) {
-          if ('matcher' in group) { delete group['matcher']; changed = true; }
-        } else if (group['matcher'] !== spec.matcher) {
-          group['matcher'] = spec.matcher;
-          changed = true;
-        }
-      }
-      if (kept.length !== items.length) group['hooks'] = kept;
-      if (kept.length === 0) { groups.splice(gi, 1); gi -= 1; changed = true; }
-    }
-    if (!seen) {
-      groups.push(spec.matcher === null
-        ? { hooks: [{ type: 'command', command: spec.command }] }
-        : { matcher: spec.matcher, hooks: [{ type: 'command', command: spec.command }] });
-      changed = true;
-    }
-  }
-  if (changed) writeFileSync(settingsPath, JSON.stringify(data, null, 2));
-  return changed;
+  return mergeClaudeHookEvents(root, [
+    CLAUDE_HOOK_EVENT_SPECS.PostToolUse, CLAUDE_HOOK_EVENT_SPECS.PostToolUseFailure, CLAUDE_HOOK_EVENT_SPECS.Stop,
+  ]);
 }
 
 /**
  * Merges the openlogos SessionStart hook into .claude/settings.json.
- * Idempotent: only appends if the hook command is not already present.
- * Returns whether the file was created or updated.
+ * 文件不存在时整文件新建骨架；已存在时按封闭表迁移。Returns whether the file was created or updated.
  */
 function mergeClaudeSettings(root: string): { created: boolean; updated: boolean } {
   const settingsDir = join(root, '.claude');
   const settingsPath = join(settingsDir, 'settings.json');
   mkdirSync(settingsDir, { recursive: true });
 
-  const hookEntry = {
-    type: 'command',
-    command: CLAUDE_PHASE_HOOK_COMMAND,
-  };
-
   if (!existsSync(settingsPath)) {
     const initial = {
       hooks: {
-        SessionStart: [{ hooks: [hookEntry] }],
+        SessionStart: [{ hooks: [{ type: 'command', command: CLAUDE_HOOK_EVENT_SPECS.SessionStart.current }] }],
       },
     };
     writeFileSync(settingsPath, JSON.stringify(initial, null, 2));
     return { created: true, updated: true };
   }
-
-  let data: Record<string, unknown> = {};
-  try {
-    data = JSON.parse(readFileSync(settingsPath, 'utf-8'));
-  } catch {
-    // Malformed JSON — leave file intact, skip merge
-    return { created: false, updated: false };
-  }
-  if (!isJsonObject(data)) return { created: false, updated: false };
-
-  if (!data['hooks'] || typeof data['hooks'] !== 'object') {
-    data['hooks'] = {};
-  }
-  const hooksObj = data['hooks'] as Record<string, unknown>;
-  if (!Array.isArray(hooksObj['SessionStart'])) {
-    hooksObj['SessionStart'] = [];
-  }
-  const groups = hooksObj['SessionStart'] as unknown[];
-  const { changed, present } = migrateClaudeHookEntries(
-    groups, CLAUDE_PHASE_HOOK_COMMAND, [CLAUDE_PHASE_HOOK_LEGACY_COMMAND],
-  );
-  let updated = changed;
-  if (!present) {
-    groups.push({ hooks: [hookEntry] });
-    updated = true;
-  }
-  if (updated) writeFileSync(settingsPath, JSON.stringify(data, null, 2));
-  return { created: false, updated };
+  return { created: false, updated: mergeClaudeHookEvents(root, [CLAUDE_HOOK_EVENT_SPECS.SessionStart]) };
 }
 
 /**
@@ -1229,30 +1070,25 @@ function mergeClaudeSettings(root: string): { created: boolean; updated: boolean
 export const CLAUDE_LANGUAGE_BY_LOCALE: Readonly<Record<Locale, string>> = { zh: 'chinese', en: 'english' };
 
 /**
- * 按 locale 合并项目 `.claude/settings.json` 顶层 `language`（§2.89.2）：缺失写入、托管值跟随 locale、
- * 自定义值保留（由调用方提示）、非法 JSON / 顶层非对象原样保留。只在变更时重写，其它字段值与顺序不变。
+ * 按 locale 合并项目 `.claude/settings.json` 顶层 `language`（§2.89.2）：缺失则在顶层末尾插入成员、托管值跟随
+ * locale 时只替换值字面量、自定义值保留（由调用方提示）、非法 JSON / 顶层非对象原样保留。
+ * 只在变更时写回，且以最小文本编辑完成，`language` 片段之外的字节不变。
  */
 export function mergeClaudeLanguageSetting(root: string, locale: Locale): { updated: boolean; customValue?: unknown } {
   const settingsPath = join(root, '.claude', 'settings.json');
-  if (!existsSync(settingsPath)) return { updated: false };
-  let data: unknown;
-  try {
-    data = JSON.parse(readFileSync(settingsPath, 'utf-8'));
-  } catch {
-    return { updated: false }; // Malformed JSON — leave file intact, skip merge
-  }
-  if (!isJsonObject(data)) return { updated: false };
-  const obj = data;
+  const text = readSettingsObjectText(settingsPath);
+  if (text === null) return { updated: false };
+  const rootNode = parseJsonText(text);
   const target = CLAUDE_LANGUAGE_BY_LOCALE[locale];
-  if (Object.prototype.hasOwnProperty.call(obj, 'language')) {
-    const current = obj['language'];
+  const existing = memberOf(rootNode, 'language');
+  if (existing) {
+    const current = nodeValue(text, existing.value);
     if (current === target) return { updated: false };
     if (typeof current !== 'string' || !Object.values(CLAUDE_LANGUAGE_BY_LOCALE).includes(current)) {
       return { updated: false, customValue: current };
     }
   }
-  obj['language'] = target;
-  writeFileSync(settingsPath, JSON.stringify(obj, null, 2));
+  writeFileSync(settingsPath, setObjectMember(text, rootNode, rootNode, 'language', target));
   return { updated: true };
 }
 
@@ -1520,6 +1356,9 @@ export function deployAiToolAssets(
         }
       }
     }
+    // fix-claude-hook-windows-powershell-fallback（§2.105.5）：win32 上 Claude Code 可能找不到 Git Bash 时，
+    // 只向 stderr 输出前提警告；stdout 与退出码不变，非 Windows 不检查。
+    warnIfGitBashMissing(locale, defaultGitBashDeps());
   }
 
   if (aiTools.includes('zcode')) {

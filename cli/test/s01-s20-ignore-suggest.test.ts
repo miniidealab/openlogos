@@ -362,7 +362,8 @@ describe('S01 技术栈建议忽略（init）', () => {
     expect(readConfig(ni).guard).toEqual(readConfig(acc).guard);
   });
 
-  it('ST-S01-33: init 端到端事后检查接线', () => {
+  // 重型端到端用例（多宿主完整部署 / 大量真实子进程）：单独运行约 1 秒，全量并发负载下会超过默认 10 秒，显式放宽超时（不改断言）。
+  it('ST-S01-33: init 端到端事后检查接线', { timeout: 60_000 }, () => {
     const root = tmp();
     const r = runCli(['init', 'demo', '--locale', 'zh', '--ai-tool', 'all'], root);
     expect(r.status, r.stderr).toBe(0);

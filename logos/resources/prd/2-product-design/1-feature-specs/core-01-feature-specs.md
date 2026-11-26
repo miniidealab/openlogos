@@ -2678,11 +2678,11 @@ Claude Code 执行 hook 时以**会话 cwd** 解析相对命令与相对路径�
 
 ### 2.62.2 hook 注册形态与幂等迁移（缺陷①）
 
-- `mergeClaudePreToolUseGuard` 及 SessionStart 同函数族写入的 command 形态统一为 `"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/guard-check`（SessionStart 为 `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/openlogos-phase-launcher.cjs"` 等价形态）。
-- 幂等去重判据从「command 字符串精确匹配」升级为**新旧两种写法都命中**：
-  - 已有新形态条目 → 不动；
-  - 只有旧相对路径条目 → 就地升级为新形态（迁移，不并存）；
-  - 两者皆无 → 追加新形态条目。
+- `mergeClaudePreToolUseGuard` 及 SessionStart 同函数族写入的 command 形态统一为 `"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/guard-check`（SessionStart 为 `"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/openlogos-phase`）。这两条 bash 脚本型命令的形态受 §2.105.3 约束：bash 下直接执行脚本，PowerShell 下不得成功求值。
+- 幂等去重判据：新旧写法都命中，且只在托管分组内、按封闭表识别（§2.105.4，fix-claude-hook-windows-powershell-fallback 取代原“command 字符串精确匹配、跨分组计数”的口径）：
+  - 托管分组内已有现行形态条目 → 不动；
+  - 托管分组内只有封闭表中的历史形态条目（相对路径等）→ 就地升级为现行形态（迁移，不并存）；
+  - 托管分组内皆无 → 追加标准分组与现行形态条目（用户分组里出现的同名命令不计入）。
 - 用户自有的其它 hooks 条目字节不变（既有合并保真语义保持）。
 
 ### 2.62.3 guard-check 工作目录收敛与 fail-closed（缺陷②）
@@ -4412,12 +4412,12 @@ guard 不自动执行恢复。
 | 补查（PreToolUse、Stop、SessionStart）发现 | 写入 `pending-reports.jsonl`；在下一次 Bash / PowerShell 的 PostToolUse / PostToolUseFailure 或 Stop 时以 exit 2 送达；SessionStart 把待报告项注入会话上下文 |
 | Stop 送达后无新的未送达项 | exit 0；`stop_hook_active` 不导致重复送达 |
 
-hook 注册（`.claude/settings.json`，`"$CLAUDE_PROJECT_DIR"` 形态，幂等合并）：
+hook 注册（`.claude/settings.json`，幂等合并；三条事后检查命令使用 `${CLAUDE_PROJECT_DIR}` 占位符，PreToolUse / SessionStart 形态与托管识别见 §2.105）：
 
 | 事件 | matcher | 命令 |
 |---|---|---|
 | PreToolUse | 既有条目不变 | `guard-check`（内部对 Bash / PowerShell 调用 `snapshot`，对任意工具做补查） |
-| PostToolUse | `Bash|PowerShell|BashOutput|TaskOutput|KillShell|TaskStop` | `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check` |
+| PostToolUse | `Bash|PowerShell|BashOutput|TaskOutput|KillShell|TaskStop` | `node "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs" check` |
 | PostToolUseFailure | `Bash|PowerShell` | 同上 `check` |
 | Stop | — | 同上 `check --stop` |
 | SessionStart | 既有 phase launcher | 内部调用 `check --session-start` 并把待报告项并入注入上下文；launcher 把宿主交给它的 SessionStart 输入（stdin JSON）原样经 stdin 转交引擎，引擎从中取 `session_id` 用于超期关闭的当前会话判断（fix-guard-background-record-never-closed） |
@@ -4761,9 +4761,9 @@ Claude Code 的官方设置 `language` 会在每轮系统提示词中生成 `# L
 
 保真与幂等口径：
 
-- 只在发生变更时重写文件，序列化形态与既有 hooks 合并一致（`JSON.stringify(data, null, 2)`）；不为保留原始缩进引入文本级编辑机制。
+- 只在发生变更时写文件；写回方式与 hook 合并相同，按 §2.105.4「写回方式」做最小文本编辑：键缺失时只在顶层对象末尾插入 `"language": "<映射值>"` 成员（连同必要的分隔逗号，缩进与换行风格取自相邻顶层成员）；需要更新时只替换既有 `language` 值的字符串字面量。不把 settings.json 解析后整文件重新序列化（fix-claude-hook-windows-powershell-fallback，评审 delta-r2 F3）。
 - 写入 `language` 不改变其它 JSON 字段的值、不改变用户 hook 条目及其相对顺序；既有托管 hook（SessionStart / PreToolUse / PostToolUse / PostToolUseFailure / Stop）仍按 §2.62.2 与既有事后检查 hook 合并规则维护。
-- 首次写入时，若原文件格式不是 2 空格缩进，其它键的文本字节会随整体重写而变化，这与既有 hooks 合并的行为一致；保证的是值与顺序，而非原始缩进。
+- 首次写入 `language` 时，`language` 片段之外的字节（含其它键的缩进、紧凑格式与用户 hook 条目的 Unicode 转义写法）一律不变；与同一次 init / sync 中的 hook 合并叠加后，最终文件同样只在托管片段与 `language` 片段上与原文不同。
 - 没有其它待同步变化时，重复运行 `init` / `sync` 不写盘，`.claude/settings.json` 字节不变。
 
 ### 2.89.3 部署位置：恒部署路径
@@ -6301,3 +6301,121 @@ proposal_view = 活跃提案尚未合并或待应用修正时：after_entries �
 - 场景：S13「验收历史留存与查询时序（verification-history）」EX-13H.1～EX-13H.10；S19「smoke 验收历史留存（verification-history）」EX-19H.1～EX-19H.5。
 - 架构：「五十八、验收历史留存与查询」。
 - 测试：UT-S13-141～UT-S13-156、ST-S13-38～ST-S13-39；UT-S19-100～UT-S19-107、ST-S19-34；SMOKE-core-326～SMOKE-core-327。
+
+## 2.105 Windows Git Bash 前提、PowerShell 宿主与托管识别封闭表（fix-claude-hook-windows-powershell-fallback）
+
+> 来源变更：fix-claude-hook-windows-powershell-fallback（决策 C01～C06；评审 proposal-r1 F1～F5 处置）。需求见「Windows Git Bash 前提与 PowerShell 宿主需求」；架构见 52.5 第 5、7 条；场景见 `core-S01-cli-init.md`「S01 Claude hook 托管识别封闭表与 Git Bash 前提提示时序」、`core-S08-sync-ai-tools.md`「S08 sync 按封闭表迁移 Claude hook 时序」、`core-S09-change-lifecycle.md`「S09 PowerShell 宿主下的 Claude hook 行为」「S09 SessionStart 阶段注入的项目根收敛时序」；规范见 `spec/pretooluse-guard.md`「hook 注册形态（规范性）」。本节取代 §2.62.2、§2.87.10 中与命令形态、托管识别相关的旧口径。
+
+### 2.105.1 问题
+
+Claude Code 在 Windows 上用 Git Bash 执行 shell 形式的 hook，找不到 Git Bash 时改用 PowerShell（2.1.120 起 Git for Windows 为可选）。官方 hooks 文档（2026-11-26 读取）：Windows 无 Git Bash 时，shell 形式的 PreToolUse hook 失败（退出码不是 0 或 2）会阻断该动作，宿主提示 Git Bash 未找到；SessionStart 等事件的失败不阻断；在 bash 宿主上，命令启动失败默认不阻断。0.16.22 及以前：
+
+| # | 缺陷 | 后果 |
+|---|---|---|
+| ① | 三条事后检查命令用裸 `$CLAUDE_PROJECT_DIR`，靠 bash 展开 | PowerShell 宿主上展开为空，路径退化为盘符根，每次会话报 `MODULE_NOT_FOUND: C:\.claude\openlogos\bin\guard-post-check.cjs` |
+| ② | 没有任何地方告诉用户“缺少 Git Bash” | 用户只看到 PreToolUse 的 `ParserError` 与全部写入被阻断 |
+| ③ | 托管识别按 command 字符串相等或含路径子串、跨分组计数 | 用户手工改成的 exec 写法与 sync 追加条目并存；用户分组里出现托管命令时不再追加标准分组，Write 等工具可能失去门禁；引用托管脚本路径的用户命令可能被当作托管条目改写 |
+| ④ | openlogos-phase 按进程 cwd 读取 `logos/logos.config.json` | 从项目子目录开的会话输出 `Not an OpenLogos project`，阶段注入失效（与平台无关） |
+
+PreToolUse 注册命令 `"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/guard-check` 不在缺陷之列：bash 宿主上它直接执行 guard-check、不依赖 node（node 不可执行时走 Python 回退）；PowerShell 宿主上它产生 `ParserError`，宿主据此阻断，即 fail-closed（2.1.332 实机证据）。
+
+### 2.105.2 注册表
+
+项目级 `.claude/settings.json`（init / adopt / sync 写入）：
+
+| 事件 | matcher | command | 本节变化 |
+|---|---|---|---|
+| PreToolUse | `Edit\|Write\|MultiEdit\|NotebookEdit\|Bash\|PowerShell` | `"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/guard-check` | 不变 |
+| SessionStart | （无） | `"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/openlogos-phase` | 不变 |
+| PostToolUse | `Bash\|PowerShell\|BashOutput\|TaskOutput\|KillShell\|TaskStop` | `node "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs" check` | 占位符改为带花括号 |
+| PostToolUseFailure | `Bash\|PowerShell` | `node "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs" check` | 同上 |
+| Stop | （无） | `node "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs" check --stop` | 同上 |
+
+- 一律采用 shell 字符串形式（`type: "command"` + `command`），不采用 command/args（exec）形式（C01）。
+- 插件 `plugin/hooks/hooks.json` 不变。
+
+### 2.105.3 注册命令形态约束（规范性）
+
+1. **node 类 hook**（事后检查引擎）：只用 Claude Code 自行处理的 `${CLAUDE_PROJECT_DIR}` 占位符定位脚本，不得使用裸 `$VAR`；命令中只出现 `node`、双引号包裹的脚本路径与纯文本参数。
+2. **bash 脚本型 hook**（guard-check、openlogos-phase）：
+   - bash 下必须直接执行脚本，不经 node 或其它解释器中转，使门禁入口不依赖 node；
+   - PowerShell 下必须无法成功求值：不得写成整体加引号的单个字符串（如 `"${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-check"`，PowerShell 会把它当作字符串表达式求值并以 0 退出，等于放行）。现行写法在 PowerShell 下产生 `ParserError` 并以非 0 退出，宿主据此阻断 PreToolUse；SessionStart 失败不阻断会话。
+3. 不给托管条目加 `onFailure`、`shell`、`args` 等字段（C02）。
+
+### 2.105.4 托管识别封闭表（规范性）
+
+一个 hook 对象是 OpenLogos 托管条目，当且仅当它同时满足：
+
+1. 所在事件与分组属于托管分组：
+   - PreToolUse：分组 matcher 为现行 `Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell` 或历史 `Edit|Write|Bash`；
+   - SessionStart、Stop：分组无 matcher；
+   - PostToolUse、PostToolUseFailure：分组内含下表本事件的完整调用即为托管分组（这两个事件的完整调用由 `node` + 引擎路径 + `check` 子命令组成，用户不会以逐字相同的完整调用另作他用）。matcher 的处理见下文「matcher 校正与混合分组」。
+2. hook 对象与下表本事件的某一行完全相同：只含 `type: "command"` 与 `command`（exec 行另含 `args`），不含其它字段；shell 字符串形式逐字比较 `command`；exec 形式逐个比较 `command` 与 `args` 元素，`args` 元素中的 `\` 视同 `/`。
+
+| 事件 | 现行行 | 历史行 |
+|---|---|---|
+| PreToolUse | `"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/guard-check` | `.claude/openlogos/bin/guard-check` |
+| SessionStart | `"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/openlogos-phase` | `.claude/openlogos/bin/openlogos-phase` |
+| PostToolUse / PostToolUseFailure | `node "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs" check` | `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check`；exec：`command` 为 `node`，`args` 为 `["${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs", "check"]` |
+| Stop | 现行行附 ` --stop` | 两条历史行各附 `--stop`（exec 行在 `args` 末尾追加 `"--stop"`） |
+
+迁移规则：
+
+- 托管条目改写为现行行：整个 hook 对象替换为 `{ "type": "command", "command": <现行命令> }`，exec 形式的 `args` 一并移除。
+- 同一事件的多条托管条目收敛为一条，保留第一条的位置；该事件的托管分组中没有托管条目时，追加标准分组。
+- 不满足上述条件的条目一律是用户条目，字节与相对顺序不变。例如：只匹配 `Edit` 的分组里的 `node audit.cjs "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-check"`；只匹配 `Edit` 的分组里逐字相同的 guard-check 命令（不计入“已有门禁”，标准分组照常追加）；RunLogos 注册的 `node ".claude/openlogos/bin/openlogos-phase-launcher.cjs"`；带 `timeout` 等附加字段的条目；未收录的手工写法。
+- 封闭表只收录本仓已知写法。RunLogos 实机上 PreToolUse / SessionStart 的手工写法未取得原文，不收录，按用户条目保留。
+- 重复执行零 diff；settings.json 不可解析或顶层不是对象时零写入（既有语义）。
+
+matcher 校正与混合分组（评审 delta-r1 F1）：
+
+- **纯托管分组**（分组内只有托管条目）的 matcher 不是现行值时，就地校正为现行值；PreToolUse 历史 `Edit|Write|Bash` 分组同理原地升级，不新增第二个分组。保持 UT-S01-145、UT-S08-75 的既有校正语义。
+- **混合分组**（托管条目与用户条目同组）的 matcher 不是现行值时，不改动该分组的 matcher：原分组保留原 matcher 与全部用户条目，只把托管条目从中移出，并入该事件的标准分组（matcher 为现行值、只含托管条目的分组；不存在时紧接原分组之后新建）。原分组因此变空时整组删除。移动之后再执行“多条收敛为一条”。
+- 混合分组的 matcher 已是现行值时，不移动，只就地改写其中的托管条目。
+- 目的：用户条目的触发范围不因迁移而扩大或缩小。例如 PostToolUse 中只匹配 `Bash` 的分组依次含旧版事后检查命令与用户的 `node audit.cjs`：迁移后，`Bash` 调用仍会触发用户的 `audit.cjs`，PowerShell 调用不会触发；事后检查命令只在标准分组中出现一次，`Bash` 与 PowerShell 调用都会触发它。
+
+写回方式（评审 delta-r1 F3）：
+
+- 迁移以对原文的**最小文本编辑**写回：只替换托管 hook 对象所在的原文区间；删除被收敛或移出的托管 hook 对象、因此变空的分组及其必要的分隔逗号；改写需要校正的 matcher 字符串；插入新的标准分组或 hook 对象。托管片段之外的字节（含用户条目的 Unicode 转义写法、紧凑或展开格式、缩进、键顺序、换行风格）一律不变。
+- 新插入片段的缩进与换行风格取自相邻元素；没有相邻元素时取文件既有的缩进单位，无法判定时用两个空格。
+- 不得把 settings.json 解析后整文件重新序列化写回；没有任何改动时不写文件。settings.json 不存在、需要新建时，整文件生成不受此限。
+- 本条约束 init / adopt / sync 对 `.claude/settings.json` 的**全部**写回：PreToolUse、SessionStart、PostToolUse、PostToolUseFailure、Stop 的 hook 合并，以及 §2.89.2 的回复语言设置合并（评审 delta-r2 F3 取消原先对语言合并的豁免）。同一次命令中多个步骤先后改写时，每一步都在上一步写回后的原文上做最小文本编辑；最终文件只在托管 hook 片段与 `language` 片段上与命令执行前不同。
+
+### 2.105.5 Git Bash 前提检查与提示（C03、C04）
+
+Windows（`process.platform === 'win32'`）上，`init` / `adopt` / `sync` 在完成 Claude Code 资产部署后检查 Claude Code 能否找到 Git Bash。检查实现为纯函数，平台、环境变量、文件存在判断与 git 调用均由参数注入。按顺序，任一命中即视为可找到：
+
+1. 环境变量 `CLAUDE_CODE_GIT_BASH_PATH` 非空、指向存在的文件，且文件名（不区分大小写）为 `bash.exe` 或 `sh.exe`。指向其它现存文件（如误设为 `git.exe`）时视为本项未命中并继续后续检查，因为 Claude Code 同样不会采用这类值（评审 delta-r1 F4）；
+2. 运行 `git --exec-path`：以 shell 方式调用（PATH 上的 git 可能是 `.cmd` 包装，如 `WindowsApps\git.cmd`，见架构 52.5 第 4 条），超时 5 秒；输出去掉首尾空白、把 `/` 规范为 `\`，以 `\mingw64\libexec\git-core`、`\mingw32\libexec\git-core` 或 `\clangarm64\libexec\git-core` 结尾时去掉该后缀得到安装根；`<安装根>\bin\bash.exe` 存在即命中；不存在时记下安装根供提示使用；git 不存在、调用失败、超时或输出不符合上述后缀，都视为本项未命中；
+3. `%ProgramFiles%\Git\bin\bash.exe` 存在。
+
+三项都未命中时输出警告；非 Windows 不做检查。
+
+- **输出通道**：警告只写 stderr；stdout 上 init / adopt / sync 既有的人类可读输出与退出码保持既有语义（警告不阻断命令）。init、adopt、sync 不支持 `--format json`，本变更不为它们新增输出协议（评审 delta-r1 F5）。
+- **文案**（中文 locale；英文 locale 输出等价英文）：
+  1. `⚠ OpenLogos 写入门禁依赖 Git Bash，但 Claude Code 在本机可能找不到 Git Bash：Claude Code 会改用 PowerShell 执行 hook，并阻断全部写入。`
+  2. 记下了安装根时：`检测到的 git 安装根 <安装根> 下没有 bin\bash.exe，它可能是 MinGit 类精简发行版（如 Codex 等工具自带的 git）。`
+  3. `出路：运行 winget install --id Git.Git -e，或从 https://git-scm.com/download/win 下载安装 Git for Windows；Git Bash 已装在别处时，把环境变量 CLAUDE_CODE_GIT_BASH_PATH 设为其 bash.exe 路径。完成后开新的 Claude Code 会话。`
+- 检查只是近似 Claude Code 自身的查找逻辑，误报或漏报都只影响这条警告，不影响门禁。
+
+### 2.105.6 openlogos-phase 项目根收敛（C06）
+
+`plugin/bin/openlogos-phase` 在读取 `logos/logos.config.json` 之前：
+
+1. `CLAUDE_PROJECT_DIR` 非空且可进入：`cd` 至该目录，之后既有逻辑不变；
+2. `CLAUDE_PROJECT_DIR` 非空但无法进入：JSON 模式输出 `{"systemMessage":"OpenLogos: cannot enter CLAUDE_PROJECT_DIR; phase context not injected"}`，`--plain` 模式输出等价文本，exit 0；
+3. 变量缺失：维持按 cwd 判定的既有行为（cwd 无配置时输出 `Not an OpenLogos project`）。
+
+与 guard-check Step 0 同一写法；SessionStart 不阻断会话，因此不使用 exit 2。stdin 读取与引擎 `check --session-start` 转发（§Claude Code hook 注册与引擎分发「会话输入转发」）不受影响。
+
+### 2.105.7 兼容性
+
+- macOS / Linux / 标准 Git for Windows：三条事后检查命令由 bash 展开 `${CLAUDE_PROJECT_DIR}`，行为不变；PreToolUse / SessionStart 命令与 guard 判定不变。
+- 混合版本团队：`.claude/settings.json` 通常提交进仓库。仍用旧版 CLI 的成员执行 sync 时，旧 CLI 认不出新写法，会再追加一条旧形态事后检查条目；新版 sync 能把它收敛回一条。缓解措施（提示团队统一升级）由后续发布提案负责。
+
+### 2.105.8 验收
+
+- UT-S01-147～149、ST-S01-34（init 写入形态、封闭表识别、Git Bash 前提提示、端到端）。
+- UT-S08-84～89、ST-S08-44～45（sync 迁移、分组识别、前提提示、混合分组、最小文本编辑写回、端到端、windows-latest 真实 CLI 警告）。
+- UT-S09-489、ST-S09-218～220（openlogos-phase 项目根收敛、bash 宿主无 node 时的门禁入口、windows-latest PowerShell 执行、子目录会话阶段注入）。
+- 断言旧事后检查命令形态的既有用例随本节改写：UT-S01-145、UT-S08-75。

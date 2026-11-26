@@ -66,7 +66,8 @@ function nodeOnlyPath(base: string): string {
 }
 
 describe('guard-check Bash 写命令路径提取与逐路径管辖判定 — S09', () => {
-  it('UT-S09-317: Bash 写命令全外路径放行（回归锚：误拦必红→放行必绿）——rm/cp/mv/mkdir/touch 全外实参 exit 0、flag 跳过、重定向不回归', () => {
+  // 重型端到端用例（多宿主完整部署 / 大量真实子进程）：单独运行约 1 秒，全量并发负载下会超过默认 10 秒，显式放宽超时（不改断言）。
+  it('UT-S09-317: Bash 写命令全外路径放行（回归锚：误拦必红→放行必绿）——rm/cp/mv/mkdir/touch 全外实参 exit 0、flag 跳过、重定向不回归', { timeout: 60_000 }, () => {
     launchedProject(root);
     const { root: outside, cleanup: outsideCleanup } = makeTempRoot();
     try {

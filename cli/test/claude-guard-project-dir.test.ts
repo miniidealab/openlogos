@@ -249,7 +249,8 @@ describe('guard-check 工作目录收敛与 fail-closed — S09', () => {
     expect(runGuard(sub, 'Edit', { file_path: join(root, 'src', 'index.ts') }, root).exitCode).toBe(0);
   });
 
-  it('UT-S09-315: 项目外路径放行（管辖边界）——绝对/相对穿越/Bash 重定向一律放行，项目内阻断不外溢，兜底分支一致', () => {
+  // 重型端到端用例（多宿主完整部署 / 大量真实子进程）：单独运行约 1 秒，全量并发负载下会超过默认 10 秒，显式放宽超时（不改断言）。
+  it('UT-S09-315: 项目外路径放行（管辖边界）——绝对/相对穿越/Bash 重定向一律放行，项目内阻断不外溢，兜底分支一致', { timeout: 60_000 }, () => {
     launchedProject(root);
     mkdirSync(join(root, 'src'), { recursive: true });
     // 项目外目标：用户级 ~/.claude 记忆文件形态、另一临时目录绝对路径、相对穿越

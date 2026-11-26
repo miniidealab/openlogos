@@ -598,11 +598,24 @@ Cursor hook 经 stdin 传入 JSON（snake_case：`hook_event_name`、`workspace_
 }
 ```
 
-SessionStart 同形态（`node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/openlogos-phase-launcher.cjs"` 等价写法）。本节取代早前配置示例中的相对路径 command 形态——相对形态在非项目根 cwd 会话下不可解析，属缺陷而非可选写法。
+SessionStart 同形态：`"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/openlogos-phase`。三条事后检查 hook 的形态见 §Claude Code hook 注册与引擎分发。本节取代早前配置示例中的相对路径 command 形态——相对形态在非项目根 cwd 会话下不可解析，属缺陷而非可选写法。
+
+**PowerShell 宿主约束**（fix-claude-hook-windows-powershell-fallback）：Claude Code 在 Windows 上用 Git Bash 执行 shell 形式的 hook，找不到 Git Bash 时改用 PowerShell；此时 PreToolUse 失败（退出码不是 0 或 2）由宿主当作阻断。OpenLogos 在 Windows 上以 Git Bash 为运行前提，据此规定：
+
+1. bash 脚本型 hook（guard-check、openlogos-phase）的注册命令，在 bash 下**必须**直接执行脚本，**不得**经 node 或其它解释器中转——门禁入口不依赖 node，node 不可执行时由 guard-check 的 Python 回退解析输入（§输入解析（规范性））。
+2. 同一命令在 PowerShell 下**必须**无法成功求值，**不得**写成整体加引号的单个字符串（如 `"${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-check"`——PowerShell 会把它当作字符串表达式求值并以 0 退出，等于放行）。上面的现行写法在 PowerShell 下产生 `ParserError` 并以非 0 退出，宿主据此阻断，即 fail-closed。
+3. 以 node 运行的 hook 只用 Claude Code 自行处理的 `${CLAUDE_PROJECT_DIR}` 占位符定位脚本，**不得**使用裸 `$VAR`（PowerShell 下展开为空，路径退化为盘符根）。
+4. 托管条目只含 `type` 与 `command`，不使用 `args`、`shell`、`onFailure` 字段。
 
 matcher 覆盖面（fix-windows-platform-compat）：`MultiEdit` 与 `NotebookEdit` 是与 `Edit` / `Write` 同类的文件写入工具，此前未被 matcher 覆盖、写入绕过 guard；`PowerShell` 为 Windows 版 Claude Code 的 shell 工具，按 shell 写入路径判定（见 §Claude Code guard 跨平台可移植性与输入 fail-closed（规范性））。PowerShell 工具名以实施时 Claude Code 实际 hook 输入的 `tool_name` 核实为准；matcher 中列出一个宿主当前不存在的工具名不产生副作用。
 
-幂等注册判据必须同时识别新旧两种写法：旧相对路径条目升级迁移为新形态（不并存、不重复）；旧 matcher（`Edit|Write|Bash`）的 OpenLogos 托管条目同样原地升级为新 matcher，不新增第二条；用户自有 hooks 条目字节保真。
+**托管识别封闭表**（fix-claude-hook-windows-powershell-fallback，取代原“command 字符串精确匹配、跨分组计数”的判据）：一个 hook 对象是 OpenLogos 托管条目，当且仅当它位于托管分组内，且与封闭表某一行完全相同。
+
+- 托管分组：PreToolUse 为 matcher 是现行 `Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell` 或历史 `Edit|Write|Bash` 的分组；SessionStart、Stop 为无 matcher 的分组；PostToolUse、PostToolUseFailure 为含封闭表完整调用的分组。
+- 完全相同：hook 对象只含 `type: "command"` 与 `command`（exec 行另含 `args`），不含其它字段；shell 字符串形式逐字比较 `command`；exec 形式逐个比较 `command` 与 `args` 元素，`args` 元素中的 `\` 视同 `/`。
+- 封闭表各行（现行行与历史行）的权威列表见功能规格 §2.105.4：PreToolUse 为本节示例命令与历史相对路径 `.claude/openlogos/bin/guard-check`；SessionStart 为 `"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/openlogos-phase` 与历史 `.claude/openlogos/bin/openlogos-phase`；事后检查三事件为现行 `${CLAUDE_PROJECT_DIR}` 形态、历史 `"$CLAUDE_PROJECT_DIR/…"` 形态与历史 exec 形态。
+
+幂等注册：托管条目升级迁移为现行行（整个 hook 对象替换为 `{ "type": "command", "command": <现行命令> }`，exec 形式的 `args` 一并移除）；同一事件的多条托管条目收敛为一条，保留第一条的位置；该事件的托管分组中没有托管条目时追加标准分组。matcher 需要校正时：只含托管条目的分组就地校正（旧 matcher `Edit|Write|Bash` 的托管分组原地升级为新 matcher，不新增第二条）；托管条目与用户条目同组时，原分组保留原 matcher 与用户条目，只把托管条目移入该事件的标准分组，原分组变空时删除——用户条目的触发范围不因迁移改变。写回以对原文的最小文本编辑完成，托管片段之外的字节不变，不得把 settings.json 解析后整文件重新序列化写回（细则见功能规格 §2.105.4）。封闭表之外的条目一律是用户条目，字节与相对顺序不变，包括：引用托管脚本路径的用户命令（如只匹配 `Edit` 的分组里的 `node audit.cjs "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-check"`）、非托管分组里逐字相同的托管命令（不计入“已注册”）、RunLogos 注册的 `node ".claude/openlogos/bin/openlogos-phase-launcher.cjs"`、带附加字段的条目与未收录的手工写法。
 
 ### 工作目录收敛与 fail-closed（规范性）
 
@@ -1084,7 +1097,7 @@ git 元数据**不采集**（git 自身或引擎写入、变化频繁）：`obje
 
 - **事后检查引擎**：单一实现 `plugin/bin/guard-post-check.cjs`（Node，CommonJS），由 guard-check、Claude hooks、Cursor runtime、CLI 的 `change` / `archive` 共用。子命令：`snapshot`（PreToolUse 拍快照，含 `--rebase-only`）、`check`（PostToolUse / PostToolUseFailure / Stop / PreToolUse 补查 / SessionStart，含 `--stop`、`--session-start`、`--rebase-only`）、`restore`（按报告记录恢复单个路径）、`boundary-start`、`boundary-end`。
 - **分发**：作为 asset-manifest 托管资产随 init / sync 部署到 `.claude/openlogos/bin/guard-post-check.cjs`（Claude 宿主）与 `.cursor/hooks/openlogos-guard-post.cjs`（Cursor 宿主，同一份字节）；缺失 / 漂移即刷新，重复 sync 零变化。
-- **注册**（`.claude/settings.json`，`"$CLAUDE_PROJECT_DIR"` 形态，幂等合并，旧托管条目原地升级，用户条目字节保真）：
+- **注册**（`.claude/settings.json`，幂等合并，旧托管条目原地升级，用户条目字节保真；三条事后检查命令使用 `${CLAUDE_PROJECT_DIR}` 占位符，PreToolUse 形态约束与托管识别封闭表见 §hook 注册形态（规范性））：
 
 ```json
 {
@@ -1101,7 +1114,7 @@ git 元数据**不采集**（git 自身或引擎写入、变化频繁）：`obje
       {
         "matcher": "Bash|PowerShell|BashOutput|TaskOutput|KillShell|TaskStop",
         "hooks": [
-          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs\" check" }
+          { "type": "command", "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs\" check" }
         ]
       }
     ],
@@ -1109,14 +1122,14 @@ git 元数据**不采集**（git 自身或引擎写入、变化频繁）：`obje
       {
         "matcher": "Bash|PowerShell",
         "hooks": [
-          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs\" check" }
+          { "type": "command", "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs\" check" }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs\" check --stop" }
+          { "type": "command", "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs\" check --stop" }
         ]
       }
     ]

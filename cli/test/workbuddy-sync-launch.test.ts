@@ -189,7 +189,8 @@ describe('WorkBuddy sync/launch — S08/S14', () => {
     expect(readFileSync(join(root, '.workbuddy/settings.json'), 'utf8')).toBe('{"user":true}\n');
   });
 
-  it('UT-S14-17: Registry 引入后既有宿主顺序与资产目标契约不变', async () => {
+  // 重型端到端用例（多宿主完整部署 / 大量真实子进程）：单独运行约 1 秒，全量并发负载下会超过默认 10 秒，显式放宽超时（不改断言）。
+  it('UT-S14-17: Registry 引入后既有宿主顺序与资产目标契约不变', { timeout: 60_000 }, async () => {
     expect(expandAiTools(['claude-code', 'opencode', 'codex', 'cursor', 'zcode', 'qoder']))
       .toEqual(['claude-code', 'opencode', 'codex', 'cursor', 'zcode', 'qoder']);
     await init('demo', { locale: 'en', aiTool: 'all' });

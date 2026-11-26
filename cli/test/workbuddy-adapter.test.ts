@@ -188,7 +188,8 @@ describe('WorkBuddy Adapter — S01/S20', () => {
     expect(readFileSync(join(root, 'AGENTS.md'), 'utf8')).toContain('<!-- OPENLOGOS:BEGIN -->');
   });
 
-  it('ST-S01-22: all 部署七宿主且重复执行收敛为零语义漂移', async () => {
+  // 重型端到端用例（多宿主完整部署 / 大量真实子进程）：单独运行约 1 秒，全量并发负载下会超过默认 10 秒，显式放宽超时（不改断言）。
+  it('ST-S01-22: all 部署七宿主且重复执行收敛为零语义漂移', { timeout: 60_000 }, async () => {
     await init('demo', { locale: 'en', aiTool: 'all' });
     const first = snapshot(root);
     deployAiToolAssets(root, expandAiTools('all'), 'en', false);

@@ -109,7 +109,8 @@ describe('TRAE non-deployable — S01 初始化', () => {
     expect(consoleCapture.errors.join('\n')).not.toContain('workbuddy, trae');
   });
 
-  it('ST-S01-25: init --ai-tool all 部署七宿主且不创建或改写 TRAE 资产', async () => {
+  // 重型端到端用例（多宿主完整部署 / 大量真实子进程）：单独运行约 1 秒，全量并发负载下会超过默认 10 秒，显式放宽超时（不改断言）。
+  it('ST-S01-25: init --ai-tool all 部署七宿主且不创建或改写 TRAE 资产', { timeout: 60_000 }, async () => {
     const owned = join(root, '.trae', 'owned-by-user.txt');
     mkdirSync(dirname(owned), { recursive: true });
     const ownedBytes = Buffer.from('用户所有的 TRAE 资产\n');

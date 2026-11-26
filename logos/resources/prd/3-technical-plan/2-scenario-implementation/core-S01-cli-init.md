@@ -648,11 +648,11 @@ sequenceDiagram
 
 | 事件 | matcher | command |
 |------|---------|---------|
-| PostToolUse | `Bash\|PowerShell\|BashOutput\|TaskOutput\|KillShell\|TaskStop` | `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check` |
-| PostToolUseFailure | `Bash\|PowerShell` | `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check` |
-| Stop | （无 matcher） | `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check --stop` |
+| PostToolUse | `Bash\|PowerShell\|BashOutput\|TaskOutput\|KillShell\|TaskStop` | `node "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs" check` |
+| PostToolUseFailure | `Bash\|PowerShell` | `node "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs" check` |
+| Stop | （无 matcher） | `node "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs" check --stop` |
 
-- 既有 PreToolUse（guard-check）与 SessionStart（phase launcher）条目形态不变；SessionStart 由 phase launcher 内部调用引擎 `check --session-start` 接管执行记录，不另注册条目。不注册 SessionEnd。
+- 既有 PreToolUse（guard-check）与 SessionStart（phase launcher）条目形态不变（托管识别口径见「S01 Claude hook 托管识别封闭表与 Git Bash 前提提示时序」）；SessionStart 由 phase launcher 内部调用引擎 `check --session-start` 接管执行记录，不另注册条目。不注册 SessionEnd。
 
 ### 时序图
 
@@ -665,16 +665,16 @@ sequenceDiagram
     U->>C: Step 1: openlogos init（ai-tool 含 claude-code）
     C->>B: Step 2: 落盘 guard-check、openlogos-phase、guard-post-check.cjs（随包字节）
     C->>S: Step 3: 读取既有 hooks（缺失则创建骨架）
-    C->>C: Step 4: 以 command 含 .claude/openlogos/bin/guard-post-check.cjs 识别托管条目
-    C->>S: Step 5: PostToolUse / PostToolUseFailure / Stop——无则追加；有则就地校正 matcher 与 command；已一致则不动
+    C->>C: Step 4: 按功能规格 §2.105.4 封闭表与托管分组识别托管条目
+    C->>S: Step 5: PostToolUse / PostToolUseFailure / Stop——无则追加标准分组；有则改写为现行行并按纯托管 / 混合分组规则处理 matcher；已一致则不动；以最小文本编辑写回
     C-->>U: Step 6: 注册完成
 ```
 
 ### 步骤说明
 
 1. **Step 2**：引擎与 guard-check、openlogos-phase 一起作为托管资产落盘；随包缺少 `guard-post-check.cjs` 时在首个项目写入前失败。
-2. **Step 4 身份识别**：托管条目身份只看 command 是否包含 `.claude/openlogos/bin/guard-post-check.cjs`，不看 matcher，以便旧版本留下的条目能被就地校正。
-3. **Step 5 幂等合并**：PostToolUse、PostToolUseFailure、Stop 三个事件各自独立合并；同一事件下多于一条托管条目时收敛为唯一一条。用户自有条目（含用户自己在这三个事件上注册的 hook）字节不变、相对顺序不变。
+2. **Step 4 身份识别**：托管条目身份按功能规格 §2.105.4 的封闭表与托管分组判定——hook 对象须与封闭表某一行完全相同（逐字比较 command，exec 形式逐个比较 args），不再以“command 包含 `.claude/openlogos/bin/guard-post-check.cjs`”认领（fix-claude-hook-windows-powershell-fallback）。旧版本留下的条目属于封闭表历史行，仍能被识别并改写；`node audit.cjs ".claude/openlogos/bin/guard-post-check.cjs"` 这类引用引擎路径的用户命令不是托管条目，原样保留。
+3. **Step 5 幂等合并**：PostToolUse、PostToolUseFailure、Stop 三个事件各自独立合并；同一事件下多于一条托管条目时收敛为唯一一条。matcher 需要校正时，只含托管条目的分组就地校正；托管条目与用户条目同组时，原分组保留原 matcher 与用户条目，只把托管条目移入标准分组。用户自有条目（含用户自己在这三个事件上注册的 hook）字节不变、相对顺序不变、触发范围不变；写回以对原文的最小文本编辑完成，不整文件重新序列化。
 4. matcher 中列出的后台任务工具名（`BashOutput` / `TaskOutput` / `KillShell` / `TaskStop`）以实施时 Claude Code 真实 hook 输入核实；写入宿主不存在的工具名无副作用。
 
 ### 异常与边界
@@ -694,3 +694,101 @@ sequenceDiagram
 - 决策：C06（PostToolUse / PostToolUseFailure 共用检查）、C12（Stop 与 SessionStart 检查点、不注册 SessionEnd）。
 - 关联场景：S08「sync 事后检查 hook 注册与 guard 引擎分发时序」（存量项目补齐走同一合并函数）。
 - 测试：UT-S01-145、ST-S01-33。
+
+## S01 Claude hook 托管识别封闭表与 Git Bash 前提提示时序
+
+> 来源变更：fix-claude-hook-windows-powershell-fallback（决策 C01～C05）。规则权威见功能规格 §2.105.2～§2.105.5。
+
+### 场景目标
+
+`openlogos init` / `adopt` 为 Claude Code 写入 hook 时：三条事后检查命令使用 `${CLAUDE_PROJECT_DIR}` 占位符，在 Git Bash 与 PowerShell 宿主下都能定位引擎；PreToolUse / SessionStart 命令保持现行形态；托管条目按封闭表与托管分组识别，用户命令与其它宿主的条目原样保留；Windows 上 Claude Code 可能找不到 Git Bash 时，给出含 winget 命令的前提警告。
+
+### 参与者
+
+- **用户**：运行 `openlogos init` / `openlogos adopt`。
+- **OpenLogos CLI（init/adopt）**：部署托管 bin、合并 settings.json、执行 Git Bash 前提检查。
+- **`.claude/settings.json`**：hook 注册载体（用户自有条目必须字节保真）。
+- **git**（可选，仅 Windows）：提供 `git --exec-path`，供前提检查反推安装根。
+
+### 前置条件
+
+项目选择 Claude Code 适配（ai-tool 含 claude-code）；随包资产完整。
+
+### 成功后置条件
+
+- 五个托管事件各有且只有一条托管条目，命令为功能规格 §2.105.2 的现行形态。
+- 封闭表之外的条目（含引用托管脚本路径的用户命令、RunLogos 的 `openlogos-phase-launcher.cjs` 条目）字节与相对顺序不变。
+- Windows 上前提检查未命中时，stderr 有前提警告；stdout 的既有输出与命令退出码不受影响。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant C as OpenLogos CLI（init/adopt）
+    participant S as .claude/settings.json
+    participant G as git（仅 Windows）
+    U->>C: Step 1: openlogos init / adopt
+    C->>C: Step 2: 部署托管 bin（既有行为）
+    C->>S: Step 3: 读取 hooks
+    alt settings.json 不可解析或顶层非对象
+        C->>C: Step 3a: 按既有规则跳过 hook 合并，零写入
+    else 可解析
+        C->>C: Step 4: 逐事件在托管分组内按封闭表识别托管条目
+        C->>S: Step 5: 托管条目改写为现行行；多条收敛为一条；托管分组无托管条目则追加标准分组
+    end
+    opt 平台为 win32
+        C->>C: Step 6: CLAUDE_CODE_GIT_BASH_PATH 指向的文件是否存在
+        C->>G: Step 7: git --exec-path（shell 方式，5 秒超时）
+        G-->>C: 安装根（规范化分隔符）或失败
+        C->>C: Step 8: 检查 安装根\bin\bash.exe 与 %ProgramFiles%\Git\bin\bash.exe
+        C-->>U: Step 9: 三项都未命中 → stderr 输出前提警告（含 winget 命令；有安装根时点明可能是 MinGit）
+    end
+    C-->>U: Step 10: 完成（退出码不受警告影响）
+```
+
+### 步骤说明
+
+1. **用户** 运行 init 或 adopt（两者共用同一部署函数族）。
+2. **CLI** 部署 guard-check、openlogos-phase、guard-post-check.cjs（既有行为，不新增托管资产）。
+3. **CLI** 读取 settings.json；不可解析或顶层不是对象时按既有规则不做 hook 合并。
+4. **CLI** 按功能规格 §2.105.4 识别托管条目：只在托管分组内、只认与封闭表某一行完全相同的 hook 对象；用户分组里逐字相同的命令不计入“已有门禁”。
+5. **CLI** 把托管条目替换为 `{ "type": "command", "command": <现行命令> }`（移除 exec 形式的 `args`）；托管条目与用户条目同组且 matcher 需要校正时，把托管条目移入标准分组、原分组保留原 matcher；同一事件多条托管条目只保留第一条的位置；托管分组中没有托管条目时追加标准分组。写回以对原文的最小文本编辑完成（功能规格 §2.105.4「写回方式」）。
+6. **CLI**（仅 win32）检查 `CLAUDE_CODE_GIT_BASH_PATH`。
+7. **CLI** 以 shell 方式调用 `git --exec-path`（PATH 上的 git 可能是 `.cmd` 包装）；失败、超时或输出不可识别都只视为本项未命中。
+8. **CLI** 检查 `<安装根>\bin\bash.exe` 与 `%ProgramFiles%\Git\bin\bash.exe`；安装根存在但无 `bin\bash.exe` 时记下安装根。
+9. **CLI** 三项都未命中时，按功能规格 §2.105.5 的文案向 stderr 输出警告。
+10. **CLI** 照常完成；警告只写 stderr，不改变 stdout 的既有输出与退出码（init 不支持 `--format json`）。
+
+### 异常与边界
+
+#### EX-HB-S01-1：用户分组里出现托管命令
+- **触发条件**：PreToolUse 里有只匹配 `Edit` 的用户分组，含 `node audit.cjs "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-check"`，或含与现行行逐字相同的 guard-check 命令。
+- **期望响应**：该分组与其中条目原样保留；标准 PreToolUse 分组（完整 matcher）照常存在且唯一。
+- **副作用**：无。
+
+#### EX-HB-S01-2：settings.json 含 RunLogos 的 SessionStart launcher
+- **触发条件**：SessionStart 中有 `node ".claude/openlogos/bin/openlogos-phase-launcher.cjs"`。
+- **期望响应**：该条目字节不变；OpenLogos 自己的 SessionStart 托管条目照常存在且唯一。
+- **副作用**：无。
+
+#### EX-HB-S01-3：只有 MinGit 的 Windows 机器
+- **触发条件**：`git --exec-path` 返回 `C:/Users/<用户>/Documents/Codex/Git/mingw64/libexec/git-core`，安装根下没有 `bin\bash.exe`，其它两项也未命中。
+- **期望响应**：stderr 输出前提警告，写明该安装根、提示可能是 MinGit 类发行版，并给出 winget 命令；init 照常完成。
+- **副作用**：无。
+
+#### EX-HB-S01-4：git 调用失败或挂起
+- **触发条件**：git 不存在、返回非 0、5 秒内未返回，或输出不以已知 `libexec\git-core` 后缀结尾。
+- **期望响应**：该项视为未命中，继续检查下一项；不因 git 问题使 init 失败。
+- **副作用**：无。
+
+#### EX-HB-S01-5：重复 init / adopt
+- **触发条件**：对已是现行形态的项目重复执行。
+- **期望响应**：settings.json 零变化。
+- **副作用**：无。
+
+### 追溯
+
+- 需求：「Windows Git Bash 前提与 PowerShell 宿主需求」Git Bash 前提要求、托管识别要求、S01 验收条件。
+- 功能规格：§2.105.2、§2.105.4、§2.105.5。
+- 测试：UT-S01-147～149、ST-S01-34。

@@ -1642,3 +1642,28 @@
 - 「与修改前实测基准相同」「与基准逐字节相同」类断言的基准由 0.16.8 分发源对同一输入集实测生成并入库为夹具，不在测试代码中手写期望。
 - 生成指令的断言按托管段 `OPENLOGOS:BEGIN` / `OPENLOGOS:END` 之间的内容比较；禁令「不出现」的断言以固定字符串与 en 对应文案各检查一次。
 - 测试结果写入 `logos/resources/verify/test-results.jsonl`（OpenLogos reporter），测试名包含用例 ID。
+
+## S09 PowerShell 宿主下的 Claude hook 与 SessionStart 项目根收敛测试（fix-claude-hook-windows-powershell-fallback）
+
+> 覆盖场景 S09「S09 PowerShell 宿主下的 Claude hook 行为」（Step 1～8、EX-HB-S09-1～3）与「S09 SessionStart 阶段注入的项目根收敛时序」（Step 1～5、EX-HB-S09-4～5）；功能规格 §2.105.1～§2.105.3、§2.105.6；架构 52.5 第 5、7 条、52.7；`spec/pretooluse-guard.md`「hook 注册形态（规范性）」。
+>
+> **证据范围**：CI 无法运行 Claude Code 本体。ST-S09-218、ST-S09-220 取 sync 实际生成的 settings.json 中的命令，在真实 bash 中执行；ST-S09-219 在 windows-latest 以真实 `powershell.exe -NoProfile -Command` 执行同一命令，执行前**模拟** Claude Code 的占位符处理，两种机制各跑一轮：(a) 把 `${CLAUDE_PROJECT_DIR}` 替换为项目根绝对路径；(b) 改写为 `$env:CLAUDE_PROJECT_DIR` 并设置该环境变量。宿主“PreToolUse 失败即阻断”的裁决本身不在 CI 中模拟，由 RunLogos 实机真实会话验证（见提案验收条件）。
+
+### 单元测试
+
+| ID | 测试点 | 前置条件 | 输入/操作 | 预期输出 |
+|----|--------|----------|-----------|----------|
+| UT-S09-489 | openlogos-phase 项目根收敛 | launched 项目，存在活跃提案；分发源 `plugin/bin/openlogos-phase` | ① cwd 为项目根、不设 `CLAUDE_PROJECT_DIR`，JSON 模式执行；② cwd 为 `src/` 子目录、`CLAUDE_PROJECT_DIR` 指向项目根；③ `CLAUDE_PROJECT_DIR` 指向不存在的目录；④ cwd 为 `src/`、不设 `CLAUDE_PROJECT_DIR`；⑤ ② 的条件下以 `--plain` 执行 | ② 的 stdout 与 ① 逐字节相同，且含项目名称与活跃提案 slug（不只检查退出码）；③ 输出 `{"systemMessage":"OpenLogos: cannot enter CLAUDE_PROJECT_DIR; phase context not injected"}`，exit 0（EX-HB-S09-4）；④ 输出 `{"systemMessage":"Not an OpenLogos project"}`，exit 0（EX-HB-S09-5，既有行为）；⑤ 与 cwd 为项目根时的 `--plain` 输出相同 |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|------------|----------|----------|----------|
+| ST-S09-218 | bash 宿主上门禁入口不依赖 node | 「PowerShell 宿主下的 Claude hook 行为」Step 7～8；EX-HB-S09-3 | launched 项目，经真实 `openlogos sync` 生成 settings.json；PATH 只含 bash 与系统工具目录，不含 node；另备一份同时去掉 Python 的 PATH | ① 取 settings.json 中的 PreToolUse 命令，在 bash 中执行，stdin 为 Edit `src/a.ts` 的 hook 输入，无活跃提案；② 创建活跃提案，范围含 `src/a.ts`，重复 ①；③ 使用去掉 Python 的 PATH 重复 ① | ① exit 2，stdout JSON 与 stderr 均含既有阻断 reason；② exit 0；③ exit 2，reason 指出无法解析 hook 输入（fail-closed）；三轮 stderr 均不含 `node: command not found` 这类启动失败信息 |
+| ST-S09-219 | windows-latest：PowerShell 执行 sync 生成的命令 | 「PowerShell 宿主下的 Claude hook 行为」Step 1～6 | 属 Windows 回归集（架构 52.7），在 windows-latest 阻断 job 中运行；launched 项目，经真实 `openlogos sync` 生成 settings.json | 对占位符处理机制 (a)(b) 各执行一轮：① 以 `powershell.exe -NoProfile -Command` 执行 PostToolUse、PostToolUseFailure、Stop 命令，stdin 为对应事件的 hook 输入；② 以同样方式执行 PreToolUse 命令，stdin 为 Edit 输入；③ **必红对照**：用 0.16.22 的 `node "$CLAUDE_PROJECT_DIR/…/guard-post-check.cjs" check --stop` 执行 ① 中的 Stop | ① 三条命令的输出不含 `MODULE_NOT_FOUND`，退出码与 bash 下执行同一命令一致；② 退出码不为 0；③ 输出含 `MODULE_NOT_FOUND`（证明测试能复现原缺陷） |
+| ST-S09-220 | 子目录会话的阶段注入 | 「SessionStart 阶段注入的项目根收敛时序」Step 1～5 | launched 项目、存在活跃提案，经真实 `openlogos sync` 生成 settings.json | ① 在项目根执行 settings.json 中的 SessionStart 命令（设置 `CLAUDE_PROJECT_DIR`），记录 stdout；② 在 `src/` 子目录执行同一命令 | ② 的 stdout 与 ① 相同，含项目名称与活跃提案 slug，不含 `Not an OpenLogos project` |
+
+### 自动化与证据要求
+
+- 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S09"`；失败不得写 pass。
+- ST-S09-219 只在 windows-latest 阻断 job 中执行；非 Windows 环境不执行，不得写 pass。

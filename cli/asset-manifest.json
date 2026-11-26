@@ -47,7 +47,7 @@
   "templates": [
     {
       "path": "dist/i18n.js",
-      "sha256": "cec91ed8d28f6fada72f93f691bd171144aac187edda9d326c8c8e428e7c4fea"
+      "sha256": "201846510813402c6c5fb772af39f5905c8286fcc7edada0ce5d3d884c9127a8"
     }
   ],
   "schemas": [
@@ -83,7 +83,7 @@
     },
     {
       "path": "claude-plugin-template/bin/openlogos-phase",
-      "sha256": "aa3c84f3947308d01df03d0ce5b43fbd129d06edcbfc26ebd3af48870d168090"
+      "sha256": "d2e6705b6b25783180b7829a33401d2abb5fa607357c3575f88580d724645dbf"
     },
     {
       "path": "claude-plugin-template/skills/change-writer/SKILL.md",
@@ -114,5 +114,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "5c7c752dc59edd723f6ead6cb70a10ec509ebd98a20c549f4f7bab5b0b357634"
+  "payloadHash": "2d944bb791293a5bd50cfbcc5136b98fbd80c7d8f30f4a56ba9335923c919f93"
 }

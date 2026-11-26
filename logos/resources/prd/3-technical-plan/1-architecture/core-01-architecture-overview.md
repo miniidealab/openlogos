@@ -2830,8 +2830,11 @@ Windows 上杀毒软件、搜索索引器、IDE 文件监听会短暂持有文�
 2. **钩子读 stdin**：node 分支以 `readFileSync(0)` 读取，不得读 `/dev/stdin`（Windows 版 Node 解析为 `<盘>:\dev\stdin`）。node 是 OpenLogos 运行前提，因此 node 分支是钩子输入解析的主路径，Python 仅在真实可执行时使用。
 3. **钩子输入不可解析时 fail-closed**：写入门禁无法得知工具名即已失明，放行等于关闭门禁；Claude Code guard 与 ZCode / Qoder / Cursor 既有 fail-closed 契约对齐（规范见 `spec/pretooluse-guard.md`）。
 4. **调用 npm 全局命令**：Windows 全局入口为 `.cmd` 包装，Node ≥ 18.20 / 20.12 不带 shell 时无法 `spawn`。在 win32 上以 shell 方式调用并逐个引用参数；POSIX 维持直接 `spawn`。
-5. **bash 脚本型 hook**：宿主 hook 配置中以显式 `bash <脚本路径>` 调用，不依赖文件关联或可执行位。
+5. **bash 脚本型 hook**：不依赖文件关联或可执行位，按宿主分别落实：
+   - **Codex**：宿主 hook 配置中以显式 `bash <脚本路径>` 调用（现行合同不变）。
+   - **Claude Code**：以 Git Bash 为运行前提（Windows 上 Claude Code 用 Git Bash 执行 hook，找不到时改用 PowerShell）。注册命令在 bash 下直接执行脚本、不经 node 中转，使门禁入口不依赖 node（node 不可执行时由脚本内 Python 回退解析输入）；在 PowerShell 下必须无法成功求值（不得是整体加引号的单个字符串——那会被当作字符串表达式求值并以 0 退出），从而由宿主按失败阻断 PreToolUse（Windows 无 Git Bash 时宿主把 PreToolUse 失败当作阻断）。Windows 上 `init` / `adopt` / `sync` 检查 Git Bash 是否可被找到，找不到时给出前提警告。规则权威见功能规格 §2.105 与 `spec/pretooluse-guard.md`「hook 注册形态（规范性）」（fix-claude-hook-windows-powershell-fallback）。
 6. POSIX 专有路径不得作为跨平台默认值（如 `/private/tmp`），默认值在**读取时**按平台解析，不在生成配置时固化为某台机器的绝对路径（见 52.6）。
+7. **node 类 hook 命令与 shell 方言无关**：Claude Code 的 hook 命令可能由 Git Bash 执行，也可能由 PowerShell 执行。以 node 运行的 hook（事后检查引擎）只能用 Claude Code 自行处理的 `${CLAUDE_PROJECT_DIR}` / `${CLAUDE_PLUGIN_ROOT}` 占位符定位文件，不得使用依赖 shell 展开的裸 `$VAR`（PowerShell 下 `$CLAUDE_PROJECT_DIR` 展开为空，路径退化为盘符根）；命令中只出现 `node`、双引号包裹的脚本路径与纯文本参数（fix-claude-hook-windows-powershell-fallback）。
 
 ### 52.6 沙箱默认根
 

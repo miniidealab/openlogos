@@ -266,7 +266,7 @@
 | UT-S01-142 | 接受写入、拒绝不写 | 注入交互回答「接受」（含直接回车）→ `logos.config.json` 的 `guard.unversioned` 等于建议清单且顺序一致，托管区块依次为说明注释、`logos/.openlogos-runtime/`、建议条目；回答「拒绝」→ 配置无 `guard.unversioned` 字段，区块只含运行时目录条目，输出提示可用 `openlogos ignore add` 添加 |
 | UT-S01-143 | 运行时目录条目直接写入与区块边界 | ① 无 `.gitignore` → 新建仅含托管区块的文件；② 已有用户内容（CRLF 行尾）→ 区块追加在末尾且前置一个空行，区块使用 CRLF，区块外字节不变；③ 全部候选已被忽略 → 不提问、区块仍写 `logos/.openlogos-runtime/` 并输出告知行；④ `.gitignore` 含两个起始标记或有起无止 → exit 1，项目内零写入（无 `logos/`、`.gitignore` 字节不变）；区块内不含 `logos/.openlogos-guard` |
 | UT-S01-144 | 非交互默认不写建议条目 | stdin 非 TTY、传 `--locale zh`：不提问、配置无 `guard.unversioned`、区块只含运行时目录条目；stdout 含建议清单与可直接执行的 `openlogos ignore add node_modules/ dist/ build/ coverage/`（含通配条目时加引号，如 `'*.pyc'`）；init 退出码 0 |
-| UT-S01-145 | Claude 事后检查 hook 注册幂等 | init 后 `.claude/openlogos/bin/guard-post-check.cjs` 与随包字节一致；settings.json 中 PostToolUse matcher 为 `Bash\|PowerShell\|BashOutput\|TaskOutput\|KillShell\|TaskStop`、PostToolUseFailure matcher 为 `Bash\|PowerShell`、Stop 无 matcher，command 均为 `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check`（Stop 附 `--stop`）；预置用户自有 PostToolUse / Stop 条目字节与顺序不变；预置 matcher 与当前版本不一致（多出或缺少工具名）的托管条目被就地校正而非新增；重复执行零变化；无 SessionEnd 条目；PreToolUse / SessionStart 条目不变 |
+| UT-S01-145 | Claude 事后检查 hook 注册幂等 | init 后 `.claude/openlogos/bin/guard-post-check.cjs` 与随包字节一致；settings.json 中 PostToolUse matcher 为 `Bash\|PowerShell\|BashOutput\|TaskOutput\|KillShell\|TaskStop`、PostToolUseFailure matcher 为 `Bash\|PowerShell`、Stop 无 matcher，command 均为 `node "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs" check`（Stop 附 `--stop`）；预置用户自有 PostToolUse / Stop 条目字节与顺序不变；预置 matcher 与当前版本不一致（多出或缺少工具名）的托管条目被就地校正而非新增；重复执行零变化；无 SessionEnd 条目；PreToolUse / SessionStart 条目不变 |
 | UT-S01-146 | Cursor 新增 afterShellExecution 与能力声明更正 | `CURSOR_HOOK_EVENTS` 含 `afterShellExecution`；模板 `plugin-cursor/hooks/hooks.json` 事件集合与之相等；init 后 `.cursor/hooks.json` 含 `afterShellExecution` 托管条目（command `node .cursor/hooks/openlogos-runtime.cjs shell-after`）且用户条目不变；`.cursor/hooks/openlogos-guard-post.cjs` 与 `plugin/bin/guard-post-check.cjs` 字节一致；成功输出的能力提示行与托管指令文案均不含「完整 preToolUse 硬拦」/ `Full pre-edit blocking` 一类表述，并说明文件编辑为 `afterFileEdit` 事后报告 |
 
 ### 场景测试
@@ -292,3 +292,25 @@
 - [x] 非交互默认：UT-S01-144、ST-S01-32。
 - [x] Claude PostToolUse / PostToolUseFailure / Stop 注册与引擎部署：UT-S01-145、ST-S01-33。
 - [x] Cursor `afterShellExecution` 与能力声明更正：UT-S01-146、ST-S01-33。
+
+## Claude hook 托管识别封闭表与 Git Bash 前提提示测试用例（fix-claude-hook-windows-powershell-fallback）
+
+> 覆盖场景 S01「S01 Claude hook 托管识别封闭表与 Git Bash 前提提示时序」（Step 1～10、EX-HB-S01-1～5）；功能规格 §2.105.2～§2.105.5；`spec/pretooluse-guard.md`「hook 注册形态（规范性）」。
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S01-147 | init 写入的注册形态 | init 后 settings.json：PostToolUse / PostToolUseFailure 为 `node "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs" check`、Stop 附 `--stop`，三条均不含裸 `$CLAUDE_PROJECT_DIR`；PreToolUse 为 `"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/guard-check`、SessionStart 为 `"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/openlogos-phase`，与本变更前逐字相同；PreToolUse / SessionStart 命令不以 `node` 开头、不是以 `"` 开头并以 `"` 结尾的单个字符串；五条托管条目都只含 `type` 与 `command` 两个字段 |
+| UT-S01-148 | 封闭表识别与分组判定 | 预置 settings.json：① PreToolUse 用户分组（matcher `Edit`）含 `node audit.cjs "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-check"` 与逐字相同的现行 guard-check 命令；② SessionStart 含 `node ".claude/openlogos/bin/openlogos-phase-launcher.cjs"`；③ PostToolUse 含历史 `"$CLAUDE_PROJECT_DIR/…"` 形态与历史 exec 形态（`args` 中路径用 `\`）各一条；④ 带 `timeout` 字段的托管命令；⑤ PostToolUse 用户分组含 `node audit.cjs ".claude/openlogos/bin/guard-post-check.cjs"`。init 后：①②④⑤ 字节与相对顺序不变（EX-HB-S01-1、EX-HB-S01-2）；标准 PreToolUse 分组（完整 matcher）与 OpenLogos SessionStart 托管条目各存在且唯一；③ 收敛为一条现行形态、`args` 被移除、位置为第一条所在位置；再次 init 零变化（EX-HB-S01-5） |
+| UT-S01-149 | Git Bash 前提检查（纯函数） | 注入 `platform`、`env`、`exists`、`runGit`：`platform='darwin'` → 不检查、无警告；win32 下 `CLAUDE_CODE_GIT_BASH_PATH` 指向存在的 `bash.exe`（或 `BASH.EXE`、`sh.exe`）→ 命中；`CLAUDE_CODE_GIT_BASH_PATH` 指向现存的 `git.exe`、`runGit` 返回 MinGit 安装根且 `bin\bash.exe` 不存在、`%ProgramFiles%\Git\bin\bash.exe` 不存在 → 该项不命中、继续探测，最终输出含 MinGit 安装根与 winget 命令的警告；`runGit` 返回 `C:/Users/admin/Documents/Codex/Git/mingw64/libexec/git-core\n` 且 `bin\bash.exe` 不存在 → 未命中并记下安装根 `C:\Users\admin\Documents\Codex\Git`；`mingw32`、`clangarm64` 后缀同理；`%ProgramFiles%\Git\bin\bash.exe` 存在 → 命中；`runGit` 抛错、超时、返回非 0 或输出无已知后缀 → 该项未命中并继续（EX-HB-S01-4）；win32 下 git 以 shell 方式调用（断言调用选项）。三项都未命中时，警告文本含「依赖 Git Bash」、`winget install --id Git.Git -e`、`https://git-scm.com/download/win`、`CLAUDE_CODE_GIT_BASH_PATH` 与开新会话提示；有安装根时另含该路径与 MinGit 提示（EX-HB-S01-3）；英文 locale 输出等价英文 |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S01-34 | init 端到端 | 真实 `openlogos init --ai-tool claude-code` 后五条托管条目为 §2.105.2 现行形态；在 bash 下执行注册的 PostToolUse 命令（`CLAUDE_PROJECT_DIR` 指向项目根），引擎退出码与直接以 node 调用引擎一致；非 Windows 上 stderr 不含 Git Bash 前提警告（Windows 上真实 CLI 的警告输出由 ST-S08-45 在 windows-latest 覆盖）；重复 init 后 settings.json 字节零变化 |
+
+### 自动化与证据要求
+
+- 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S01"`；失败不得写 pass。

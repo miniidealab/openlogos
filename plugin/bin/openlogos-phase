@@ -176,6 +176,22 @@ if [ "${1:-}" = "--plain" ]; then
   MODE="plain"
 fi
 
+# fix-claude-hook-windows-powershell-fallback（功能规格 §2.105.6，决策 C06）：读取配置之前收敛到 Claude Code
+# 给出的项目根，会话 cwd 为项目子目录时也能定位 logos/logos.config.json（与 guard-check Step 0 同一写法）。
+# 变量在场但无法进入时只说明、exit 0（SessionStart 不阻断会话）；变量缺失时维持按 cwd 判定。
+# 先记下脚本自身目录：之后的 cd 不得影响按 BASH_SOURCE 定位同目录引擎。
+_OPENLOGOS_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+  if ! cd "$CLAUDE_PROJECT_DIR" 2>/dev/null; then
+    if [ "$MODE" = "json" ]; then
+      echo '{"systemMessage":"OpenLogos: cannot enter CLAUDE_PROJECT_DIR; phase context not injected"}'
+    else
+      echo "⚠ OpenLogos: cannot enter CLAUDE_PROJECT_DIR; phase context not injected."
+    fi
+    exit 0
+  fi
+fi
+
 CONFIG="logos/logos.config.json"
 
 if [ ! -f "$CONFIG" ]; then
@@ -615,7 +631,7 @@ fi
 # 并把待报告项并入注入上下文。只在 hook（JSON）模式运行；引擎缺失、node 不可用或失败时静默跳过。
 GUARD_PENDING=""
 if [ "$MODE" = "json" ] && [ "$NODE_OK" -eq 1 ]; then
-  _GUARD_ENGINE="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/guard-post-check.cjs"
+  _GUARD_ENGINE="${_OPENLOGOS_SELF_DIR}/guard-post-check.cjs"
   if [ -f "$_GUARD_ENGINE" ]; then
     GUARD_PENDING="$(printf '%s' "$OPENLOGOS_HOOK_INPUT" | node "$_GUARD_ENGINE" check --session-start 2>/dev/null || true)"
   fi

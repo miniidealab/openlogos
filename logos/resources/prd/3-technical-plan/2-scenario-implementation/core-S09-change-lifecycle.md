@@ -1732,3 +1732,153 @@ sequenceDiagram
 - 功能规格：§2.69.1、§2.69.2、§2.69.4、§2.85.3。
 - 场景关联：本文档「S09 merge 直接合并时序」（EX-9.22 改写）、「S09 merge 内部错误的稳定失败语义」（档位沿用）；S11「已合并提案的增量修正只读投影」。
 - 测试：UT-S09-429～UT-S09-447、ST-S09-196～ST-S09-201。
+
+## S09 PowerShell 宿主下的 Claude hook 行为
+
+> 来源变更：fix-claude-hook-windows-powershell-fallback（决策 C01、C02、C04）。规则权威见功能规格 §2.105.1～§2.105.3、架构 52.5 第 5、7 条。
+
+### 场景目标
+
+在 Windows 上 Claude Code 找不到 Git Bash、改用 PowerShell 执行 hook 时：事后检查 hook 能正常运行引擎，不再报 `MODULE_NOT_FOUND`；写入门禁保持 fail-closed——PreToolUse 命令无法求值，由宿主按失败阻断；用户安装 Git Bash 并开新会话后，宿主改走 Git Bash，guard 恢复正常裁决。bash 宿主上门禁入口不依赖 node。
+
+### 参与者
+
+- **Claude Code**：Windows 上找不到 Git Bash 时以 PowerShell 执行 shell 形式的 hook；执行前处理 `${CLAUDE_PROJECT_DIR}` 占位符（替换为项目根绝对路径，或改写为 `$env:CLAUDE_PROJECT_DIR`，两者结果相同）。
+- **PowerShell / bash**：实际执行注册命令的 shell。
+- **guard-check、guard-post-check.cjs**：既有脚本与引擎，判定逻辑不变。
+
+### 前置条件
+
+hook 已按功能规格 §2.105.2 注册（S01 / S08）。
+
+### 成功后置条件
+
+- PowerShell 宿主：PostToolUse / PostToolUseFailure / Stop 命令运行引擎，输出不含 `MODULE_NOT_FOUND`；PreToolUse 命令以非 0 退出，宿主阻断该次工具调用。
+- bash 宿主：PreToolUse 直接执行 guard-check，判定语义与本变更前一致；PATH 中没有 node 时由 Python 回退解析，node 与 Python 都没有时 fail-closed。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant H as Claude Code
+    participant PS as PowerShell
+    participant B as bash（Git Bash / sh）
+    participant G as guard-check
+    participant E as guard-post-check.cjs
+    alt 找不到 Git Bash（PowerShell 宿主）
+        H->>H: Step 1: 处理 ${CLAUDE_PROJECT_DIR} 占位符
+        H->>PS: Step 2: PreToolUse 命令 "$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/guard-check
+        PS-->>H: Step 3: ParserError，非 0 退出
+        H->>H: Step 4: 宿主按失败阻断本次工具调用（提示 Git Bash 未找到）
+        H->>PS: Step 5: PostToolUse / Stop 命令 node "<项目根>/.claude/openlogos/bin/guard-post-check.cjs" check
+        PS->>E: 启动引擎
+        E-->>H: Step 6: 引擎按既有语义返回
+    else Git Bash 可用或非 Windows（bash 宿主）
+        H->>B: Step 7: PreToolUse 命令
+        B->>G: 直接执行 guard-check（不经 node）
+        G-->>H: Step 8: exit 0 放行 / exit 2 + reason 阻断（node 缺失时走 Python 回退；解析器全无时 exit 2）
+    end
+```
+
+### 步骤说明
+
+1. **Claude Code** 在交给 PowerShell 前处理花括号占位符；裸 `$CLAUDE_PROJECT_DIR` 不是占位符，原样交给 shell。
+2. **PowerShell** 执行 PreToolUse 命令 `"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/guard-check`。
+3. 该命令在 PowerShell 下产生 `ParserError`，以非 0 退出。注册形态约束（功能规格 §2.105.3）保证它不会被求值为 0。
+4. **Claude Code** 在 Windows 无 Git Bash 时把 PreToolUse 失败当作阻断，本次工具调用不执行（fail-closed）。
+5. **PowerShell** 执行事后检查命令；占位符已处理为项目根，引擎可定位。
+6. **引擎** 按既有语义完成检查；不再出现 `MODULE_NOT_FOUND`。
+7. **bash 宿主**直接执行 guard-check，不经 node 中转。
+8. **guard-check** 按既有合同裁决：node 不可执行时以 Python 回退解析 hook 输入；解析器全部不可用时 fail-closed（exit 2 + 双通道 reason）。
+
+### 异常与边界
+
+#### EX-HB-S09-1：只有 MinGit 的 Windows 机器
+- **触发条件**：机器上的 git 不带 bash（如 Codex 自带的 MinGit），Claude Code 找不到 Git Bash。
+- **期望响应**：PreToolUse 由宿主阻断，包括 initial 阶段项目与只读 shell 命令；init / sync 已输出含 winget 命令的前提警告（S01 / S08）。这是用户决定 C04 接受的 fail-closed 结果。
+- **副作用**：安装 Git Bash 并开新会话之前无法写入。
+
+#### EX-HB-S09-2：安装 Git for Windows 之后
+- **触发条件**：用户按警告运行 `winget install --id Git.Git -e`，或设置 `CLAUDE_CODE_GIT_BASH_PATH`，然后开新会话。
+- **期望响应**：宿主改用 Git Bash 执行 hook，走 Step 7～8；范围外写入被 guard 拒绝，提案范围内写入获准。
+- **副作用**：无。
+
+#### EX-HB-S09-3：bash 宿主上 PATH 中没有 node
+- **触发条件**：GUI 启动的会话 PATH 不含 node。
+- **期望响应**：PreToolUse 照常执行 guard-check，以 Python 回退裁决；Python 也不可用时 exit 2。事后检查 hook 无法启动属宿主非阻断错误，不构成放行依据（既有合同）。
+- **副作用**：无。
+
+### 追溯
+
+- 需求：「Windows Git Bash 前提与 PowerShell 宿主需求」门禁入口要求、S09 验收条件。
+- 功能规格：§2.105.1～§2.105.3。
+- 架构：52.5 第 5、7 条。
+- 测试：ST-S09-218、ST-S09-219。
+
+## S09 SessionStart 阶段注入的项目根收敛时序
+
+> 来源变更：fix-claude-hook-windows-powershell-fallback（决策 C06）。规则权威见功能规格 §2.105.6。
+
+### 场景目标
+
+会话 cwd 为项目子目录时，SessionStart（openlogos-phase）依据 `CLAUDE_PROJECT_DIR` 收敛到项目根，再读取 `logos/logos.config.json`，注入与项目根 cwd 下相同的阶段上下文。该问题与平台无关。
+
+### 参与者
+
+- **Claude Code**：以会话 cwd + `CLAUDE_PROJECT_DIR` 环境变量执行 SessionStart hook。
+- **openlogos-phase**：阶段注入脚本（项目部署副本或插件目录）。
+- **项目磁盘事实**：`logos/logos.config.json`、`logos/logos-project.yaml`、`logos/.openlogos-guard`。
+
+### 前置条件
+
+SessionStart 已按功能规格 §2.105.2 注册。
+
+### 成功后置条件
+
+子目录 cwd 会话的 SessionStart 输出含该项目名称、活跃提案等阶段上下文，与项目根 cwd 会话的输出一致。
+
+### 时序图
+
+```mermaid
+sequenceDiagram
+    participant H as Claude Code
+    participant P as openlogos-phase
+    participant D as 项目磁盘事实
+    H->>P: Step 1: stdin JSON + env CLAUDE_PROJECT_DIR + 会话 cwd（可能是子目录）
+    alt CLAUDE_PROJECT_DIR 非空
+        P->>P: Step 2: cd "$CLAUDE_PROJECT_DIR"
+        alt 无法进入
+            P-->>H: Step 2a: systemMessage 说明无法进入，exit 0（不阻断）
+        end
+    else 变量缺失
+        P->>P: Step 3: 维持按 cwd 判定（既有行为）
+    end
+    P->>D: Step 4: 读取 logos/logos.config.json 等
+    P-->>H: Step 5: 输出阶段上下文（项目名称、阶段、活跃提案）
+```
+
+### 步骤说明
+
+1. **Claude Code** 从任意 cwd 触发 SessionStart hook，并传入 `CLAUDE_PROJECT_DIR`。
+2. **openlogos-phase** 在读取配置之前 `cd "$CLAUDE_PROJECT_DIR"`；无法进入时输出 `{"systemMessage":"OpenLogos: cannot enter CLAUDE_PROJECT_DIR; phase context not injected"}`（`--plain` 模式输出等价文本）并 exit 0。
+3. 变量缺失（旧版 Claude Code 或非 hook 调用）时维持既有行为：cwd 无配置即输出 `Not an OpenLogos project`。
+4. **openlogos-phase** 以项目根为基准读取配置与状态；stdin 读取与引擎 `check --session-start` 转发不受影响。
+5. 输出与项目根 cwd 会话一致。
+
+### 异常与边界
+
+#### EX-HB-S09-4：CLAUDE_PROJECT_DIR 指向不可进入的目录
+- **触发条件**：变量在场但目录不存在或无权限。
+- **期望响应**：输出说明并 exit 0；不阻断会话，也不按会话 cwd 误判项目。
+- **副作用**：本次会话没有阶段注入。
+
+#### EX-HB-S09-5：变量缺失且 cwd 为项目子目录
+- **触发条件**：旧版 Claude Code、`cd src/` 后开会话。
+- **期望响应**：维持既有行为（输出 `Not an OpenLogos project`），不向上搜索项目根。
+- **副作用**：无。
+
+### 追溯
+
+- 需求：「Windows Git Bash 前提与 PowerShell 宿主需求」SessionStart 项目根收敛要求、S09 验收条件。
+- 功能规格：§2.105.6。
+- 测试：UT-S09-489、ST-S09-220。

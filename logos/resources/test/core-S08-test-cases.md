@@ -396,7 +396,7 @@
 |---|---|---|
 | UT-S08-73 | 托管区块按配置重渲染且幂等 | ① 存量项目 `.gitignore` 无区块、配置无 `guard.unversioned` → 末尾追加仅含说明注释与 `logos/.openlogos-runtime/` 的区块（前补空行）；② 配置 `guard.unversioned=["dist/","*.log"]` → 区块按配置顺序含两条；③ 区块内部被手工改动（删行、加行）→ 恢复为配置描述的内容；④ 区块外含 CRLF 行尾与用户规则 → 区块外字节不变、区块使用 CRLF；⑤ 无 `.gitignore` → 新建仅含区块的文件；⑥ 配置未变时第二次 sync → `.gitignore` 字节与 mtime 不变；区块内容与 `openlogos ignore` 渲染结果逐字节相同；sync 不改写 `guard.unversioned` / `guard.exempt` |
 | UT-S08-74 | 区块损坏 fail loud 但不阻断其他同步 | ① `.gitignore` 含两个起始标记；② 只有起始标记；③ 配置 `guard.unversioned` 含以 `!` 开头的条目：三者 `.gitignore` 字节不变、stderr 点名路径（③点名条目）；同一次 sync 中 AGENTS.md / CLAUDE.md、托管资产、hook 注册、`.gitattributes` 照常更新，版本戳刷新；输出含「sync 部分完成：.gitignore 托管区块未更新」；退出码 1；修复后再次 sync 退出码 0 且区块写入 |
-| UT-S08-75 | Claude PostToolUse / PostToolUseFailure / Stop 注册幂等 | 0.15.17 形态 settings.json（只有 PreToolUse + SessionStart）→ sync 后新增三条托管条目：PostToolUse matcher `Bash\|PowerShell\|BashOutput\|TaskOutput\|KillShell\|TaskStop`、PostToolUseFailure matcher `Bash\|PowerShell`、Stop 无 matcher，command 为 `node "$CLAUDE_PROJECT_DIR/.claude/openlogos/bin/guard-post-check.cjs" check`（Stop 附 `--stop`）；预置 matcher 与当前版本不一致（多出或缺少工具名）的托管条目被就地校正为当前 matcher；同一事件两条托管条目收敛为一条；用户自有 PostToolUse / Stop 条目字节与相对顺序不变；第二次 sync settings.json 零变化；无 SessionEnd 条目；非 Claude 宿主项目不触碰 settings.json |
+| UT-S08-75 | Claude PostToolUse / PostToolUseFailure / Stop 注册幂等 | 0.15.17 形态 settings.json（只有 PreToolUse + SessionStart）→ sync 后新增三条托管条目：PostToolUse matcher `Bash\|PowerShell\|BashOutput\|TaskOutput\|KillShell\|TaskStop`、PostToolUseFailure matcher `Bash\|PowerShell`、Stop 无 matcher，command 为 `node "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-post-check.cjs" check`（Stop 附 `--stop`）；预置 matcher 与当前版本不一致（多出或缺少工具名）的托管条目被就地校正为当前 matcher；同一事件两条托管条目收敛为一条；用户自有 PostToolUse / Stop 条目字节与相对顺序不变；第二次 sync settings.json 零变化；无 SessionEnd 条目；非 Claude 宿主项目不触碰 settings.json |
 | UT-S08-76 | 新 guard 与引擎随 manifest 分发 | asset-manifest 含 `guard-post-check.cjs` 条目（版本化哈希）且与 guard-check、openlogos-phase 同列；`.claude/openlogos/bin/guard-post-check.cjs` 缺失或被改动时 sync 以随包字节重写，guard-check 同理刷新为新版本字节；`managedAssetsHash` 随引擎变化；随包缺少引擎时 sync fail loud 点名资产路径、不注册指向缺失文件的 hook |
 | UT-S08-77 | Cursor hooks.json 含 afterShellExecution 且合并幂等 | `CURSOR_HOOK_EVENTS` 含 `afterShellExecution`，模板 hooks.json 事件集合与之相等；只有三事件的存量 `.cursor/hooks.json` 经 sync 后含 `afterShellExecution` 托管条目（command `node .cursor/hooks/openlogos-runtime.cjs shell-after`）；用户自有 `afterShellExecution` 条目与未知字段字节不变；第二次 sync 零 diff；`.cursor/hooks/openlogos-guard-post.cjs` 与 `plugin/bin/guard-post-check.cjs` 字节一致；hooks.json 不可解析时零写入并回滚 |
 | UT-S08-78 | Cursor 托管文案不再宣称 IDE preToolUse 硬拦 | 存量项目托管指令片段含旧文案「Cursor IDE 经同一 .cursor/hooks.json 获得完整 preToolUse 硬拦」→ sync 后托管片段与 `CURSOR_GUARD_STRENGTH_NOTICE_ZH` 均不含「完整 preToolUse 硬拦」/ `Full pre-edit blocking`，并声明文件编辑（IDE 与 CLI）为 `afterFileEdit` 事后报告、shell 为事前轻判 + `afterShellExecution` 事后检查；托管片段外用户内容不变 |
@@ -458,3 +458,32 @@
 - [x] 损坏 JSON 原样保留：UT-S08-82。
 - [x] 其它键值与用户条目顺序不变、重复运行幂等：UT-S08-79、UT-S08-83、ST-S08-42。
 - [x] 不受 commands 幂等 skip 影响、不触碰 settings.local.json 与非 Claude 项目：UT-S08-83。
+
+## sync 按封闭表迁移 Claude hook 与 Git Bash 前提提示测试用例（fix-claude-hook-windows-powershell-fallback）
+
+> 覆盖场景 S08「S08 sync 按封闭表迁移 Claude hook 时序」（Step 1～8、EX-HB-S08-1～9）；功能规格 §2.105.2、§2.105.4、§2.105.5。
+>
+> **夹具 HM**：一次性 Claude 适配项目。变体 HM-0.16.22：settings.json 为 0.16.22 init 产物（PreToolUse、SessionStart 为现行形态，三条事后检查为 `node "$CLAUDE_PROJECT_DIR/…/guard-post-check.cjs" check` 历史形态），另含用户自有 PreToolUse 分组（matcher `Edit`，命令 `node audit.cjs "${CLAUDE_PROJECT_DIR}/.claude/openlogos/bin/guard-check"`）、用户自有 Stop 条目，以及 RunLogos 的 SessionStart 条目 `node ".claude/openlogos/bin/openlogos-phase-launcher.cjs"`。变体 HM-exec：在 HM-0.16.22 基础上把 PostToolUse 与 Stop 托管条目改成历史 exec 形态（Stop 一条的 `args` 路径使用 `\`），另加未收录写法 `{"type":"command","command":"bash","args":["C:/proj/.claude/openlogos/bin/guard-check"]}`（放在 PreToolUse 标准分组内）。
+
+### 单元测试
+
+| ID | 测试点 | 关键断言 |
+|---|---|---|
+| UT-S08-84 | 历史 `"$CLAUDE_PROJECT_DIR/…"` 形态迁移 | HM-0.16.22 sync 后：PostToolUse、PostToolUseFailure、Stop 各恰好一条托管条目，命令为 `${CLAUDE_PROJECT_DIR}` 现行形态，位置与原托管条目一致；PreToolUse / SessionStart 托管条目逐字不变；用户 `audit.cjs` 分组、用户 Stop 条目与 RunLogos launcher 条目字节与相对顺序不变（EX-HB-S08-1、EX-HB-S08-4、EX-HB-S08-5） |
+| UT-S08-85 | 已知 exec 写法迁移与未收录写法保留 | HM-exec sync 后：两条历史 exec 托管条目（含 `args` 用 `\` 的一条）改写为现行字符串形态、`args` 被移除，不新增第二条（EX-HB-S08-2）；未收录的 `bash` + `args` 条目字节不变；PreToolUse 标准分组中的现行 guard-check 条目仍唯一（EX-HB-S08-3） |
+| UT-S08-86 | 分组判定、收敛与幂等 | ① 删除标准 PreToolUse 分组、只留 matcher 为 `Edit` 且含逐字相同 guard-check 命令的用户分组 → sync 追加完整 matcher 的标准分组，用户分组不变（EX-HB-S08-4）；② 同一事件同时含历史形态与现行形态托管条目 → 收敛为一条现行形态，保留第一条的位置（EX-HB-S08-6）；③ 第二次 sync，settings.json 字节零变化；④ settings.json 不可解析或顶层为数组时零写入（既有语义） |
+| UT-S08-87 | sync 的 Git Bash 前提警告与输出通道 | 注入前提检查结果后调用 sync 入口，分别捕获 stdout、stderr 与退出码：win32 三项都未命中 → 警告（文案同 UT-S01-149）只出现在 stderr；stdout 与同一项目在前提检查命中时的 stdout 逐字节相同；退出码相同；win32 命中任一项、或非 Windows → stderr 不含警告；非 Claude 宿主项目不做检查、不触碰 settings.json（EX-HB-S08-7） |
+| UT-S08-88 | 托管条目与用户条目同组 | 预置：PostToolUse 只有一个 matcher 为 `Bash` 的分组，依次含旧版 `node "$CLAUDE_PROJECT_DIR/…/guard-post-check.cjs" check` 与用户的 `node audit.cjs`；另一用例为 PreToolUse 历史 matcher `Edit\|Write\|Bash` 分组同时含托管 guard-check 与用户命令。sync 后：原分组 matcher 与用户命令不变、托管条目已移出；标准分组（现行 matcher）恰有一条现行形态托管条目。按 matcher 计算实际命中的命令集合：PostToolUse 下 `Bash` 命中 {事后检查, audit.cjs}，`PowerShell` 只命中 {事后检查}；PreToolUse 下 `Write` 命中用户命令与 guard-check，`MultiEdit` 只命中 guard-check。第二次 sync settings.json 字节零变化（EX-HB-S08-8） |
+| UT-S08-89 | 首次迁移的字节保真（含同次语言合并） | 中文 locale 项目，预置紧凑格式（无缩进、单行）settings.json：含用户命令 `"echo \u0061udit"`、用户自有 PostToolUse 分组、一条旧形态 Stop 托管条目，**顶层不含 `language` 键**。通过完整 sync 入口（包含 hook 合并与紧随其后的语言合并）执行首次 sync 后：直接比较原始文本，`language` 已补入为 `"chinese"`，Stop 已迁移为现行形态，用户命令仍为 `"echo \u0061udit"`，用户分组的原文片段逐字节相同；把 Stop 托管 hook 对象区间与新插入的 `language` 成员（含其分隔逗号）从新旧两份原文中剔除后，其余字节完全相同；另以 `language` 为 `"english"`（托管值，需更新）的变体重复，只有该值字面量被替换；再单独检查第二次 sync，整文件字节零变化；不得以“解析后比较对象相等”代替上述断言（EX-HB-S08-9） |
+
+### 场景测试
+
+| ID | 场景 | 关键断言 |
+|---|---|---|
+| ST-S08-44 | 真实 CLI sync 端到端迁移 | 真实 `openlogos sync` 分别驱动 HM-0.16.22 与 HM-exec：迁移结果同 UT-S08-84、UT-S08-85；在 bash 下执行迁移后的三条事后检查命令（`CLAUDE_PROJECT_DIR` 指向项目根），引擎正常运行；再跑一次 sync，settings.json 零变化 |
+| ST-S08-45 | windows-latest 真实 CLI 的前提警告 | 属 Windows 回归集（架构 52.7）。① 以环境变量隐去 Git Bash（PATH 只含 node 目录与 `%SystemRoot%\System32`，`ProgramFiles` 指向空临时目录，不设 `CLAUDE_CODE_GIT_BASH_PATH`）运行真实 `openlogos sync`，分别捕获 stdout、stderr 与退出码：stderr 含前提警告与 `winget install --id Git.Git -e`，退出码为 0；② 对同一项目保留 runner 预装的 Git for Windows 再运行：stderr 不含前提警告，stdout 与 ① 的 stdout 相同，退出码相同 |
+
+### 自动化与证据要求
+
+- 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S08"`；失败不得写 pass。
+- ST-S08-45 只在 windows-latest 阻断 job 中执行；非 Windows 环境不执行，不得写 pass。

@@ -76,7 +76,8 @@ function expectNoCheckout(text: string, label: string) {
 }
 
 describe('S09 merge 增量修正失败文案 — 单元测试', () => {
-  it('UT-S09-455: 前置拒绝（档 A）使用修正文案且无 git checkout', () => {
+  // 重型端到端用例（多宿主完整部署 / 大量真实子进程）：单独运行约 1 秒，全量并发负载下会超过默认 10 秒，显式放宽超时（不改断言）。
+  it('UT-S09-455: 前置拒绝（档 A）使用修正文案且无 git checkout', { timeout: 60_000 }, () => {
     const arms: Array<[string, string, (f: Fixture) => void, string]> = [
       ['主文档漂移', 'MERGE_AMEND_DRIFT', (f) => {
         writeDelta(f, SCENARIO, '## MODIFIED — 一、判据\n\n修正。\n');
