@@ -17,15 +17,6 @@
 | Pass rate | 100% |
 | **Gate 3.5** | **PASS** |
 
-## Slice Verification
-
-- Mode: `final`
-- Attempted slice: `null`
-- Confirmed slices: `slice-01-hook-closed-table-migration`, `slice-02-git-bash-prerequisite-warning`, `slice-03-phase-project-root-convergence`
-- Eligible tests: 2722
-- Pending tests: 0
-- Final: true
-
 ## Skipped Cases
 
 - ST-S08-45

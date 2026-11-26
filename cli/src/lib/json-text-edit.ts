@@ -4,6 +4,8 @@
  * 带位置信息的严格 JSON 解析器 + 少量编辑原语：替换节点、删除 / 插入数组元素、设置对象成员。
  * 每个原语只改动目标片段及必要的分隔符，其余字节（用户条目的 Unicode 转义、紧凑 / 展开格式、
  * 缩进、键顺序、换行风格）原样保留。新插入片段的缩进与换行风格取自相邻元素。
+ * 换行取插入点的局部样本（fix-claude-settings-local-eol）：分隔符取自插入点相邻元素之间的原文，
+ * 新增内容沿用同一换行；空容器取括号之间的换行，只有缺少任何局部样本时才回退到整份文件的换行风格。
  */
 
 export type JsonNode =
@@ -95,9 +97,24 @@ export function memberOf(node: JsonNode, key: string): JsonMember | undefined {
   return undefined;
 }
 
-/** 文件换行风格：出现 CRLF 即沿用 CRLF，否则 LF（评审 code-r1 F5）。 */
+/** 文件换行风格：出现 CRLF 即沿用 CRLF，否则 LF（评审 code-r1 F5）。仅作缺少局部样本时的回退。 */
 export function detectEol(text: string): string {
   return text.includes('\r\n') ? '\r\n' : '\n';
+}
+
+/**
+ * 空容器的换行：优先取左右括号之间空白中的换行（评审 code-r1 F2）；括号之间没有换行时
+ * 缺少局部样本，回退到整份文件的换行风格。
+ */
+function emptyContainerEol(text: string, container: { start: number; end: number }): string {
+  return eolIn(text.slice(container.start + 1, container.end - 1)) ?? detectEol(text);
+}
+
+/** 片段内第一处换行的风格；片段不含换行时为 undefined。 */
+function eolIn(s: string): string | undefined {
+  const i = s.indexOf('\n');
+  if (i < 0) return undefined;
+  return i > 0 && s[i - 1] === '\r' ? '\r\n' : '\n';
 }
 
 /** 文件既有缩进单位：取第一处“换行 + 空白 + 非空白”的空白；无法判定时为两个空格。 */
@@ -161,10 +178,30 @@ export function removeArrayItem(text: string, arr: JsonNode, idx: number): strin
   return text.slice(0, commaAfter(text, items[idx - 1].end)) + text.slice(items[idx].end);
 }
 
-/** 元素间分隔（含逗号）：已有两项以上取原文，否则按格式推断。 */
-function itemSeparator(text: string, items: Array<{ start: number; end: number }>, multiline: boolean, indent: string): string {
-  if (items.length >= 2) return text.slice(items[0].end, items[1].start);
-  return multiline ? `,${detectEol(text)}${indent}` : ',';
+/**
+ * 插入点的分隔符（含逗号）与新增内容的换行（fix-claude-settings-local-eol）。
+ * - 已有两项以上：分隔符取插入点相邻元素之间的原文——追加取最后两项之间，中间插入取插入点两侧元素之间
+ *   （插到首位时取第一、二项之间）；不再固定取第一、二项之间。
+ * - 只有一项：按格式合成，换行取该元素周边的局部样本。
+ * 新增内容的换行优先取分隔符本身的换行，其次取相邻元素周边的局部样本，最后才回退到整份文件的换行风格。
+ */
+function localSeparator(
+  text: string, container: { start: number; end: number }, spans: Array<{ start: number; end: number }>,
+  idx: number, multiline: boolean, indent: string,
+): { sep: string; eol: string } {
+  const n = spans.length;
+  const at = Math.min(idx, n - 1); // 相邻元素：追加为末项，中间插入为插入点后的元素
+  const gapBefore = text.slice(at === 0 ? container.start + 1 : spans[at - 1].end, spans[at].start);
+  const gapAfter = text.slice(spans[at].end, at === n - 1 ? container.end - 1 : spans[at + 1].start);
+  const sample = (): string => eolIn(gapBefore) ?? eolIn(gapAfter) ?? eolIn(text.slice(spans[at].start, spans[at].end)) ?? detectEol(text);
+  if (n >= 2) {
+    const sep = idx >= n ? text.slice(spans[n - 2].end, spans[n - 1].start)
+      : idx > 0 ? text.slice(spans[idx - 1].end, spans[idx].start)
+        : text.slice(spans[0].end, spans[1].start);
+    return { sep, eol: eolIn(sep) ?? sample() };
+  }
+  const eol = sample();
+  return { sep: multiline ? `,${eol}${indent}` : ',', eol };
 }
 
 /**
@@ -177,14 +214,14 @@ export function insertArrayItem(text: string, root: JsonNode, arr: JsonNode, idx
   if (items.length === 0) {
     const multiline = fileIsMultiline(text, root);
     const parentIndent = lineIndentAt(text, arr.start);
-    const eol = detectEol(text);
+    const eol = emptyContainerEol(text, arr);
     const inner = serializeValue(value, multiline, unit, parentIndent + unit, eol);
     return replaceNode(text, arr, multiline ? `[${eol}${parentIndent}${unit}${inner}${eol}${parentIndent}]` : `[${inner}]`);
   }
   const multiline = containerIsMultiline(text, arr);
   const indent = multiline ? lineIndentAt(text, items[0].start) : '';
-  const sep = itemSeparator(text, items, multiline, indent);
-  const valueText = serializeValue(value, multiline, unit, indent, detectEol(text));
+  const { sep, eol } = localSeparator(text, arr, items, idx, multiline, indent);
+  const valueText = serializeValue(value, multiline, unit, indent, eol);
   if (idx >= items.length) {
     const last = items[items.length - 1];
     return text.slice(0, last.end) + sep + valueText + text.slice(last.end);
@@ -197,15 +234,16 @@ export function insertArrayItem(text: string, root: JsonNode, arr: JsonNode, idx
 export function setObjectMember(text: string, root: JsonNode, obj: JsonNode, key: string, value: unknown): string {
   if (obj.kind !== 'object') throw new JsonTextError('not an object');
   const unit = detectIndentUnit(text);
-  const eol = detectEol(text);
   const existing = memberOf(obj, key);
   if (existing) {
     const multiline = fileIsMultiline(text, root);
     const indent = lineIndentAt(text, existing.keyStart);
+    const eol = eolIn(text.slice(existing.value.start, existing.value.end)) ?? detectEol(text);
     return replaceNode(text, existing.value, serializeValue(value, multiline && typeof value === 'object' && value !== null, unit, indent, eol));
   }
   const members = obj.members;
   if (members.length === 0) {
+    const eol = emptyContainerEol(text, obj);
     const multiline = fileIsMultiline(text, root);
     const parentIndent = lineIndentAt(text, obj.start);
     const indent = parentIndent + unit;
@@ -215,17 +253,19 @@ export function setObjectMember(text: string, root: JsonNode, obj: JsonNode, key
   const multiline = containerIsMultiline(text, obj);
   const indent = multiline ? lineIndentAt(text, members[0].keyStart) : '';
   const spans = members.map(m => ({ start: m.keyStart, end: m.value.end }));
-  const sep = itemSeparator(text, spans, multiline, indent);
-  const first = members[0];
-  const colon = text.slice(first.keyEnd, first.value.start);
-  const keyText = JSON.stringify(key);
-  const member = `${keyText}${/^\s*:\s*$/.test(colon) ? colon : ': '}${serializeValue(value, multiline, unit, indent, eol)}`;
+  const { sep, eol } = localSeparator(text, obj, spans, members.length, multiline, indent);
+  // 键值分隔格式取自追加点相邻的末项，其中的结构换行统一为本次选定的局部换行（评审 code-r1 F1）
   const last = members[members.length - 1];
+  const colon = text.slice(last.keyEnd, last.value.start);
+  const keyText = JSON.stringify(key);
+  const colonText = /^\s*:\s*$/.test(colon) ? colon.replace(/\r?\n/g, eol) : ': ';
+  const member = `${keyText}${colonText}${serializeValue(value, multiline, unit, indent, eol)}`;
   return text.slice(0, last.value.end) + sep + member + text.slice(last.value.end);
 }
 
-/** 以新值替换节点：原节点跨行则按展开格式序列化（基准缩进取原节点所在行），否则单行。 */
+/** 以新值替换节点：原节点跨行则按展开格式序列化（基准缩进取原节点所在行、换行取原节点自身），否则单行。 */
 export function replaceWithValue(text: string, node: JsonNode, value: unknown): string {
-  const multiline = text.slice(node.start, node.end).includes('\n');
-  return replaceNode(text, node, serializeValue(value, multiline, detectIndentUnit(text), lineIndentAt(text, node.start), detectEol(text)));
+  const original = text.slice(node.start, node.end);
+  const eol = eolIn(original);
+  return replaceNode(text, node, serializeValue(value, eol !== undefined, detectIndentUnit(text), lineIndentAt(text, node.start), eol ?? detectEol(text)));
 }

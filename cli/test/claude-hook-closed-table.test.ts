@@ -3,6 +3,7 @@
  *
  * 覆盖 UT-S01-147、UT-S01-148、ST-S01-34、UT-S08-84、UT-S08-85、UT-S08-86、UT-S08-88、UT-S08-89、ST-S08-44
  * （与 logos/resources/test/core-S01-test-cases.md、core-S08-test-cases.md 对齐；规则见功能规格 §2.105.2～§2.105.4）。
+ * fix-claude-settings-local-eol 扩展 UT-S08-89：插入点取局部换行（单分组正反样例、三分组 A/B/C、顶层对象补写 language）。
  * init / sync 走真实命令入口（mockCwd + captureConsole）；结果由全局 OpenLogos reporter 写入
  * logos/resources/verify/test-results.jsonl。
  */
@@ -378,6 +379,108 @@ describe('S08 sync 按封闭表迁移 Claude hook', () => {
     const crlfSettled = raw(root);
     runSync(root);
     expect(raw(root)).toBe(crlfSettled);
+
+    // —— 插入点取局部换行（fix-claude-settings-local-eol）：远处的换行不得影响插入点 ——
+    const entry = (command: string) => ({ type: 'command', command });
+    const otherEvents = {
+      SessionStart: [{ hooks: [entry(CLAUDE_PHASE_HOOK_COMMAND)] }],
+      PreToolUse: [{ matcher: CLAUDE_GUARD_HOOK_MATCHER, hooks: [entry(CLAUDE_GUARD_HOOK_COMMAND)] }],
+      PostToolUse: [{ matcher: CLAUDE_POST_MATCHER, hooks: [entry(CLAUDE_POST_CHECK_COMMAND)] }],
+      PostToolUseFailure: [{ matcher: 'Bash|PowerShell', hooks: [entry(CLAUDE_POST_CHECK_COMMAND)] }],
+    };
+    const crlfCount = (s: string) => s.split('\r\n').length - 1;
+    const loneLfCount = (s: string) => (s.match(/(?<!\r)\n/g) ?? []).length;
+    /** 首次 sync：断言只在 pos 处插入了一段，其余字节与原文完全相同；返回插入的片段。第二次 sync 零变化。 */
+    const syncInsertedAt = (before: string, pos: number): string => {
+      writeFileSync(settingsPath(root), before);
+      runSync(root);
+      const after = raw(root);
+      const tail = before.slice(pos);
+      expect(after.startsWith(before.slice(0, pos)), '插入点之前逐字节不变').toBe(true);
+      expect(after.endsWith(tail), '插入点之后逐字节不变').toBe(true);
+      runSync(root);
+      expect(raw(root), '第二次 sync 整文件字节零变化').toBe(after);
+      return after.slice(pos, after.length - tail.length);
+    };
+    const stopOf = () => hooksOf(root).Stop;
+
+    // ① 单分组 Stop：局部 LF、只有顶层右花括号前一处 CRLF → 追加标准组后全文仍只有这一处 CRLF
+    const userStop = { hooks: [AUDIT] };
+    const lfBase = JSON.stringify({ hooks: { ...otherEvents, Stop: [userStop] }, language: 'chinese' }, null, 2);
+    const farCrlf = `${lfBase.slice(0, -2)}\r\n}`;
+    expect(crlfCount(farCrlf)).toBe(1);
+    const stopClose = (s: string) => s.indexOf('\n    ]', s.indexOf('"Stop"'));
+    const lfFrag = syncInsertedAt(farCrlf, stopClose(farCrlf));
+    expect(lfFrag.startsWith(',\n      {'), '新分隔符用 LF').toBe(true);
+    expect(lfFrag, '新增组内部不含 CR').not.toContain('\r');
+    expect(crlfCount(raw(root)), '全文仍只有原来的一处 CRLF').toBe(1);
+    expect(stopOf()).toEqual([userStop, { hooks: [entry(CLAUDE_STOP_CHECK_COMMAND)] }]);
+
+    // ② 反向样例：局部 CRLF、只有顶层右花括号前一处 LF → 新增片段沿用 CRLF，孤立 LF 仍只有一处
+    const farLf = `${lfBase.split('\n').join('\r\n').slice(0, -3)}\n}`;
+    expect(loneLfCount(farLf)).toBe(1);
+    const crlfFrag = syncInsertedAt(farLf, farLf.indexOf('\r\n    ]', farLf.indexOf('"Stop"')));
+    expect(crlfFrag.startsWith(',\r\n      {'), '新分隔符用 CRLF').toBe(true);
+    expect(loneLfCount(crlfFrag), '新增组内部不含孤立 LF').toBe(0);
+    expect(loneLfCount(raw(root))).toBe(1);
+    expect(count(stopOf(), CLAUDE_STOP_CHECK_COMMAND), '托管分组唯一').toBe(1);
+
+    // ③ 三个用户分组 A、B、C：只有 A 与 B 之间的分隔用 CRLF，B 与 C 之间及 C 的各行用 LF
+    const groupA = '{"hooks": [{"type": "command", "command": "echo A"}]}';
+    const groupB = '{"hooks": [{"type": "command", "command": "echo B"}]}';
+    const groupC = '{\n        "hooks": [\n          {"type": "command", "command": "echo C"}\n        ]\n      }';
+    const otherText = JSON.stringify(otherEvents, null, 2).slice(1, -2).split('\n').join('\n  ');
+    const abc = `{\n  "hooks": {${otherText},\n    "Stop": [\n      ${groupA},\r\n      ${groupB},\n      ${groupC}\n    ]\n  },\n  "language": "chinese"\n}\n`;
+    expect(JSON.parse(abc)).toBeTruthy();
+    const abcFrag = syncInsertedAt(abc, stopClose(abc));
+    expect(abcFrag.startsWith(',\n      {'), 'C 后新增的分隔符用 LF，而非 A 与 B 之间的 CRLF').toBe(true);
+    expect(abcFrag, '新增组内部各行用 LF').not.toContain('\r');
+    expect(raw(root), 'A 与 B 之间原有的 CRLF 逐字节保留').toContain(`${groupA},\r\n      ${groupB},\n      ${groupC}`);
+    expect(crlfCount(raw(root))).toBe(1);
+    expect(stopOf().map(g => g.hooks[0].command)).toEqual(['echo A', 'echo B', 'echo C', CLAUDE_STOP_CHECK_COMMAND]);
+
+    // ④ 顶层对象同样布局：前两个成员之间用 CRLF，其后用 LF → 补写 language 的分隔与成员用 LF
+    const hooksText = JSON.stringify({ ...otherEvents, Stop: [{ hooks: [entry(CLAUDE_STOP_CHECK_COMMAND)] }] }, null, 2).split('\n').join('\n  ');
+    const top = `{\n  "model": "sonnet",\r\n  "permissions": {"allow": ["Bash(ls)"]},\n  "hooks": ${hooksText}\n}\n`;
+    const topFrag = syncInsertedAt(top, top.length - 3);
+    expect(topFrag).toBe(',\n  "language": "chinese"');
+    expect(crlfCount(raw(root))).toBe(1);
+    expect((JSON.parse(raw(root)) as { language: string }).language).toBe('chinese');
+
+    // ⑤ 首个成员 model 的冒号与值之间用 CRLF，其后成员与分隔均用 LF（code-r1 F1）：
+    // 新增 language 的键值分隔取自相邻末项，不从首项复制 CRLF
+    const colonCrlf = `{\n  "model":\r\n    "sonnet",\n  "permissions": {"allow": ["Bash(ls)"]},\n  "hooks": ${hooksText}\n}\n`;
+    const colonFrag = syncInsertedAt(colonCrlf, colonCrlf.length - 3);
+    expect(colonFrag, '新增 language 片段只用 LF').toBe(',\n  "language": "chinese"');
+    expect(raw(root), '首项冒号后的 CRLF 逐字节保留').toContain('"model":\r\n    "sonnet",\n');
+    expect(crlfCount(raw(root))).toBe(1);
+
+    // ⑥ 展开的空容器自身含 LF、唯一 CRLF 在顶层右花括号前（code-r1 F2）：新增片段取括号之间的 LF
+    const emptyStop = `${JSON.stringify({ hooks: { ...otherEvents, Stop: [] }, language: 'chinese' }, null, 2)
+      .replace('"Stop": []', '"Stop": [\n    ]').slice(0, -2)}\r\n}`;
+    expect(crlfCount(emptyStop)).toBe(1);
+    writeFileSync(settingsPath(root), emptyStop);
+    runSync(root);
+    const stopFilled = raw(root);
+    const arrStart = emptyStop.indexOf('"Stop": [') + '"Stop": '.length;
+    const arrTail = emptyStop.slice(emptyStop.indexOf('\n    ]', arrStart) + '\n    ]'.length);
+    expect(stopFilled.startsWith(emptyStop.slice(0, arrStart)), '空数组之前逐字节不变').toBe(true);
+    expect(stopFilled.endsWith(arrTail), '空数组之后逐字节不变').toBe(true);
+    expect(stopFilled.slice(arrStart, stopFilled.length - arrTail.length), '新数组内容只用 LF').not.toContain('\r');
+    expect(crlfCount(stopFilled), '全文仍只有原来的一处 CRLF').toBe(1);
+    expect(stopOf()).toEqual([{ hooks: [entry(CLAUDE_STOP_CHECK_COMMAND)] }]);
+    runSync(root);
+    expect(raw(root)).toBe(stopFilled);
+    // 空 hooks 对象同理：括号之间为 LF，五个事件全部以 LF 注册
+    const emptyHooks = '{\n  "hooks": {\n  },\n  "language": "chinese"\r\n}';
+    writeFileSync(settingsPath(root), emptyHooks);
+    runSync(root);
+    const hooksFilled = raw(root);
+    expect(crlfCount(hooksFilled), '空 hooks 对象填充后仍只有一处 CRLF').toBe(1);
+    expect(hooksFilled.endsWith('"language": "chinese"\r\n}')).toBe(true);
+    expectCurrentPostHooks(hooksOf(root));
+    runSync(root);
+    expect(raw(root)).toBe(hooksFilled);
   });
 
   it('ST-S08-44: 真实 CLI sync 端到端迁移', async () => {
