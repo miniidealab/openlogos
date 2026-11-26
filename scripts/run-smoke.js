@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { readdirSync, realpathSync, statSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 const root = process.cwd();
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -12,24 +13,51 @@ const resultPath = resolve(
   process.env.OPENLOGOS_SMOKE_RESULT_PATH || 'logos/resources/verify/smoke-results.jsonl',
 );
 
-function walk(dir) {
-  if (!existsSync(dir)) return [];
+const realWalkDeps = {
+  readDir: dir => readdirSync(dir, { withFileTypes: true }),
+  statTarget: path => statSync(path),
+};
+
+/**
+ * runner 发现遍历（fix-smoke-runner-discovery-overflow，S19「runner 发现的遍历规则」，与 CLI 预检同一规则）：
+ * 不进入目录符号链接（链接只在目标是普通文件时收为候选），按目录名忽略 ignoredDirs，
+ * 显式栈遍历并向同一数组逐项追加（不受参数个数上限约束），读不了的目录跳过。deps 可注入合成目录项供测试。
+ */
+export function walk(dir, deps = realWalkDeps) {
   const files = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    const stat = statSync(full);
-    if (stat.isDirectory()) {
-      if (!ignoredDirs.has(entry)) files.push(...walk(full));
+  const stack = [dir];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = deps.readDir(current);
+    } catch {
       continue;
     }
-    if (stat.isFile()) files.push(full);
+    for (const entry of entries) {
+      const full = join(current, entry.name);
+      if (entry.isSymbolicLink()) {
+        try {
+          if (deps.statTarget(full).isFile()) files.push(full);
+        } catch {
+          // 悬空链接或目标不可读：不作为候选。
+        }
+        continue;
+      }
+      if (entry.isDirectory()) {
+        if (!ignoredDirs.has(entry.name)) stack.push(full);
+        continue;
+      }
+      if (entry.isFile()) files.push(full);
+    }
   }
   return files;
 }
 
-function discoverRunners() {
-  return walk(root)
-    .map(file => relative(root, file).replace(/\\/g, '/'))
+/** 发现仓内 runner：扩展名规则、排除自身与按路径排序保持不变。 */
+export function discoverRunners(projectRoot = root, deps = realWalkDeps) {
+  return walk(projectRoot, deps)
+    .map(file => relative(projectRoot, file).replace(/\\/g, '/'))
     .filter(file => file.split('/').includes('scripts'))
     .filter(file => runnerPattern.test(basename(file)))
     .filter(file => file !== 'scripts/run-smoke.js')
@@ -281,6 +309,7 @@ function restoreGlobalCandidate(runner) {
   return restored.status === 0;
 }
 
+function main() {
 const runners = discoverRunners();
 if (runners.length === 0) {
   console.error('No smoke runners found. Expected files matching scripts/smoke-*.sh or scripts/smoke-*.js.');
@@ -322,3 +351,16 @@ for (const runner of runners) {
 }
 
 process.exit(failed ? 1 : 0);
+}
+
+/** 作为入口执行时才运行主流程；以模块方式导入（测试调用 walk / discoverRunners）时不执行。 */
+function invokedAsEntry() {
+  if (!process.argv[1]) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+}
+
+if (invokedAsEntry()) main();

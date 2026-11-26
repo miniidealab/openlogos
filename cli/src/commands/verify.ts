@@ -536,13 +536,12 @@ function readSmokeCommandConfig(root: string): { command: string | null; resultP
   return { command: resolveSmokeCommand(root, command), resultPath };
 }
 
-function applySmokePrecheck(root: string, data: VerifyData): VerifyData {
-  const smokeConfig = readSmokeCommandConfig(root);
-  const check = checkSmokeCoverage(root, {
-    command: smokeConfig.command,
-    resultPath: smokeConfig.resultPath,
-  });
-  data.smoke_precheck = check;
+/**
+ * smoke 覆盖预检门禁。直接使用 collectVerifyData 已算出的 `data.smoke_precheck`（同一根目录、同一 smoke 配置），
+ * 不再重新发现 runner：一次 verify 只扫描一次项目根（fix-smoke-runner-discovery-overflow，S19 遍历规则第 6 条）。
+ */
+function applySmokePrecheck(_root: string, data: VerifyData): VerifyData {
+  const check = data.smoke_precheck;
   if (check.changed_case_ids.length === 0 || check.result === 'PASS') return data;
 
   // 多切片 checkpoint 只要求当前片及既往片闭环。未来切片拥有的 smoke 用例仍是 pending，

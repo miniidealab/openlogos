@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, type Dirent } from 'node:fs';
 import { basename, join, relative } from 'node:path';
 
 const SMOKE_ID_PATTERN = /\bSMOKE-[A-Za-z0-9-]+-\d{1,3}\b/g;
@@ -87,6 +87,10 @@ function readActiveChangeSlug(root: string): string | null {
   }
 }
 
+/**
+ * 提案用例清单读取的遍历（只用于 extractChangedSmokeIds 读取 deltas/test/smoke）：保持既有行为——跟随目录链接、
+ * 不吞目录枚举错误，确保放在链接子目录里的新增用例不被漏读。项目根 runner 搜索改用 walkProjectFiles。
+ */
 function walkFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
   const out: string[] = [];
@@ -130,9 +134,64 @@ export function extractChangedSmokeIds(root: string, slug?: string): string[] {
   return uniqueSorted(ids);
 }
 
-export function discoverSmokeRunners(root: string): string[] {
+/** 项目根 runner 搜索使用的目录项（与 `Dirent` 同形，便于测试注入合成目录项）。 */
+export type RunnerDirEntry = Pick<Dirent, 'name' | 'isDirectory' | 'isFile' | 'isSymbolicLink'>;
+
+/** 项目根 runner 搜索的文件系统依赖；缺省为真实文件系统，测试可注入合成目录项。 */
+export interface RunnerWalkDeps {
+  /** 枚举目录项，不跟随链接（`readdirSync(dir, { withFileTypes: true })` 语义）。 */
+  readDir(dir: string): RunnerDirEntry[];
+  /** 跟随链接取目标类型，仅用于判断符号链接的目标是否为普通文件。 */
+  statTarget(path: string): { isFile(): boolean };
+}
+
+const REAL_RUNNER_WALK_DEPS: RunnerWalkDeps = {
+  readDir: dir => readdirSync(dir, { withFileTypes: true }),
+  statTarget: path => statSync(path),
+};
+
+/**
+ * 项目根 runner 搜索专用遍历（fix-smoke-runner-discovery-overflow，S19「runner 发现的遍历规则」）：
+ * - 不进入目录符号链接；符号链接只在目标是普通文件时收为候选（悬空链接忽略）；
+ * - 按目录名忽略 IGNORED_DIRS；
+ * - 显式栈遍历、向同一数组逐项追加，不把子树结果展开成函数参数，结果数量不受参数个数上限约束；
+ * - 读不了的目录跳过、继续遍历，不抛异常。
+ * 提案用例读取（extractChangedSmokeIds）不适用本规则，仍用 walkFiles 保持既有行为。
+ */
+export function walkProjectFiles(root: string, deps: RunnerWalkDeps = REAL_RUNNER_WALK_DEPS): string[] {
+  const out: string[] = [];
+  const stack: string[] = [root];
+  while (stack.length > 0) {
+    const dir = stack.pop() as string;
+    let entries: RunnerDirEntry[];
+    try {
+      entries = deps.readDir(dir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isSymbolicLink()) {
+        try {
+          if (deps.statTarget(full).isFile()) out.push(full);
+        } catch {
+          // 悬空链接或目标不可读：不作为候选。
+        }
+        continue;
+      }
+      if (entry.isDirectory()) {
+        if (!IGNORED_DIRS.has(entry.name)) stack.push(full);
+        continue;
+      }
+      if (entry.isFile()) out.push(full);
+    }
+  }
+  return out;
+}
+
+export function discoverSmokeRunners(root: string, deps?: RunnerWalkDeps): string[] {
   const runners: string[] = [];
-  for (const file of walkFiles(root)) {
+  for (const file of walkProjectFiles(root, deps)) {
     const rel = relative(root, file).replace(/\\/g, '/');
     const parts = rel.split('/');
     if (!parts.includes('scripts')) continue;
@@ -186,13 +245,17 @@ export function checkSmokeCoverage(root: string, options: SmokeCoverageOptions =
   const diagnostics: SmokeCoverageDiagnostic[] = [];
 
   if (changedCaseIds.length > 0) {
-    const commandReachable = commandReferencesRunner(command, runners);
+    // 默认 dispatcher 只执行它能发现的 runner：一个也发现不到时同样不可达（S19「Gate 判定补充」）。
+    const dispatcherWithoutRunner = commandUsesDispatcher(command) && runners.length === 0;
+    const commandReachable = !dispatcherWithoutRunner && commandReferencesRunner(command, runners);
     if (!commandReachable) {
       diagnostics.push({
         code: 'smoke_runner_missing',
-        message: command
-          ? '当前 smoke.command 未能被静态确认会执行本提案新增 smoke runner。'
-          : '当前提案新增了 smoke 用例，但未配置 smoke.command 执行 smoke runner。',
+        message: dispatcherWithoutRunner
+          ? '当前 smoke.command 为默认 dispatcher，但项目中未发现任何 smoke runner（目录链接内的脚本不计入）。'
+          : command
+            ? '当前 smoke.command 未能被静态确认会执行本提案新增 smoke runner。'
+            : '当前提案新增了 smoke 用例，但未配置 smoke.command 执行 smoke runner。',
         case_ids: changedCaseIds,
         command,
         runner_paths: runners,

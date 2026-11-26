@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.23] - 2026-11-26
+
+本机全局发布（未发布到 npm）。
+
+### Fixed
+
+- 项目内有指向大型构建产物的目录链接时，`verify` / `smoke` 搜索 smoke runner 不再以 `RangeError: Maximum call stack size exceeded` 崩溃。runner 搜索不进入目录符号链接，遍历结果不再受参数个数上限约束，读不了的子目录跳过。
+- 提案新增了 smoke 用例、默认 dispatcher 却找不到任何 runner 时，预检报 `smoke_runner_missing`，不再误判通过。
+
+### Changed
+
+- 放在目录链接里的 runner 不再出现在 `runners` 列表中；`smoke.command` 直接写出其路径时仍照常执行。
+- 一次 `verify` 只扫描一次项目根。
+
 ## [0.16.22] - 2026-11-23
 
 ### Fixed
