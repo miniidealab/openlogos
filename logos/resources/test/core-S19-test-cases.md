@@ -817,3 +817,43 @@ UT 使用可控夹具验证镜像滞后、入口错误和工作流依赖，保�
 - 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S19"`，测试名含用例 ID；失败不得写 pass。
 - 合成目录项只在测试进程内存中构造，不在磁盘创建数十万个文件；真实目录链接用少量文件即可验证链接策略。
 - 所有临时目录（`P`、`X`、`Y`）在用例结束时删除；改过权限的目录先恢复权限再删除。用例不触碰本仓活跃提案、本仓 `logos/resources/`（结果账本除外）与本机全局安装。
+
+## S19 安装态 runner 证据判定测试（fix-smoke-runner-discovery-review-gaps）
+
+> 覆盖 `logos/resources/test/smoke/core-smoke-test-cases.md` 中 SMOKE-core-336～SMOKE-core-337 的「四、自动化与证据要求」（部署前置、信封通道判定、自测仓外独立账本），以及 ST-S19-38～ST-S19-39「stdout 为可解析的 JSON 信封」。本节只为安装态 smoke runner `scripts/smoke-runner-discovery.js` 的判定加回归锁，不改上述 smoke 与场景测试规格。
+>
+> **导入方式**：与 UT-S19-121 导入 `scripts/run-smoke.js` 相同，以模块方式导入 `scripts/smoke-runner-discovery.js` 的判定函数（作为模块导入时不执行主流程，不读写全局安装态与本仓账本）：信封解析、回执入口核对、部署前置判定、自测结果账本的打开与写入、制品校验结论。
+>
+> **夹具 RG**：`mktemp -d` 一次性目录，含：
+> - 仓库替身 `R`：放一份已有账本 `R/logos/resources/verify/smoke-results.jsonl`（写入若干固定字节），以及部署账本 `R/logos/.openlogos-runtime/deployments.jsonl` 与回执 `R/logos/.openlogos-runtime/local-install/last-deploy.json`（按需写入或省略）；
+> - 仓外目录 `O`（与 `R` 互不包含）；
+> - 入口替身：`O/entry/index.js`（普通文件），其 realpath 记为 `E`；另建绝对路径别名 `O/alias/index.js`（指向 `E` 的符号链接），其字符串不等于 `E`；
+> - 包替身 `O/pkg`：`asset-manifest.json` 与清单列出的资源文件，按用例改成「资源齐全」或「前一项缺失、后一项存在但摘要不同」。
+>
+> **部署归属**：runner 复核的是上一提案 `fix-smoke-runner-discovery-overflow` 的安装（runner 内 `SLUG` 常量；本提案按 C02 不部署）。夹具中「原提案」一律指该 slug，部署账本记录与回执按它填写。
+>
+> 版本相关夹具中，源码候选版本、回执 `candidate_version`、安装态 `--version` 均以注入值给出，断言只写关系式，不写发布版本号；三方一致的通过样例使用合成的低版本号（如 `0.0.1`），用于证明实现中不残留任何固定版本下限。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S19-122 | stdout 整体解析为 JSON 信封 | SMOKE-core-337 ①②「stdout 为可解析的 JSON 信封」；「四」信封通道 / 形态不匹配判 fail | 预期命令为 `verify`；完整 verify 信封指按 `spec/cli-json-output.md`「1.2 通用信封结构」含 `command="verify"`、`version`、`timestamp`、`data` 的对象 | 以信封解析函数（传入预期命令）分别解析：(a) stdout 恰为一个完整 verify 信封（前后可有空白）；(b) 该信封前混入一行普通文本；(c) 该信封后混入一行普通文本；(d) 多行文本中只有中间一行是该信封；(e) 空 stdout；(f) 整段是合法 JSON 对象，但缺 `command`；(g) 整段是合法 JSON 对象，但 `command="smoke"`（与预期命令不符） | (a) 返回解析后的信封对象。(b)～(g) 均抛错，错误信息含「信封通道 / 形态不匹配」，调用方据此判该用例 fail；(b)～(d) 不得退回到挑选某一行解析，(f)(g) 不得因 `data` 字段可读而放行 |
+| UT-S19-123 | 回执 `entry_realpath` 与实际入口 realpath 原值比较 | SMOKE-core-336 ①「入口 realpath 等于回执 `entry_realpath`」 | 夹具 RG；实际入口为 `O/entry/index.js`，其 realpath 为 `E` | 以回执入口核对函数分别核对回执：(a) 缺 `entry_realpath`；(b) 为空字符串；(c) 为相对路径；(d) 为绝对路径但指向另一个文件；(e) 为 `O/alias/index.js`（与 `E` 指向同一文件、字符串不同）；(f) 恰为 `E` | (a)～(e) 均返回问题描述，SMOKE-core-336 判 fail，证据含实际入口 realpath 与回执原值；核对过程中不对回执字段做 realpath。(f) 无问题 |
+| UT-S19-124 | 部署前置先查账本，版本按三方关系式判定 | SMOKE-core-336 前置；「四」部署前置（无记录 skip、有记录回执不符 fail）；版本以部署记录与源码候选版本为准、不硬编码 | 夹具 RG；「有成功部署」指账本中原提案 `fix-smoke-runner-discovery-overflow` 在 test 的最后一条成功 deploy 与回执同一 `deploy_id`、`result=done`、`environment=test` | 以部署前置判定函数分别判定：(a) 账本只有其他提案（如 `fix-smoke-runner-discovery-review-gaps`）在 test 的成功部署与对应回执，没有原提案的成功部署，源码候选版本读不到；(b) 有原提案成功部署，源码候选版本读不到；(c) 有原提案成功部署，源码候选版本回退且与回执 `candidate_version` 不同；(d) 有原提案成功部署，源码版本、回执版本与安装态 `--version` 三者都取合成低版本 `0.0.1`；(e) 有原提案成功部署，源码与回执相等但安装态 `--version` 不同 | (a) 写显式 skip，缺失项为部署记录，不判 fail，也不采用其他提案的回执；(b)(c)(e) 判 fail，原因分别指出源码版本不可读、源码与回执不符、安装与回执不符；(d) 通过——即使三方版本低于历史发布版本也不 skip、不 fail，证明实现中没有残留固定版本下限 |
+| UT-S19-125 | 自测结果只写入仓外独立账本 | 「四」自测模式只接受仓库之外的独立结果账本 | 夹具 RG；记录 `R` 下全部文件清单与 `R/logos/resources/verify/smoke-results.jsonl` 的字节 | 以自测账本的打开与写入函数分别尝试写一行结果：(a) `O/new.jsonl`（不存在）；(b) `O/existing.jsonl`（已存在、链接数为 1 的普通文件，预置一行前缀内容），在同一次打开期间写入 SMOKE-core-336、SMOKE-core-337 两条结果，并以可注入的文件操作记录打开与写入调用；(c) `R/..results.jsonl`；(d) `O/dangling.jsonl` 为指向 `R/new-target.jsonl` 的悬空符号链接；(e) `O/link.jsonl` 为指向 `O/existing.jsonl` 的符号链接；(f) `O/hard.jsonl` 为 `R/logos/resources/verify/smoke-results.jsonl` 的硬链接；(g) 父目录不存在的 `O/missing/x.jsonl` | (a)(b) 被接受，结果行经打开得到的同一文件描述符写入目标文件。(b) 的文件操作记录显示：整个过程只打开一次，两条结果的写入都使用该次打开并通过检查的描述符，没有按路径重新打开或追加；最终文件内容为原前缀加两条追加记录，顺序一致。(c)～(g) 均在任何写入前被拒绝：(c) 按路径分量判为仓内；(d)(e) 结果路径本身是符号链接；(f) 打开后的描述符链接数大于 1；(g) 无法确认真实父目录。每个拒绝分支结束后，`R` 下文件清单不变，`R/logos/resources/verify/smoke-results.jsonl` 的字节与开始时逐字节相同，`R/new-target.jsonl` 不存在 |
+| UT-S19-126 | 制品校验异常一律判 fail | SMOKE-core-336 ②「`payloadHash` 自洽」 | 夹具 RG 的包替身 `O/pkg`，用仓内 `validateAssetManifest` 做校验 | 以制品校验结论函数在自测与正式两种模式下分别判定：(a) 资源齐全且 `payloadHash` 正确；(b) `payloadHash` 被篡改；(c) 清单中前一项资源缺失、后一项资源存在但内容与摘要不同；(d) 清单含非法路径；(e) 从 (a) 的通过夹具出发，只修改一个已存在资源的文件内容，清单与其余资源保持完整 | (a) 两种模式均通过，结论写「payloadHash 自洽」。(b)～(e) 两种模式均判 fail，(e) 的问题描述指向被修改的资源路径，问题描述含校验器抛出的原始信息，结论不写「payloadHash 自洽」；自测模式不再把异常当作开发布局缺文件而放行 |
+
+### 覆盖度校验
+
+- 信封整体解析与命令身份（runner 与 ST-S19-38～39 同一规则）：UT-S19-122。
+- 回执入口身份（缺字段、非绝对路径、不符、同文件别名）：UT-S19-123。
+- 部署前置顺序与版本三方关系式（只认原提案 `fix-smoke-runner-discovery-overflow` 的部署，无记录 skip，有记录不符 fail，合成低版本三方一致仍通过）：UT-S19-124。
+- 自测账本仓外独立（双点前缀文件名、悬空与普通符号链接、硬链接共享、父目录缺失，以及仓外新建与已有独立文件的接受对照；两条结果经同一描述符写入）：UT-S19-125。
+- 制品校验无缺项豁免（含「前项缺失、后项摘要不同」组合，以及只改一个已存在资源内容的单独摘要错误）：UT-S19-126。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S19"`，测试名含用例 ID；失败不得写 pass。
+- 只用内存或 `mktemp -d` 临时目录；夹具中的仓库替身 `R` 是临时目录，不是本仓。用例不触碰本机全局安装、本仓 `logos/resources/`（结果账本除外）、本仓部署账本与回执、本仓 smoke 账本；所有临时目录在用例结束时删除。
+- ST-S19-38、ST-S19-39 的测试代码对 `stdout.trim()` 整体 `JSON.parse`，与 UT-S19-122 规则一致；用例规格本身不变。
