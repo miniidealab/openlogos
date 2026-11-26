@@ -759,3 +759,61 @@ UT 使用仓库文件和临时目录，不修改用户真实全局环境。ST-S1
 | ST-S19-37 | 真实 Windows 从两个公开源原地升级 | 在真实 Windows 为官方 npm、npmmirror 各建独立临时前缀和缓存。每臂从官方源装 `0.16.7`，验证该入口的初始版本，再用本臂源执行 `npm install -g @miniidealab/openlogos@latest` 升级同一前缀。在新 CMD 记录命中的入口并运行裸 `openlogos --version` | 两臂安装前均为 `0.16.7`。升级和 CMD 检查均退出 0，实际包名与目标包一致，包版本和 CMD 输出均等于被验 tag 版本。实际命中的入口解析到对应临时前缀的 `openlogos.cmd`。保存每臂的来源、目标、实际版本和入口，结束后清理临时前缀和缓存。发版运行的目标来自 tag。常规回归可使用当前已公开版本进行只读验证 |
 
 UT 使用可控夹具验证镜像滞后、入口错误和工作流依赖，保持结果可重复。自动化测试通过 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`，测试名含用例 ID。ST-S19-37 的正式发版证据由该 tag 的 Windows 任务输出，两个来源分别留证。
+
+## S19 smoke runner 发现遍历测试（fix-smoke-runner-discovery-overflow）
+
+> 覆盖场景 `core-S19-smoke-gate.md`「smoke runner / reporter / dispatcher 覆盖检查」中的「runner 发现的遍历规则」第 1～6 条、「Gate 判定补充」中默认 dispatcher 下零 runner 一条，以及 EX-19.25。
+>
+> **夹具 RD**：`mktemp -d` 一次性项目 `P`（单模块 `core`，launched）。另建项目外的临时目录 `X`，内含 `X/scripts/smoke-linked.sh`（被执行时在 `X/EXECUTED` 写入标记）与若干普通文件。`P` 内放置：
+> - 仓内 runner `scripts/smoke-a.js`：写 SMOKE-core-950 的 `pass` 结果，路径取 `OPENLOGOS_SMOKE_RESULT_PATH`；
+> - 目录链接 `P/build → X`；
+> - 指回祖先的目录链接 `P/loop → P`（旧实现跟随它会无限递归）；
+> - 被忽略目录里的 runner `node_modules/pkg/scripts/smoke-ignored.sh`。
+>
+> 变体如下：
+> - **RD-plain**：不含任何链接，另含 `apps/x/scripts/smoke-b.ts`。
+> - **RD-filelink**：`scripts/smoke-c.js` 是指向 `X/runner.js`（普通文件）的符号链接；`scripts/smoke-d.js` 是悬空链接。
+> - **RD-case**：活跃提案 `rd-demo` 在 `deltas/test/smoke/` 下新增 SMOKE-core-950；变体 RD-case-linked 把这份用例定义放在 `deltas/test/smoke/linked → Y`（`Y` 为项目外目录）里。
+> - **RD-merged**：在 RD-case 基础上，把同一 SMOKE-core-950 定义也写入已合并 smoke 规格 `P/logos/resources/test/smoke/core-smoke-test-cases.md`。`smoke` 成功执行路径从已合并规格读取已定义用例，缺少时会以 `NO_SMOKE_CASES` 提前退出。
+> - **RD-zero**：在 RD-case 基础上删除 `scripts/smoke-a.js`，唯一 runner 只在 `build → X` 内；`smoke.command` 为 `node scripts/run-smoke.js`；本轮无结果文件。
+>
+> SMOKE-core-950 为本节夹具专用编号，与 SMOKE-core-900～902 一样不计入正式 smoke 编号序列。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S19-113 | 目录链接不进入 | 遍历规则第 1、2 条 | 夹具 RD | `discoverSmokeRunners(P)` | 返回 `["scripts/smoke-a.js"]`：`build/scripts/smoke-linked.sh` 与 `node_modules/pkg/scripts/smoke-ignored.sh` 都不在其中；`loop → P` 不被进入，调用正常返回，不出现栈溢出或重复路径 |
+| UT-S19-114 | 指向文件的 runner 链接照常发现 | 遍历规则第 1 条 | 夹具 RD 叠加 RD-filelink | `discoverSmokeRunners(P)` | 结果含 `scripts/smoke-c.js`（目标为普通文件）；悬空链接 `scripts/smoke-d.js` 不收入且不抛异常；目录链接内的 runner 仍不收入 |
+| UT-S19-115 | 单个目录下文件数超过参数上限 | 遍历规则第 3 条、EX-19.25 | `P/scripts/` 为真实子目录。以可注入的目录读取让它的枚举返回合成目录项：249999 个不匹配 runner 命名的普通文件名，加一个 `smoke-wide.sh`。目录项名称不含路径分隔符，也不在磁盘真实创建这些文件；项目根其余部分为空 | 调用 `discoverSmokeRunners(P)` | 正常返回，不抛 `RangeError`，结果恰为 `["scripts/smoke-wide.sh"]`：接口先按路径与名称筛选，再排序去重，输入规模不反映在返回数量中。对照：用修复前的展开写法遍历同一组合成目录项，在把 `scripts/` 子树并入父目录结果时抛 `RangeError: Maximum call stack size exceeded`，证明用例能复现原缺陷 |
+| UT-S19-116 | 读不了的子目录跳过 | 遍历规则第 4 条 | 夹具 RD-plain 增加子目录 `locked/`：非 root 用户下真实设为不可读（`chmod 000`）；另以可注入的目录读取让 `locked/` 的枚举抛出 `EACCES`，两种方式各跑一轮（root 用户下只跑注入方式） | `discoverSmokeRunners(P)`；随后 `checkSmokeCoverage(P, …)` | 两轮都不抛异常；其余 runner 照常返回；`checkSmokeCoverage` 正常给出结果，无新增诊断码。结束后恢复权限再清理 |
+| UT-S19-117 | 不含链接的项目零回归 | 遍历规则第 2、5 条 | 夹具 RD-plain | 分别用修复后的实现与修复前的实现（测试内保留的 golden 函数或 golden 结果）调用 `discoverSmokeRunners(P)` | 两者结果逐项相同：含 `scripts/smoke-a.js` 与 `apps/x/scripts/smoke-b.ts`，不含被忽略目录里的 runner，顺序一致 |
+| UT-S19-118 | 提案用例读取保持既有行为 | 遍历规则「不适用范围」 | 夹具 RD 叠加 RD-case-linked | `extractChangedSmokeIds(P, "rd-demo")`；同一项目调用 `discoverSmokeRunners(P)` | 前者含 SMOKE-core-950（链接子目录里的用例照常读入）；后者仍不含 `build/scripts/smoke-linked.sh`（项目根搜索跳过构建目录链接） |
+| UT-S19-119 | 默认 dispatcher 下零 runner 报 `smoke_runner_missing` | Gate 判定补充 | 夹具 RD-zero | `checkSmokeCoverage(P, { command: "node scripts/run-smoke.js" })`；对照 ①：同一项目去掉活跃提案的新增用例；对照 ②：RD-case（仓内保留 `scripts/smoke-a.js`），无结果文件 | 主臂：`runners=[]`，`result="FAIL"`，诊断含 `code="smoke_runner_missing"`、`case_ids=["SMOKE-core-950"]`、`runner_paths=[]`。对照 ①：`result="PASS"`，`diagnostics=[]`。对照 ②：不含 `smoke_runner_missing`，按既有规则报 `smoke_reporter_missing` |
+| UT-S19-120 | 一次 verify 只扫描一次项目根 | 遍历规则第 6 条 | 夹具 RD-case，已有结果文件写 SMOKE-core-950 pass；对项目根 runner 搜索计数（spy 或可注入计数器）。变体：切片 checkpoint 模式，SMOKE-core-950 属于 pending 切片，且无结果文件 | 执行一次 verify 数据汇总与 smoke 预检门禁（`collectVerifyData` 及其后的门禁判定） | 项目根 runner 搜索恰好执行 1 次；`data.smoke_precheck` 的 `runners`、`diagnostics`、`result` 与单独调用 `checkSmokeCoverage` 的结果相同。变体：`smoke_precheck` 为 FAIL，但 gate 不因 smoke 预检被阻断（pending 豁免保持）；把该用例改为非 pending 后，gate 为 FAIL，`gate.reason` 为首个阻断诊断码 |
+| UT-S19-121 | dispatcher 遍历规则 | 遍历规则第 1～5 条 | 以模块方式导入 `scripts/run-smoke.js` 的遍历与发现函数（作为模块导入时不执行主流程）；夹具 RD 叠加 RD-plain 的 `apps/x/scripts/smoke-b.ts`；另设宽目录臂：与 UT-S19-115 同样让真实子目录 `P/scripts/` 的枚举返回 249999 个不匹配的普通文件名加一个 `smoke-wide.sh`，项目根其余部分为空 | 调用 dispatcher 的 runner 发现 | 主臂返回 `["scripts/smoke-a.js"]`：不进入 `build`、`loop`，不收 `.ts`（dispatcher 扩展名规则），不含 `scripts/run-smoke.js` 自身，按路径排序。宽目录臂正常返回，不抛 `RangeError`，结果恰为 `["scripts/smoke-wide.sh"]` |
+
+### 场景测试
+
+| ID | 描述 | 覆盖 Steps | 前置条件 | 操作序列 | 预期结果 |
+|----|------|-----------|---------|---------|---------|
+| ST-S19-38 | 含目录链接的项目中 verify 正常输出 | EX-19.25；遍历规则第 1、6 条 | 真实 CLI（构建后的 `dist/index.js`）；夹具 RD 叠加 RD-case，已合并测试规格与结果账本可让 verify 走到 smoke 预检 | 在 `P` 执行 `openlogos verify --format json`，分别捕获 stdout、stderr 与退出码 | 进程正常结束，stdout 为可解析的 JSON 信封，退出码与信封中的 `gate.result` 一致；`data.smoke_precheck.runners` 含 `scripts/smoke-a.js`，不含任何 `build/` 或 `loop/` 下的路径；stderr 不含 `RangeError` |
+| ST-S19-39 | 默认 dispatcher 下 smoke 端到端 | Step 4a～4c、Step 8a～9；EX-19.25 | 真实 CLI；夹具 RD 叠加 RD-merged（SMOKE-core-950 同时在已合并 smoke 规格与提案 delta 中）；`P/scripts/run-smoke.js` 为本仓 dispatcher 的副本；`smoke.command` 为 `node scripts/run-smoke.js`；按 S19 既有测试夹具满足 smoke 前置（`VERIFY_PASS`、`DEPLOY_DONE`、`[deploy]` 全勾） | 执行 `openlogos smoke --format json`，读取 stdout、退出码与结果文件 | 进程正常结束，退出码 0，stdout 为可解析的 JSON 信封，`data.gate.result="PASS"`；`data.runners` 含 `scripts/smoke-a.js`，不含任何 `build/` 或 `loop/` 下的路径；结果文件含仓内 runner 本轮写出的 SMOKE-core-950 `pass` 记录；`X/EXECUTED` 不存在（链接目录内的 runner 未被执行） |
+
+### 覆盖度校验
+
+- 目录链接与环形链接不进入：UT-S19-113、UT-S19-121、ST-S19-38。
+- 文件链接 runner 与悬空链接：UT-S19-114。
+- 参数上限（合成目录项）：UT-S19-115、UT-S19-121。
+- 不可读子目录：UT-S19-116。
+- 零回归：UT-S19-117。
+- 提案用例读取不受影响：UT-S19-118。
+- 默认 dispatcher 零 runner 判定：UT-S19-119。
+- verify 单次扫描与切片豁免：UT-S19-120。
+- 真实命令端到端：ST-S19-38（verify）、ST-S19-39（smoke，经默认 dispatcher）。
+
+### 自动化与证据要求
+
+- 用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S19"`，测试名含用例 ID；失败不得写 pass。
+- 合成目录项只在测试进程内存中构造，不在磁盘创建数十万个文件；真实目录链接用少量文件即可验证链接策略。
+- 所有临时目录（`P`、`X`、`Y`）在用例结束时删除；改过权限的目录先恢复权限再删除。用例不触碰本仓活跃提案、本仓 `logos/resources/`（结果账本除外）与本机全局安装。

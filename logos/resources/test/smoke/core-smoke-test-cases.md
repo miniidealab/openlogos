@@ -3086,3 +3086,51 @@ SMOKE-core-21 / 23 的既有认领者是 `website/scripts/smoke-releases.mjs`（
 | SMOKE-core-335 | 真实 Windows 升级证据 | 按部署 ref 查询 GitHub Windows CI 的升级用例与部署证据，核对候选包版本及实际 CMD 输出 | Windows 旧版原地升级、多入口遮蔽与不可修复分支实际执行，通过证据绑定发布提交与版本，用户重新打开 CMD 后的版本断言在场 |
 
 公开 smoke 由既有 dispatcher 发现并记录当前目标环境。镜像传播的版本与 tarball 可用性附在 334 证据中。公告指向经过核验的官方源。
+
+## OpenLogos 0.16.23 smoke runner 发现安装态 smoke（SMOKE-core-336～337）
+
+> 这组用例验证本提案 fix-smoke-runner-discovery-overflow 对 smoke runner 发现的修复已在本机全局安装态中以 0.16.23 的身份生效（场景 S19「runner 发现的遍历规则」、默认 dispatcher 下零 runner 判定、EX-19.25）。完整行为已由仓库内 UT-S19-113～UT-S19-121、ST-S19-38～ST-S19-39 覆盖。安装态只取证两件事：装上的是本次候选；全局 CLI 在含目录链接（含指回项目根的环形链接）的一次性项目中，`verify` 正常输出结果且不进入链接。超宽目录的参数上限不在安装态物理建档验证：链接后的文件对正确实现不可见，也走不到展开处，检不出该缺陷；这一项由 UT-S19-115（CLI）与 UT-S19-121（dispatcher）的内存合成目录项覆盖。
+>
+> **夹具**：用例在 `mktemp -d` 一次性 git 项目 `P` 内执行，经全局 `openlogos init` 建立项目后写入：
+> - 单模块 `core` launched，已合并测试规格含 UT-S01-01；`verify.pre_run_command` 指向夹具内只写 UT-S01-01 `pass` 的记录型脚本；
+> - `smoke.command` 为 `node scripts/run-smoke.js`，`P/scripts/run-smoke.js` 为最小 dispatcher 夹具，只在被执行时写标记；
+> - 项目外临时目录 `X`：含哨兵 runner `X/scripts/smoke-linked.sh`，另放少量普通文件即可；实现错误地跟随链接时，该哨兵会出现在 `runners` 中；
+> - 项目内的目录链接：`P/release → X`，以及指回项目根的 `P/loop → .`。
+>
+> 两种变体：
+> - **臂 A**：活跃提案 `rd-smoke` 不含 smoke 用例 delta；仓内另有 runner `scripts/smoke-a.sh`。
+> - **臂 B**：活跃提案 `rd-smoke` 在 `deltas/test/smoke/` 下新增 SMOKE-core-950（夹具专用编号）；仓内没有任何 runner，唯一 runner 在链接目录 `release/scripts/` 内；本轮无 smoke 结果文件。
+>
+> 每次执行全局 CLI 前把夹具改动提交到本地 git。runner 对全局安装态**只读**，不做安装或卸载。版本以部署记录与 `cli/src/lib/local-release-candidate.ts` 的候选版本为准，断言写成关系式，不硬编码 `0.16.23`。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-336 | 安装态版本与制品身份 | 本机全局已安装本次候选；部署账本中有本提案在 test 的成功部署记录，本机回执与之同一 deploy_id | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并重算 `payloadHash` | ① `--version` 等于本次成功部署回执中的候选版本，入口无 workspace link，入口 realpath 等于回执 `entry_realpath`；② `payloadHash` 自洽 | 保留读取结果；任一不符则停止后续流程，按部署方案以 `openlogos deploy --env test --rollback` 回退 |
+| SMOKE-core-337 | 含目录链接的项目中 verify 正常输出 | 本机全局已安装本次候选；一次性项目按上述夹具建立 | ① 臂 A：在 `P` 执行 `openlogos verify --format json`；② 臂 B：在同一形态的项目中执行 `openlogos verify --format json`；③ 两臂结束后检查 `P/scripts/run-smoke.js` 的执行标记 | ① 进程正常结束，stdout 为可解析的 JSON 信封，退出码 0 且 `gate.result="PASS"`；`data.smoke_precheck.runners` 含 `scripts/smoke-a.sh`，不含任何 `release/` 或 `loop/` 下的路径；stderr 不含 `RangeError`。② 进程正常结束，stdout 为可解析的 JSON 信封，退出码 1 且 `gate.result="FAIL"`；`data.smoke_precheck.runners=[]`，诊断含 `code="smoke_runner_missing"`；`gate.reason="smoke_runner_missing"`；stderr 不含 `RangeError`。③ dispatcher 未被执行，`verify` 只做静态预检 | 同上；任一不成立表示修复未完整进入安装态 |
+
+### 二、执行边界
+
+- 全部读写只在一次性项目 `P`、项目外临时目录 `X` 与受控临时目录内进行，结束即删除（先删链接，再删 `X`）；不配置远端、不联网。
+- **不得**触碰本仓活跃提案、本仓 `logos/resources/`（结果账本除外）、本仓运行态目录、本仓的 git 分支与工作区、用户其他仓库（包括 runlogos、markdown6）或本机全局 prefix。
+- 结果写入本仓 `logos/resources/verify/smoke-results.jsonl`。只有目标为 `test`（或未指定）且实际执行的结果行才带 `target_environment="test"`；目标非 test 的 skip 行与窗口之外的 skip 行都不声明 `target_environment`。
+
+### 三、追溯与覆盖
+
+- 场景：S19「smoke runner / reporter / dispatcher 覆盖检查」（runner 发现的遍历规则、Gate 判定补充、EX-19.25）。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.23 本机测试环境发布（fix-smoke-runner-discovery-overflow）」。
+- 仓库内对应用例：UT-S19-113、UT-S19-115、ST-S19-38 对应 SMOKE-core-337 ①；UT-S19-119 对应 SMOKE-core-337 ②。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-runner-discovery.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行。runner 显式分派 SMOKE-core-336～SMOKE-core-337，不得依靠通配发现后无条件 PASS。
+- **目标环境优先判断**：沿用通用安装态 runner `scripts/smoke-local-install-deploy.js` 的入口判断。宿主已指定 `OPENLOGOS_SMOKE_ENV` 且不是 `test` 时，runner 首先为全部 owned ID 写带原因的显式 skip（原因 `env-not-test`，缺失项 `OPENLOGOS_SMOKE_ENV=test`），skip 行不声明 `target_environment`，随即以成功状态退出，不再判断提案窗口与部署回执。只有目标为 `test` 或未指定目标时，才进入下面的窗口与前置判断。
+- 适用窗口：活跃变更为 `fix-smoke-runner-discovery-overflow`，或设置了 `OPENLOGOS_RD_SMOKE=1`。窗口之外按既有留痕机制为全部 owned ID 写 skip，skip 行不声明 `target_environment`。环境变量一律使用 `OPENLOGOS_RD_` 前缀。
+- **非 test 目标对照（普通 runner 入口，不是自测模式）**：在临时项目中调用 runner 的普通入口，结果路径 `OPENLOGOS_SMOKE_RESULT_PATH` 指向仓库之外的独立临时文件，`OPENLOGOS_SMOKE_ENV` 设为非 test 值，并以 `OPENLOGOS_RD_SMOKE=1` 打开适用窗口，证明目标判断先于窗口判断。逐行断言：恰有 SMOKE-core-336、SMOKE-core-337 两条 `skip`，原因均为 `env-not-test`，缺失项为 `OPENLOGOS_SMOKE_ENV=test`；两行都没有 `target_environment` 字段；runner 退出码 0。该对照不启用自测开关，与下条自测拒绝规则互不冲突。
+- 部署前置：以部署账本中本提案在 test 的最后一条成功 deploy 与本机部署回执为准，二者须为同一 deploy_id、`result=done`、`candidate_version` 逐字段等于源码候选版本。账本中没有本提案成功部署记录时写显式 `skip` 并携带缺失项；记录存在但回执不符时判 fail。有 skip 时不得写 `SMOKE_PASS`。
+- 全局 CLI 子进程在独立进程组中运行，每次限时 120 秒，到时对整个进程组强制终止并判 fail。
+- 每一步按**预期的退出码与输出通道**判定后再解析输出：SMOKE-core-337 ① 预期退出码 0，② 预期退出码 1，均解析 stdout 的 JSON 信封；SMOKE-core-336 的读取步骤预期退出码 0。凡要求解析信封的步骤一律以 `--format json` 调用。超时、被信号终止、启动错误、非预期退出码或信封通道 / 形态不匹配，均判该用例 fail，不得重试后写 pass。
+- 自测模式只接受仓库之外的独立结果账本，并在正式 smoke 上下文（已注入 `OPENLOGOS_SMOKE_ENV` / `OPENLOGOS_SMOKE_MODULE` 任一变量）中拒绝运行，与既有同类 runner（如 `scripts/smoke-fix-phase-banner-api.js`）一致；自测结果不声明 `target_environment`。
+- 结果写入 smoke reporter（`logos/resources/verify/smoke-results.jsonl`），每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-336～SMOKE-core-337 均被 runner 覆盖。

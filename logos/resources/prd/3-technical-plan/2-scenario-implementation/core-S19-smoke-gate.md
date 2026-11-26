@@ -164,9 +164,33 @@ sequenceDiagram
 - 若 uncovered 包含当前提案新增或修改的 smoke ID，`gate.reason` 应优先表达为 `smoke_cases_uncovered`，并保留 `uncovered_cases` 列表。
 - 若没有结果文件或结果文件为空，诊断应区分为 `smoke_reporter_missing`。
 - 若 `smoke.command` 缺失、没有 dispatcher 或无法发现 runner，诊断应区分为 `smoke_runner_missing`。
+- **默认 dispatcher 下零 runner（fix-smoke-runner-discovery-overflow）**：本提案新增或修改了 smoke 用例，`smoke.command` 是默认 dispatcher（`scripts/run-smoke.js`），而项目根 runner 搜索发现不到任何 runner 时，同样报 `smoke_runner_missing`（`runner_paths` 为空数组），不得因命令「是 dispatcher」就判为可达。这是上一条「无法发现 runner」在默认 dispatcher 下的落实，不新增诊断码。本提案没有新增或修改 smoke 用例时，不做此判定，结果不变。
+
+### runner 发现的遍历规则（fix-smoke-runner-discovery-overflow）
+
+适用范围：CLI 覆盖预检的**项目根 runner 搜索**（`verify` 的 `smoke_precheck` 与 `smoke` 的覆盖预检共用），以及仓内默认 dispatcher `scripts/run-smoke.js` 的 runner 发现。两处遵守同一规则：
+
+1. **不进入目录符号链接**：遍历用不跟随链接的目录项类型判断（`readdirSync(dir, { withFileTypes: true })`）。目录项是符号链接时，仅当其目标是普通文件才收为 runner 候选；目标是目录（包括指向项目外的构建产物、发行目录）则不进入。真实目录照常递归。
+2. **忽略名单不变**：按目录名忽略 `.git`、`node_modules`、`dist`、`logos`，不新增按名称猜测的条目。
+3. **结果逐项累加**：遍历把同一个结果数组传入递归、逐项追加，不把子树结果展开成函数参数。遍历阶段收集的文件数量不受函数参数个数上限约束，与项目文件总数无关。最终返回的仍是按路径与名称筛选、排序去重后的 runner 列表，返回数量不随输入规模变化。
+4. **读不了的子目录跳过**：子目录因权限等原因无法枚举时跳过、继续遍历其余目录，不新增诊断码。遍历过程中出现的错误不得使 `verify` / `smoke` 崩溃。
+5. **命名规则与执行顺序不变**：CLI 预检仍收路径含 `scripts/` 且文件名匹配 `smoke-*.{sh,js,mjs,cjs,ts}` 的文件；dispatcher 仍按自身扩展名规则（`smoke-*.{sh,js,mjs,cjs}`）、排除自身并按路径排序执行。
+6. **一次 verify 只扫描一次项目根**：`verify` 在汇总验收数据时计算一次覆盖预检结果，后续门禁判定直接使用该结果，不再重新发现 runner；输出的 `runners`、诊断与切片 checkpoint 豁免判定不变。
+
+**不适用范围**：读取本提案新增 smoke 用例清单（遍历 `logos/changes/<slug>/deltas/test/smoke` 下的 Markdown）**保持既有行为**——跟随目录链接、不吞枚举错误。放在链接子目录里的新增用例照常计入 `changed_case_ids`，避免用例被漏读后预检提前放行。
+
+**兼容性**：不含目录链接的项目，`runners` 列表与修复前一致。放在链接目录里的 runner 不再被预检发现，也不再被默认 dispatcher 执行；`smoke.command` 直接写出该 runner 路径时仍照常执行。若提案因此报 `smoke_runner_missing`，把 runner 移回仓内即可。
 
 ### 与 deploy-done 的关系
 本检查不改变 S19 的前置门禁：仍必须先满足 `VERIFY_PASS`、`DEPLOY_DONE`、`[deploy]` 全勾和 `smoke_required=true`。runner 覆盖检查只负责判断 smoke 用例是否真的执行，不替代部署完成状态。
+
+### 异常与边界
+
+#### EX-19.25：项目内有指向大型构建产物的目录链接
+
+- **触发条件**：项目目录内有指向大型构建产物的目录符号链接，或真实存在的超宽目录。参照形态为 markdown6：`release/mobile` 链接到外置盘的发行目录，约 90.8 万个文件；另有两个 Rust 构建目录 `src-tauri/target`，合计约 32 万个文件。
+- **期望响应**：`openlogos verify` 与 `openlogos smoke` 正常完成，`--format json` 输出可解析的信封，退出码与结果一致。项目根 runner 搜索与默认 dispatcher 都不进入目录链接，链接目录内的 `scripts/smoke-*` 不出现在 `runners` 中，也不被 dispatcher 执行；仓内 runner 照常发现、执行并写出本轮结果。单个真实目录下文件数超过函数参数个数上限时，runner 发现正常返回。
+- **副作用**：只读文件系统，不写任何持久数据；不进入链接目录，读取面只会缩小。
 
 ## smoke skip 统计口径
 

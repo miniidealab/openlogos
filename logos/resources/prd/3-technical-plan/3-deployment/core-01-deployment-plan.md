@@ -6183,3 +6183,98 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 
 - 提案 `windows-latest-release-gate` C01、C02。沿用 S19 的 Windows 候选包回归及当前发布来源核验。
 - UT-S19-110～UT-S19-112、ST-S19-37。
+
+## OpenLogos 0.16.23 本机测试环境发布（fix-smoke-runner-discovery-overflow）
+
+> 本节引用「本机测试环境脚本部署（scripts/deploy-local.mjs）」通用方案，只写本次的差异：版本号、CHANGELOG、源码回归范围、本仓 `openlogos sync` 与安装态 smoke。冻结、回滚制品、构建候选、试装、全局安装、复核与回执一律按通用方案第三～七节执行，不在本节复写。
+>
+> **版本与回滚身份的取值规则**：下文的 `0.16.23`、`0.16.22`、`0.16.20`、提交 `307579d` 都是**规划值**。候选版本 = 「部署前置与版本」第 3 条复核后实际选定的版本，升版命令、CHANGELOG 标题与 `--version` 断言取它。三个回滚动作各有自己的事实来源，互不替代：
+>
+> | 回滚身份 | 事实来源 | 规划值 | 用途 |
+> |---|---|---|---|
+> | 源码回滚常量 `LOCAL_RELEASE_ROLLBACK_VERSION` | 既有升版脚本 `cli/scripts/bump-version.mjs` 产生，等于升版前的源码版本 | `0.16.22` | 源码内的候选 / 回滚常量对；不手改 |
+> | 部署脚本失败后的回装 | 本次部署回执的 `previous_version` 与 `previous_entry_sha256`，即脚本打包的部署前全局安装态 | 以回执为准 | 脚本自动回装后复核恢复结果 |
+> | 成功落账后的显式回退 | 执行回退前读取 `openlogos env show test --format json` 的 `data.previous_ref`。它是环境视图字段，由 CLI 在完整账本上计算：当前成功记录之前、最近一条成功且 ref 不等于 `current_ref` 的记录。`--rollback` 实际按同一口径取目标（`spec/environments.md` §7.1、§11.6） | 本次部署成功、其间无其他部署时为提交 `307579d`（0.16.20） | `openlogos deploy --env test --rollback` 的目标；执行前核对 |
+>
+> 部署记录分列这三项的实际值，并写明各自与规划值是否一致。部署前读到的 `test.current_ref`（计划时为 `307579db16`，0.16.20，deploy `0e07ad07`）单独记作审计信息，不作为回退目标的依据。若同一提交被连续部署，`previous_ref` 会跳过重复的提交，可能与部署前的 `current_ref` 不同。部署前全局安装态与账本 `test.current_ref` 的版本可以不同，两者都如实记录，不要求相等。
+
+### 部署目标与授权边界
+
+把本提案对 smoke runner 发现的修复（场景 S19「smoke runner / reporter / dispatcher 覆盖检查」中的「runner 发现的遍历规则」、默认 dispatcher 下零 runner 判定、EX-19.25）装进本机全局安装态。行为差异如下：
+
+- `verify` 的 `smoke_precheck` 与 `smoke` 的覆盖预检在项目根搜索 runner 时不进入目录符号链接，遍历结果逐项累加，读不了的子目录跳过。项目内有指向大型构建产物的目录链接时，命令不再以 `RangeError` 崩溃。
+- 本提案新增了 smoke 用例、`smoke.command` 为默认 dispatcher 且发现不到任何 runner 时，预检报 `smoke_runner_missing`，原先会误判 PASS。
+- 一次 `verify` 只扫描一次项目根。诊断码、JSON 字段与退出码不变；不含目录链接的项目 `runners` 列表不变。
+- 仓内 dispatcher `scripts/run-smoke.js` 不随 npm 包分发。它的修复在本仓执行 `openlogos smoke --env test` 时随源码生效，不经安装态。
+
+部署参数：
+
+- **目标环境**：`test`（登记表 `proposal_default_env: test`，决策 C02）。登记表中 `test.deploy` 为 `mode: script`、`script: scripts/deploy-local.mjs`。
+- **入口**：提案通道 `openlogos deploy --env test`，部署请求 HEAD。由 CLI 追加部署报告、写 `DEPLOY_DONE` 并勾选 `[deploy]`。部署成功后**不再**另行执行 `openlogos deploy-done`。
+- **授权**：部署执行、smoke、archive 与 `git push` 各自为人类确认点，须用户逐次明确授权（`openlogos next --auto` 的 standing 授权按 CLAUDE.md 两档授权语义处理）。`test` 未配置 `promote_from` / `require_approval`。
+- **版本号边界**：0.16.23 只作本机全局版本，不进入 npm registry。本方案**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`，不改写其他仓库（包括 runlogos 与 markdown6）。
+
+### 部署前置与版本
+
+1. 本提案 delta 已 merge，`[code]` 切片已实现并提交，`openlogos verify` PASS。`openlogos env check` 无 error，`openlogos deploy --env test --dry-run` 通过（通用方案第三节）。
+2. **请求提交已提交**：部署前确认 merge 后的规格、切片代码与验收报告都已提交、工作区干净。未提交时按「规格合并 → 代码 → 验收报告」的顺序补提交后再部署。
+   - `.claude/` 与 `logos/resources/verify/` 下的已跟踪文件以 `git add -u -- <path>` 暂存；
+   - 本提案期间产生的验收历史以 `git add -f -- logos/resources/verify/history/` 暂存（不改 `.gitignore`）。
+3. **版本事实复核**：读取 `cli/package.json` 当前版本，计划时为 `0.16.22`，即已公开发布的版本。候选为下一 patch `0.16.23`，执行 `npm view @miniidealab/openlogos@0.16.23 version` 应返回 E404。若实施前已有其他提案升版，或 registry 已存在候选版本号，候选改为「当时版本与 registry 最高版本中较大者的下一 patch」，并在部署记录写明实际值。
+4. **升版**：在实现中执行 `node cli/scripts/bump-version.mjs <候选版本>`（规划值 `0.16.23`）。由脚本一次更新全部版本载体与候选 / 回滚常量（回滚常量由脚本设为升版前的源码版本，规划值 `0.16.22`），并重算 `cli/asset-manifest.json`；**禁止手改**常量与 manifest。
+5. **CHANGELOG**：在 `## [Unreleased]` 之后新增 `## [<候选版本>]` 条目（规划值 `## [0.16.23]`），注明「本机全局发布（未发布到 npm）」，不改既有条目：
+   - **Fixed**：项目内有指向大型构建产物的目录链接时，`verify` / `smoke` 搜索 smoke runner 不再以 `RangeError: Maximum call stack size exceeded` 崩溃；runner 搜索不进入目录符号链接，遍历结果不再受参数个数上限约束，读不了的子目录跳过。提案新增了 smoke 用例、默认 dispatcher 却找不到任何 runner 时，预检报 `smoke_runner_missing`，不再误判通过。
+   - **Changed**：放在目录链接里的 runner 不再出现在 `runners` 列表中；`smoke.command` 直接写出其路径时仍照常执行。一次 `verify` 只扫描一次项目根。
+
+### 源码回归范围
+
+部署前的 verify 负责源码回归，脚本不跑测试（通用方案第八节）。升版后复跑以下检查，必须全绿：
+
+- `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`、`npm run build`。
+- 范围包括：
+  - 本提案的 UT-S19-113～UT-S19-121、ST-S19-38～ST-S19-39；
+  - S19 既有用例，尤其覆盖预检、切片 checkpoint 豁免与 smoke 门禁相关用例；不含链接项目的零回归由 UT-S19-117 锚定；
+  - verify / smoke golden；asset-manifest 自洽用例。
+- 版本相关的既有用例若断言具体版本号，随升版更新期望值。
+
+### 部署、sync 与部署后检查
+
+1. 执行 `openlogos deploy --env test`（提案通道）。按通用方案第七节第 1、2 条读回回执与账本：
+   - 全局 `--version` 等于候选版本（规划值 `0.16.23`）；
+   - 入口 realpath 等于回执 `entry_realpath`，全局 `dist/index.js` 的 SHA-256 等于 `candidate_entry_sha256`；
+   - 记录候选 tarball 与回滚制品的路径与 SHA-256。回滚制品由脚本从当前全局安装打包，即部署前的全局安装态；从回执读取并记录 `previous_version` 与 `previous_entry_sha256`；
+   - 部署前读取 `openlogos env show test --format json` 的 `data.current_ref`，记作审计信息（计划时为 `307579db16`，0.16.20，deploy `0e07ad07`；若其间有其他提案部署，以读到的实际值为准）；
+   - 部署成功后再次读取同一视图，记录 `data.current_ref`（应为本次部署的提交）与 `data.previous_ref`（显式回退目标）；
+   - 部署记录分列三项回滚身份：源码回滚常量、回执 `previous_version` / `previous_entry_sha256`、部署后视图的 `data.previous_ref`。部署前全局安装版本与 `test.current_ref` 的版本不同时如实写明，不视为失败。
+2. **本仓 sync**：在主工作树执行一次 `openlogos sync`。
+   - 读回 `logos/spec/` 下受托管的规范文件，与根 `spec/` 同名文件逐字节一致；
+   - AGENTS.md / CLAUDE.md 的变化只来自托管内容与版本戳；
+   - 受版本控制的托管文件变化随部署记录一起提交，不 push；
+   - 若 sync 改动 `.claude/settings.json`，按前几版部署记录同样还原并记录。
+3. **补部署报告**：部署后追加人写的「部署报告」小节（版本、deploy_id、ref、制品哈希、sync 读回结果）并提交，然后才执行 smoke。
+4. 经授权执行 `openlogos smoke --env test`：
+   - 本次行为用例：「OpenLogos 0.16.23 smoke runner 发现安装态 smoke（SMOKE-core-336～337）」；
+   - 通用安装态用例：「本机测试环境脚本部署安装态 smoke（SMOKE-core-268～SMOKE-core-271）」；
+   - 本次 smoke 本身经修复后的仓内 dispatcher `scripts/run-smoke.js` 执行，可作为 dispatcher 修复在本仓的实际运行证据。本仓产生的 smoke 历史随部署记录提交时以 `git add -f` 纳入。
+
+### 失败处置与回滚
+
+处置按通用方案第五节，各动作按上文「版本与回滚身份的取值规则」使用各自的事实来源。本次差异如下：
+
+- **部署前置或 dry-run 失败**：不执行部署，修正后重试，或回流实现。
+- **脚本失败（部署未成功）**：脚本自动回装回滚制品，按本次回执复核恢复结果：全局 `--version` 等于回执 `previous_version`，入口 `dist/index.js` 的 SHA-256 等于回执 `previous_entry_sha256`。不以账本版本或源码回滚常量判定。账本记 `result=failed`，不推进。
+- **成功部署后要回退**：先读取 `openlogos env show test --format json` 的 `data.previous_ref`，核对它就是要回到的版本（计划时为提交 `307579d` 的 0.16.20，不含本修复），再执行 `openlogos deploy --env test --rollback`，命令按同一视图口径取目标。视图值为 null 时，命令以既有错误 `DEPLOY_ROLLBACK_TARGET_MISSING` 拒绝，不得改用手工回装。回退后用回退到的版本在本仓执行一次 `openlogos sync`。
+- **成功落账后 smoke 失败**：停止后续完成流程，保留失败证据，回流修复后以 `openlogos deploy --env test` 部署修复提交并重跑 smoke。不得手工回装旧包。
+- 本次无数据迁移：只改变 runner 发现的只读遍历与预检判定，不改写任何持久文件格式。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`，不部署官网。
+- 不改 `.gitignore`；不改写其他仓库（包括 runlogos 与 markdown6）。markdown6 侧在用户授权后改用新安装态重新驱动，不属于本方案。
+
+### 追溯
+
+- 场景：S19「smoke runner / reporter / dispatcher 覆盖检查」（runner 发现的遍历规则、Gate 判定补充、EX-19.25）。
+- 测试：UT-S19-113～UT-S19-121、ST-S19-38～ST-S19-39；安装态 smoke：SMOKE-core-336～SMOKE-core-337，以及通用的 SMOKE-core-268～SMOKE-core-271。
+- 通用部署方案：「本机测试环境脚本部署（scripts/deploy-local.mjs）」。
+- 本提案：fix-smoke-runner-discovery-overflow（决策 C01、C02）。
