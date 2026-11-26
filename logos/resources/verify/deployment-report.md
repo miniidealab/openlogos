@@ -1814,3 +1814,32 @@ public_release_commit: bca7fa49f12a69c2d3c1c3b19b1bfb7c7103bcd6
 - 从同一 tag 干净检出，严格生成最新版本数据并完成官网构建。Cloudflare Pages 生产部署为 `6ece0062-41a5-4e37-a13a-739b4cd606c5`，来源为 `bca7fa4`。中英文快速开始与发布页均核验通过。官网升级脚本的 SHA-256 为 `c9dbe5a8fa837fa4ec6d3205fc858f07c76143563469519adae2fce5a0c8379d`，与 tag 原始字节相同。[生产部署](https://6ece0062.openlogos.pages.dev)
 - 生产部署 ID 为 `e3a00632-1c7b-45bc-84c9-08be9a99eb2d`。正式 smoke 通过，0 失败、0 未覆盖，`SMOKE-core-334` 与 `SMOKE-core-335` 均带 `target_environment=prod`，运行 ID 为 `20261123T092534515Z-smoke-6fc7f1`。历史 runner 中有 295 条记录缺少目标环境字段，账本据实为 `env_evidence=missing`、`verified=false`。
 - 独立 Windows 主机以常规 HTTPS 从正式官网取得脚本，并核对脚本 SHA-256。真实 npm 从官方源把临时安装从 0.16.7 原地升级到 0.16.22，CMD 输出目标版本。该机的 curl Schannel 报证书吊销查询离线，CMD 中通过 Node 的 HTTPS 下载成功。测试保留实际系统和用户 Path，使用后清理临时目录。
+
+## 部署记录 2026-11-26T09:55:22.867Z → test
+
+- 目标环境: test
+- 通道 / 执行方式: proposal / script
+- deploy_id: 109579c5-ba50-473d-8c02-10c5cf19450c
+- ref_requested: 3095ac7bd8d5e76295228fad8473fb3ff30298e5（HEAD）
+- ref: 3095ac7bd8d5e76295228fad8473fb3ff30298e5
+- 执行脚本: scripts/deploy-local.mjs（workdir: worktree）
+- 耗时: 44764 ms
+- 结果: done
+- log_path: logos/.openlogos-runtime/deploy-logs/109579c5-ba50-473d-8c02-10c5cf19450c.log
+- previous_ref: 307579db16705ee8cbd667c994872c336d9a1ee0
+
+### 部署报告（fix-smoke-runner-discovery-overflow，0.16.23 本机全局发布）
+
+- 版本：候选 `0.16.23`，与规划值一致。部署前复核结果：registry 最高版本为 `0.16.22`，`npm view @miniidealab/openlogos@0.16.23` 返回 404。
+- 部署：deploy_id `109579c5-ba50-473d-8c02-10c5cf19450c`，ref `3095ac7bd8d5e76295228fad8473fb3ff30298e5`，结果 `done`。部署前已按「规格合并 → 代码 → 验收报告」补提交：`0ec4038`、`0adf2c8`、`3095ac7`，工作区干净。
+- 验收：verify 运行 `20261126T094814200Z-verify-23a259`，Gate PASS（定义 2733，通过 2727，失败 0，跳过 6，未覆盖 0）。
+- 全局复核：`openlogos --version` 为 `0.16.23`；入口 realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，等于回执 `entry_realpath`；入口 SHA-256 `904452fafc86faecb2695c9c95205407af0032611732afb2a24f1fcb2be0c425`，等于回执 `candidate_entry_sha256`。
+- 制品：候选 tarball SHA-256 `1d3a52daac25031b98733ddcdba89082d4731e7d770d473014f57b9c605ef5ef`；回滚制品 SHA-256 `5130806ee798121456845039a09b89aff9189f8378e9cd79952239c824ec8f57`，由部署前全局安装打包。
+- 回滚身份（三项分列）：
+  - 源码回滚常量 `LOCAL_RELEASE_ROLLBACK_VERSION` = `0.16.22`，由 `bump-version.mjs` 产生，与规划值一致。
+  - 部署脚本失败回装依据：回执 `previous_version` = `0.16.21`，`previous_entry_sha256` = `904452fafc86faecb2695c9c95205407af0032611732afb2a24f1fcb2be0c425`。部署前全局安装态是公开版 0.16.21，与账本 `test.current_ref`（0.16.20）不同，如实记录。两版入口 `dist/index.js` 字节相同，因此入口哈希一致。
+  - 显式回退目标：部署后 `openlogos env show test --format json` 的 `data.previous_ref` = `307579db16705ee8cbd667c994872c336d9a1ee0`（0.16.20），与规划值一致；`data.current_ref` = `3095ac7`。
+  - 审计：部署前读到的 `data.current_ref` = `307579db16705ee8cbd667c994872c336d9a1ee0`。
+- 本仓 sync：`openlogos sync` 完成，`logos/spec/` 下 25 份规范与根 `spec/` 同名文件逐字节一致；AGENTS.md / CLAUDE.md 无内容变化。sync 改写了 `.claude/settings.json`：因 RunLogos 启动器按用户条目保留，额外追加了一个标准 SessionStart 分组；三条事后检查命令迁移为 `${CLAUDE_PROJECT_DIR}` 形态。按前几版部署记录做法，已用 `git checkout` 还原该文件，未提交。
+- 评审状态：code 节点第 1 轮评审候选（`code-r1-…-fe1ea9`）结论为 BLOCK，含 5 条关于安装态 runner 健壮性与场景测试 JSON 解析严格性的 finding。driver 以 reviewer-unavailable 关闭该轮并持久化 override，随后 verify PASS、deliver 门自动放行。这些 finding 不涉及已部署的 CLI 行为，但涉及 SMOKE-core-336～337 的证据强度，建议在执行 smoke 前评估是否先行修复。
+- 未执行：`openlogos smoke`、archive、`git push`（本工作单元仅部署）。
