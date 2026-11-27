@@ -183,7 +183,9 @@ describe('S13 verify 跳过分类与模块报告改判', () => {
       expect(text, label).toContain('换一个待验版本');
       expect(text, label).toContain('移除上一版本的结果与人工证据');
       expect(text, label).toMatch(/每个版本都要人(重新)?准备的证据|每个版本都要人提供新的凭据/);
-      expect(text, label).toMatch(/只约束 UT\/ST/);
+      // smoke-manual-acceptance（功能规格 §2.107.2）：判据从「只约束 UT/ST」扩展到 SMOKE，过渡说明删除
+      expect(text, label).toContain('UT / ST / SMOKE');
+      expect(text, label).not.toMatch(/只约束 UT\/ST/);
       expect(text, label).not.toContain('**判断标准**：如果该用例在 CI 无头环境中无法稳定运行并自动断言结果，就应加 `[manual]`');
     }
   });

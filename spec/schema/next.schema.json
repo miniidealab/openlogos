@@ -178,6 +178,7 @@
         "ready-to-deploy",
         "deploy-done",
         "ready-to-smoke",
+        "awaiting-manual-acceptance",
         "smoke-passed",
         "smoke-failed",
         "implementing",

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync, type Dirent } from 'node:fs';
 import { basename, join, relative } from 'node:path';
+import { MANUAL_MARKER_RE, matchTableTestIdRow } from './test-id.js';
 
 const SMOKE_ID_PATTERN = /\bSMOKE-[A-Za-z0-9-]+-\d{1,3}\b/g;
 const RUNNER_NAME_PATTERN = /^smoke-.+\.(?:sh|js|mjs|cjs|ts)$/;
@@ -12,7 +13,9 @@ export type SmokeCoverageDiagnosticCode =
   /** module-scoped-env-smoke：smoke.modules.<id> 未登记（警告，不影响门禁；spec/environments.md §14.5）。 */
   | 'smoke_module_unknown'
   /** module-scoped-phase-reports：配置的报告路径落在模块报告保留路径上，共用报告改写到默认路径（警告，§2.99.2）。 */
-  | 'smoke_report_path_reserved';
+  | 'smoke_report_path_reserved'
+  /** smoke-manual-acceptance：smoke 结果中出现人工 SMOKE 用例 ID（门禁 FAIL，功能规格 §2.107.2）。 */
+  | 'manual_smoke_result_id';
 
 export interface SmokeCoverageDiagnostic {
   code: SmokeCoverageDiagnosticCode;
@@ -63,15 +66,75 @@ function uniqueSorted(values: Iterable<string>): string[] {
   return Array.from(new Set(values)).sort();
 }
 
-export function extractSmokeIdsFromContent(content: string): string[] {
-  const tableIds: string[] = [];
+/**
+ * smoke 规格首格读法（smoke-manual-acceptance，功能规格 §2.107.2）：首格为「裸 SMOKE ID（可带反引号）+ 可选
+ * `[manual]` / `[manual/<平台>]`」。manual 标记语法与 UT/ST 同源（`MANUAL_MARKER_RE` 的源串）。
+ */
+const SMOKE_FIRST_CELL_RE = new RegExp(`^\`?(SMOKE-[A-Za-z0-9-]+-\\d{1,3})\`?(\\s*${MANUAL_MARKER_RE.source})?$`);
+
+/** 解析 smoke 规格的首格：裸 SMOKE ID（可带反引号）+ 可选 manual 标记；不匹配返回 null。 */
+export function parseSmokeFirstCell(cell: string): { id: string; manual: boolean } | null {
+  const match = SMOKE_FIRST_CELL_RE.exec(cell.trim());
+  return match ? { id: match[1], manual: match[2] !== undefined } : null;
+}
+
+/** 一份 smoke 规格的两份集合：自动用例与人工用例（均为裸 ID，去重升序）。 */
+export interface SmokeIdSets {
+  auto: string[];
+  manual: string[];
+}
+
+/**
+ * 读取一份 smoke 规格中的自动 / 人工用例。带 manual 标记的行同样计为「表格用例行」——只要文件中有任一表格
+ * 用例行（自动或人工），就不退回全文扫描（全文回退只在没有任何表格用例行时发生，且回退结果全部视为自动用例，
+ * 与引入人工标记前逐字一致）。
+ */
+export function extractSmokeIdSetsFromContent(content: string): SmokeIdSets {
+  const auto: string[] = [];
+  const manual: string[] = [];
   for (const line of content.split('\n')) {
     if (!line.trim().startsWith('|')) continue;
-    const firstCell = line.split('|')[1]?.trim().replace(/^`|`$/g, '') ?? '';
-    if (/^SMOKE-[A-Za-z0-9-]+-\d{1,3}$/.test(firstCell)) tableIds.push(firstCell);
+    const firstCell = line.split('|')[1]?.trim() ?? '';
+    const match = SMOKE_FIRST_CELL_RE.exec(firstCell);
+    if (!match) continue;
+    if (match[2] !== undefined) manual.push(match[1]);
+    else auto.push(match[1]);
   }
-  if (tableIds.length > 0) return uniqueSorted(tableIds);
-  return uniqueSorted([...content.matchAll(SMOKE_ID_PATTERN)].map(match => match[0]));
+  if (auto.length > 0 || manual.length > 0) {
+    const manualSet = uniqueSorted(manual);
+    // 同一 ID 同时出现裸行与人工行时按人工处理：人工用例不得进入自动集合（不要求 runner、不计 uncovered）。
+    return { auto: uniqueSorted(auto).filter(id => !manualSet.includes(id)), manual: manualSet };
+  }
+  return { auto: uniqueSorted([...content.matchAll(SMOKE_ID_PATTERN)].map(match => match[0])), manual: [] };
+}
+
+/** 自动 smoke 用例（既有读法的消费方：defined / changed_case_ids / 模块用例范围）。人工用例不在其中。 */
+export function extractSmokeIdsFromContent(content: string): string[] {
+  return extractSmokeIdSetsFromContent(content).auto;
+}
+
+/**
+ * 是否存在需要人参与的 UT/ST 用例（首格带 manual 标记）：用于判定「自动用例为零但存在人工用例」（§2.107.6）。
+ * 只扫描非 smoke 目录下的 `*-test-cases.md`。
+ */
+export function hasManualUtStCases(root: string): boolean {
+  const dir = join(root, 'logos', 'resources', 'test');
+  if (!existsSync(dir)) return false;
+  let files: string[];
+  try {
+    files = readdirSync(dir, { recursive: true }).map(f => String(f)).filter(f => f.endsWith('-test-cases.md'));
+  } catch {
+    return false;
+  }
+  for (const file of files) {
+    let content: string;
+    try { content = readFileSync(join(dir, file), 'utf-8'); } catch { continue; }
+    for (const line of content.split('\n')) {
+      const row = matchTableTestIdRow(line);
+      if (row && row.manual && /^(?:UT|ST)-/.test(row.id)) return true;
+    }
+  }
+  return false;
 }
 
 function readActiveChangeSlug(root: string): string | null {

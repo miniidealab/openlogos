@@ -38,6 +38,8 @@ export type ProposalStep =
   | 'ready-to-deploy'
   | 'deploy-done'
   | 'ready-to-smoke'
+  /** smoke-manual-acceptance（§2.107.8）：DEPLOY_DONE 对应部署最近一条 smoke 记录为 pending。 */
+  | 'awaiting-manual-acceptance'
   | 'smoke-passed'
   | 'smoke-failed'
   | 'implementing'

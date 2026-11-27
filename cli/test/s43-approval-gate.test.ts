@@ -23,6 +23,7 @@ import { deploy, type DeployCliOptions, type DeployHooks } from '../src/commands
 import { approve, type ApproveCliOptions, type ApproveHooks } from '../src/commands/approve.js';
 // @ts-expect-error 夹具为 ESM .mjs（与基线生成脚本共用），无类型声明
 import { observeDeployGateFixtures } from './golden/s43-gate-zero-regression-fixture.mjs';
+import { stripDefaultManualAcceptanceFromSteps } from './manual-acceptance-golden.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI = resolve(HERE, '../dist/index.js');
@@ -429,6 +430,8 @@ describe('S43 openlogos approve 与审批门 — 单元测试（environment-prom
         expect(env.deploy).toMatchObject({ mode: 'script', script: `deploy/${env.id}.sh`, plan_section: null });
         delete env.deploy;
       }
+      // smoke-manual-acceptance（§2.107.13）：剥离 smoke 输出中值为默认的 data.manual_acceptance 后逐字比对
+      stripDefaultManualAcceptanceFromSteps(current[name].steps, name);
       // 输出、退出码、账本字节与提案目录文件与引入本提案前（0.16.4）的基线逐字一致
       expect(current[name], `${name} 与引入前基线逐字一致`).toEqual(baseline[name]);
       const text = JSON.stringify(current[name]);

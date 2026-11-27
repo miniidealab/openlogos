@@ -12,6 +12,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // @ts-expect-error 夹具为 ESM .mjs（与基线生成脚本共用），无类型声明
 import { observeUnenabledFixtures } from './golden/s42-zero-regression-fixture.mjs';
+import { stripDefaultManualAcceptanceFromSteps } from './manual-acceptance-golden.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI = resolve(HERE, '../dist/index.js');
@@ -23,6 +24,8 @@ describe('S42 部署执行未启用的项目零回归 — 单元测试', () => {
     const current = observeUnenabledFixtures(CLI);
     expect(Object.keys(current)).toEqual(['no-registry', 'registry-without-deploy']);
     for (const name of Object.keys(baseline)) {
+      // smoke-manual-acceptance（§2.107.13）：剥离 smoke 输出中值为默认的 data.manual_acceptance 后逐字比对
+      stripDefaultManualAcceptanceFromSteps(current[name].steps, name);
       expect(current[name], `${name} 与引入前基线逐字一致`).toEqual(baseline[name]);
     }
     // 关键不变量直接断言（基线之外的可读证据）

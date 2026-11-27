@@ -542,7 +542,19 @@ function initialOwnedTarget(root, rawPath) {
   return mlgInitialOwned(mlgLoadModel(root), relative);
 }
 
+// smoke-manual-acceptance（spec/pretooluse-guard.md「已知覆盖限制」第 5 条例外）：本宿主不能保证可靠的原生审批，
+// 人工验收记录命令在任何提前放行（initial 生命周期、安全命令、initial 模块归属）之前一律拒绝。
+const ACCEPT_COMMAND_RE = /(^|[^A-Za-z0-9_.-])openlogos(\.(c?js|cmd|exe|ps1))?["']?\s+(?:-[^\s]*\s+)*accept(\s|$|["'])/i;
+function manualAcceptDenial(event) {
+  const input = (event && event.toolInput) || {};
+  const cmd = typeof input.command === 'string' ? input.command : (typeof input.cmd === 'string' ? input.cmd : '');
+  if (!cmd || !ACCEPT_COMMAND_RE.test(cmd)) return null;
+  return deny('人工验收结果只能由人记录：' + 'openlogos accept 不能经 AI 执行（本宿主无法保证原生审批）。请在终端执行，或在 RunLogos 界面逐条记录；不要由 AI 代记。');
+}
+
 function decideGuard(root, event) {
+  const acceptDenial = manualAcceptDenial(event);
+  if (acceptDenial) return acceptDenial;
   if (!WRITE_TOOLS.has(event.toolName)) return allow('非写入工具');
   if (!isLaunched(root)) return allow('initial 生命周期不启用变更硬门禁');
   const target = targetFromEvent(event);

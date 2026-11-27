@@ -12,6 +12,7 @@ import { smoke } from './commands/smoke.js';
 import { deployDone } from './commands/deploy-done.js';
 import { deploy } from './commands/deploy.js';
 import { approve } from './commands/approve.js';
+import { accept } from './commands/accept.js';
 import { branchCommand } from './commands/branch.js';
 import { launch } from './commands/launch.js';
 import { detect } from './commands/detect.js';
@@ -84,6 +85,13 @@ Commands:
                        --env <id|alias>             Target environment (required)
                        --ref <git revision>         Commit to approve (required)
                        --note <text>                Optional note
+  accept             Record manual acceptance results for the current deployment (human-only; guard-restricted for AI)
+                       --env <id|alias>             Target environment (manual_acceptance.enabled must be true)
+                       --deploy <deploy_id>         Deployment the pending list was shown for (required)
+                       --case <ID>[,<ID>…]          Manual case IDs (repeatable)
+                       --result pass|fail           Result for all given cases
+                       --note <text>                Required when --result fail
+                       --evidence <path>            Evidence path recorded as given (repeatable)
   baseline-seed      Commit reverse-engineered baseline seed state (brownfield-adopter)
                        begin  --module <id> --manifest <path>   Freeze logical plan + create staging
                        commit --module <id> --run-id <id>       Validate staged bytes + atomic commit
@@ -126,7 +134,7 @@ Options:
   --version, -v      Show version number
   --fresh-sandbox    verify / smoke: rebuild the persistent sandbox workspace from scratch
   --all              verify: check every module (skip module-scoped verify range)
-  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, deploy, approve, branch sync, branch status, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list, env list, env show, env check, knowledge apply, knowledge index, knowledge check, knowledge list, knowledge show, knowledge refs, history list, history show)
+  --format <json>    Output in JSON format (supported: status, next, watch, verify, smoke, deploy-done, deploy, approve, accept, branch sync, branch status, merge, detect, flow show, feature list, feature-backfill, change-lint, impact, ignore list, exempt list, env list, env show, env check, knowledge apply, knowledge index, knowledge check, knowledge list, knowledge show, knowledge refs, history list, history show)
 
 Examples:
   openlogos init my-saas-project
@@ -305,6 +313,25 @@ async function main() {
         env: valueAt('--env'),
         ref: refIdx === -1 ? undefined : (args[refIdx + 1] ?? ''),
         note: valueAt('--note'),
+      });
+      break;
+    }
+    case 'accept': {
+      // 可重复参数（--case / --evidence）逐个收集；出现但缺值时按未传处理，由 accept 报 ACCEPT_ARGS_INVALID
+      const valueAt = (flag: string): string | undefined => {
+        const i = args.indexOf(flag);
+        if (i === -1) return undefined;
+        const v = args[i + 1];
+        return v === undefined || v.startsWith('--') ? undefined : v;
+      };
+      const valuesOf = (flag: string): string[] => args.flatMap((a, i) => (a === flag && args[i + 1] !== undefined && !args[i + 1].startsWith('--') ? [args[i + 1]] : []));
+      await accept(format, {
+        env: valueAt('--env'),
+        deploy: valueAt('--deploy'),
+        cases: valuesOf('--case'),
+        result: valueAt('--result'),
+        note: valueAt('--note'),
+        evidence: valuesOf('--evidence'),
       });
       break;
     }

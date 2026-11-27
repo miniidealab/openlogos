@@ -240,6 +240,8 @@ export function envShow(input: string | undefined, format: OutputFormat = 'text'
       ...(env.gate
         ? { promote_from: view.promote_from, require_approval: view.require_approval, open_approvals: view.open_approvals, promotion: view.promotion }
         : {}),
+      // smoke-manual-acceptance（§15.7）：只在条目写有 manual_acceptance 时输出
+      ...(view.manual_acceptance ? { manual_acceptance: view.manual_acceptance } : {}),
       history,
       ledger: ledgerOut(ledger),
       warnings,
@@ -255,7 +257,9 @@ export function envShow(input: string | undefined, format: OutputFormat = 'text'
       ? `ref=${shortRef(h.ref, locale)}`
       : h.kind === 'smoke'
         ? `${h.result} ref=${shortRef(h.ref, locale)} verified=${h.verified}`
-        : `ref=${shortRef(h.ref, locale)} id=${h.approval_id} approver=${h.approver ?? '-'}`;
+        : h.kind === 'manual'
+          ? `${h.case_id} ${h.result} deploy=${h.deploy_id}`
+          : `ref=${shortRef(h.ref, locale)} id=${h.approval_id} approver=${h.approver ?? '-'}`;
     console.log(`    ${h.recorded_at}  ${h.kind}  ${detail}  (${h.slug ?? (h.kind === 'deploy' ? h.channel ?? '-' : '-')})`);
   }
   for (const w of warnings) console.log(`  ⚠ ${w.message}`);

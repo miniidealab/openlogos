@@ -40,6 +40,7 @@ import type { ModuleInfo, PhaseProgressItem } from '../commands/status.js';
 import { deriveUiImpact } from './ui-first.js';
 import { applyFallbackSkipAndFrontier, isModuleReportComplete, REPORT_PHASE_BY_KEY, reportPhaseOfSharedPath, usesModuleReports } from './module-phase-report.js';
 import { evaluatePlanPackage } from './plan-package.js';
+import { readProposalManualState } from './proposal-manual-state.js';
 import type { PlanPackageEvaluation } from './plan-package-contract.js';
 
 /** flow 当前节点使用的 Plan Package 投影；只转发唯一 evaluator，不解析 proposal。 */
@@ -521,7 +522,14 @@ function detectProposalStepViaFlowRaw(
 
     // smoke.fail_when/done_when —— 仅在 deploy 完成子块内评估（非全局优先）
     if (gateMet('smoke', 'fail_when', m.smokeFail)) return 'smoke-failed';
-    if (gateMet('smoke', 'done_when', m.smokePass)) return 'smoke-passed';
+    // smoke-manual-acceptance（§2.107.7、§2.107.8）：只读账本——SMOKE_PASS 已过期或不属于本部署时回到 ready-to-smoke；
+    // DEPLOY_DONE 对应部署最近一条 smoke 记录为 pending 时驻留 awaiting-manual-acceptance。未开启人工验收的提案判据不变。
+    const manualState = readProposalManualState(root, proposalDir.split(/[\\/]/).pop() ?? '');
+    if (gateMet('smoke', 'done_when', m.smokePass)) {
+      if (manualState && manualState.applicable && !manualState.passValid && !('smoke.done_when' in m.cmdGates)) return 'ready-to-smoke';
+      return 'smoke-passed';
+    }
+    if (manualState?.waiting) return 'awaiting-manual-acceptance';
     if (deploymentDecision.smoke_required === false) return 'deploy-done';
     if (deploymentDecision.smoke_required === true) return 'ready-to-smoke';
     if (hasSmokeCasesForProposal(proposalDir)) return 'ready-to-smoke';

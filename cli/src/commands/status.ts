@@ -609,6 +609,10 @@ function buildModuleStatusItem(
         suggestion = locale === 'zh'
           ? `部署已完成，明确授权执行 openlogos smoke`
           : `Deployment is done — explicitly request: openlogos smoke`;
+      } else if (activeChange.proposal_step === 'awaiting-manual-acceptance') {
+        suggestion = locale === 'zh'
+          ? `等待人工验收：人工验收结果只能由人记录（openlogos accept），全部记录后重跑 openlogos smoke`
+          : `Awaiting manual acceptance: manual results can only be recorded by a human (openlogos accept); re-run openlogos smoke once all are recorded`;
       } else if (activeChange.proposal_step === 'smoke-passed') {
         suggestion = locale === 'zh'
           ? `部署冒烟测试通过，明确授权执行 openlogos archive ${activeChange.slug}`
@@ -879,7 +883,7 @@ function loopHaltSubflow(loopState: LoopState | null): string | undefined {
 
 /** launched 阶段对 loop 出环把关：loop 激活且未收敛时，把「verify 已 done 或更后」的 step 拉回 ready-to-verify。 */
 const STEP_PAST_VERIFY = new Set<ProposalStep>([
-  'verify-passed', 'ready-to-deploy', 'deploy-done', 'ready-to-smoke', 'smoke-passed', 'smoke-failed',
+  'verify-passed', 'ready-to-deploy', 'deploy-done', 'ready-to-smoke', 'awaiting-manual-acceptance', 'smoke-passed', 'smoke-failed',
 ]);
 function gateLaunchedStepForLoop(step: ProposalStep | null, loopState: LoopState | null): ProposalStep | null {
   if (!loopState || loopState.converged || !step) return step;

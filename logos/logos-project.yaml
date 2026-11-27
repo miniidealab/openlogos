@@ -663,6 +663,10 @@ resource_index:
     desc: enterprise-knowledge-base 创建的 scenario 基线
   - path: logos/resources/test/core-S45-test-cases.md
     desc: enterprise-knowledge-base 创建的 test 基线
+  - path: logos/resources/prd/3-technical-plan/2-scenario-implementation/core-S46-smoke-manual-acceptance.md
+    desc: smoke-manual-acceptance 创建的 scenario 基线
+  - path: logos/resources/test/core-S46-test-cases.md
+    desc: smoke-manual-acceptance 创建的 test 基线
 conventions:
   - 场景编号全局唯一，由 scenario_counter.next_id 维护，严禁模块重新从 S01 编号
   - "存量项目接入统一写入 bootstrap: adopted，读取时兼容历史 skipped"

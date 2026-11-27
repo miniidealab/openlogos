@@ -10,6 +10,8 @@ import {
   checkSmokeCoverage,
   resolveSmokeCommand,
   extractSmokeIdsFromContent,
+  extractSmokeIdSetsFromContent,
+  hasManualUtStCases,
   type SmokeCoverageCheck,
   type SmokeCoverageDiagnostic,
 } from '../lib/smoke-coverage.js';
@@ -19,14 +21,16 @@ import {
   ENV_REGISTRY_REL, computeVerified, isDeployExecutionEnabled, loadEnvironmentRegistry, readDeploymentLedger, resolveEnvironment,
 } from '../lib/environments.js';
 import { DEPLOY_LEDGER_REL } from '../lib/environments.js';
-import type { DeployLedgerRecord, EnvEvidence, RegistryLoad, SmokeLedgerRecord } from '../lib/environments.js';
+import type { CurrentDeployment, DeployLedgerRecord, EnvEvidence, RegistryLoad, SmokeLedgerRecord } from '../lib/environments.js';
 import {
   activeProposalModule, gateReferenceDetails, gateReferenceMessage, isModuleScopeEnabled, moduleMismatchDetails, moduleMismatchMessage,
   modulesOwning, resolveModuleEnvironments, resolveTargetModule,
 } from '../lib/module-env-scope.js';
 import type { ModuleEnvDecl, TargetModule } from '../lib/module-env-scope.js';
 import { isolatedSmokeModules, moduleSmokeConfig, resolveSmokeCaseSet, unknownSmokeModules } from '../lib/smoke-scope.js';
-import { appendLedgerLine, removeOwnLedgerLine } from '../lib/deployment-ledger.js';
+import { appendLedgerLine, appendLedgerLineLocked, removeOwnLedgerLine, withLedgerLock } from '../lib/deployment-ledger.js';
+import { computeManualAcceptanceScope, deploymentHasManualCases } from '../lib/manual-acceptance.js';
+import { currentDeploymentOf, manualResultsOf } from '../lib/environments.js';
 import type { Locale } from '../i18n.js';
 import {
   MODULE_ROW_LABEL, moduleReportPath, normalizeRelPath, publishReportAtomically, registeredModules, reservedModuleReportPaths, reservedPathCollisions,
@@ -57,7 +61,8 @@ export interface SmokeData {
     pass_rate_pct: number;
   };
   gate: {
-    result: 'PASS' | 'FAIL';
+    /** PENDING：等待人工验收（smoke-manual-acceptance，§2.107.6），退出码与 FAIL 相同。 */
+    result: 'PASS' | 'FAIL' | 'PENDING';
     reason: string | null;
   };
   changed_cases: string[];
@@ -83,6 +88,47 @@ export interface SmokeData {
   environment_evidence?: SmokeEnvironmentEvidence;
   /** module-scoped-env-smoke：启用按模块区分时输出（spec/cli-json-output.md「smoke `scope`」），未启用不输出。 */
   scope?: SmokeScope;
+  /**
+   * smoke-manual-acceptance（功能规格 §2.107.11，spec/cli-json-output.md「冒烟阶段人工验收 JSON 增量」）：总是输出。
+   * 未开启人工验收时为默认值（enabled=false，各列表为空）。
+   */
+  manual_acceptance: SmokeManualAcceptance;
+}
+
+/** smoke JSON `data.manual_acceptance`（smoke-manual-acceptance，功能规格 §2.107.11）。 */
+export interface SmokeManualAcceptance {
+  enabled: boolean;
+  environment: string | null;
+  deploy_id: string | null;
+  deploy_confirmed: boolean;
+  ref: string | null;
+  baseline_ref: string | null;
+  pending: string[];
+  passed: string[];
+  failed: Array<{ id: string; note: string }>;
+  remaining: string[];
+  regression_unresolved: string[];
+  unexecuted: string[];
+  warnings: Array<{ code: string; message: string }>;
+}
+
+/** 未开启人工验收（或尚未计算）时的默认 `data.manual_acceptance`。 */
+export function defaultManualAcceptance(environment: string | null): SmokeManualAcceptance {
+  return {
+    enabled: false,
+    environment,
+    deploy_id: null,
+    deploy_confirmed: false,
+    ref: null,
+    baseline_ref: null,
+    pending: [],
+    passed: [],
+    failed: [],
+    remaining: [],
+    regression_unresolved: [],
+    unexecuted: [],
+    warnings: [],
+  };
 }
 
 /** smoke JSON 顶层 `scope`（spec/cli-json-output.md「smoke / env / next 按模块区分增量」）。 */
@@ -145,6 +191,8 @@ interface SmokeEnvContext {
   moduleUndeclared: boolean;
   /** 版本上下文（§14.3）：不读写任何提案标记（含按 guard 写 marker 的回退）。 */
   versionContext: boolean;
+  /** smoke 开始时该环境最近一条 deploy 记录的快照（编号、提交、确认状态；评审 code-r2 F1）。 */
+  startDeploy: CurrentDeployment | null;
 }
 
 /** 按模块区分的 smoke 目标模块判定结果：null 为未启用或不限定模块（沿用全项目口径）。 */
@@ -203,7 +251,7 @@ function resolveSmokeEnvironment(
 
   const ctx: SmokeEnvContext = {
     registryPresent: reg.state !== 'absent', target, slug: facts?.slug ?? null, deployId: null, ref: null, deployEnvConfirmed: false,
-    deployEnabled: false, moduleUndeclared: scope?.kind === 'undeclared', versionContext,
+    deployEnabled: false, moduleUndeclared: scope?.kind === 'undeclared', versionContext, startDeploy: null,
   };
   // 部署身份核对的依据：账本中该环境最近一条 deploy 记录（任意 result；同一 deploy_id 以最后一行为准）
   let latestDeploy: DeployLedgerRecord | null = null;
@@ -211,6 +259,7 @@ function resolveSmokeEnvironment(
     const ledger = readDeploymentLedger(root);
     ctx.deployEnabled = isDeployExecutionEnabled(reg.environments, ledger);
     latestDeploy = ledger.byEnvironment.get(target)?.lastDeploy ?? null;
+    ctx.startDeploy = currentDeploymentOf(ledger.byEnvironment.get(target));
   }
   if (!facts) {
     if (ctx.deployEnabled && latestDeploy) {
@@ -359,6 +408,25 @@ export function extractSmokeDefinedIds(root: string): string[] {
   return Array.from(ids).sort();
 }
 
+/** 已合并 smoke 规格中的人工 SMOKE 用例（首格带 manual 标记，功能规格 §2.107.2）。 */
+export function extractSmokeManualIds(root: string): string[] {
+  const dir = join(root, SMOKE_CASES_DIR);
+  if (!existsSync(dir)) return [];
+  const ids = new Set<string>();
+  try {
+    const files = readdirSync(dir, { recursive: true }).map(f => String(f)).filter(f => f.endsWith('.md'));
+    for (const file of files) {
+      for (const id of extractSmokeIdSetsFromContent(readFileSync(join(dir, file), 'utf-8')).manual) ids.add(id);
+    }
+  } catch { /* directory read error */ }
+  return Array.from(ids).sort();
+}
+
+/** 是否存在人工用例（任意 UT / ST / SMOKE）：自动用例为零时据此决定空自动阶段（功能规格 §2.107.6）。 */
+export function hasAnyManualCases(root: string): boolean {
+  return extractSmokeManualIds(root).length > 0 || hasManualUtStCases(root);
+}
+
 function readSmokeResults(root: string, resultPath: string) {
   const fullResultPath = join(root, resultPath);
   return existsSync(fullResultPath) ? parseJsonl(readFileSync(fullResultPath, 'utf-8')) : [];
@@ -435,6 +503,37 @@ function generateSmokeReport(data: SmokeData, moduleId: string | null = null): s
     md += '\n';
   }
 
+  // smoke-manual-acceptance（§2.107.6）：关闭人工验收时列出「未执行的人工用例」；没有人工用例的项目报告逐字不变
+  const ma = data.manual_acceptance;
+  if (ma && ma.enabled) {
+    md += '## 人工验收（Manual Acceptance）\n\n';
+    md += `- 部署：${ma.deploy_id ?? '-'}（ref ${ma.ref ?? '-'}）；基线：${ma.baseline_ref ?? '-'}\n`;
+    md += `- 待验收 ${ma.pending.length} 条；通过 ${ma.passed.length} 条；失败 ${ma.failed.length} 条；未记录 ${ma.remaining.length} 条\n\n`;
+    if (ma.failed.length > 0) {
+      md += '| 失败用例 | 说明 |\n|----|------|\n';
+      for (const f of ma.failed) md += `| ${f.id} | ${f.note.replace(/\|/g, '\\|').replace(/\n/g, ' ')} |\n`;
+      md += '\n';
+    }
+    if (ma.remaining.length > 0) {
+      md += '未记录的人工用例：\n\n';
+      for (const id of ma.remaining) md += `- ${id}\n`;
+      md += '\n';
+    }
+    if (ma.regression_unresolved.length > 0) {
+      md += `失效的回归用例：${ma.regression_unresolved.join(', ')}\n\n`;
+    }
+  }
+  if (ma && !ma.enabled && ma.unexecuted.length > 0) {
+    md += `## 未执行的人工用例（Manual Cases Not Executed）\n\n未执行的人工用例 ${ma.unexecuted.length} 条（本环境未开启人工验收，累积到下一次开启人工验收的环境）：\n\n`;
+    for (const id of ma.unexecuted) md += `- ${id}\n`;
+    md += '\n';
+  }
+  if (ma && ma.warnings.length > 0) {
+    md += '## Manual Acceptance Warnings\n\n| Code | Message |\n|------|---------|\n';
+    for (const w of ma.warnings) md += `| ${w.code} | ${w.message.replace(/\|/g, '\\|').replace(/\n/g, ' ')} |\n`;
+    md += '\n';
+  }
+
   return md;
 }
 
@@ -483,6 +582,16 @@ export function collectSmokeData(
     results = scoped.kept;
     defined = [...options.caseScope.caseIds];
   }
+  // smoke-manual-acceptance（§2.107.2）：人工 SMOKE 不由 runner 执行，结果中出现即门禁 FAIL（manual_smoke_result_id）。
+  const manualSmokeIds = new Set(extractSmokeManualIds(root));
+  const manualResultIds = Array.from(new Set(results.filter(r => manualSmokeIds.has(r.id)).map(r => r.id))).sort();
+  const manualDiagnostics: SmokeCoverageDiagnostic[] = manualResultIds.length > 0
+    ? [{
+        code: 'manual_smoke_result_id',
+        message: `Smoke results contain manual SMOKE case IDs (manual cases must not be executed by runners): ${manualResultIds.join(', ')}`,
+        case_ids: manualResultIds,
+      }]
+    : [];
   const resultIds = new Set(results.map(r => r.id));
   const passed = results.filter(r => r.status === 'pass');
   const failed = results.filter(r => r.status === 'fail');
@@ -505,11 +614,12 @@ export function collectSmokeData(
   const requiredSkipped = changedSkipped.filter(r => !isPlatformSkip(r as { reason_code?: unknown; detail?: unknown }))
     .map(r => ({ id: r.id, detail: String((r as { detail?: unknown }).detail ?? r.error ?? '') }));
   const isPass = failed.length === 0 && uncovered.length === 0 && check.diagnostics.length === 0
-    && requiredSkipped.length === 0;
+    && requiredSkipped.length === 0 && manualDiagnostics.length === 0;
   let reason: string | null = null;
   if (!isPass) {
     if (failed.length > 0) reason = 'failed_cases';
     else if (check.diagnostics.length > 0) reason = check.diagnostics[0].code;
+    else if (manualDiagnostics.length > 0) reason = 'manual_smoke_result_id';
     else if (requiredSkipped.length > 0) reason = 'required_cases_skipped';
     else reason = 'incomplete_coverage';
   }
@@ -531,7 +641,7 @@ export function collectSmokeData(
       reason,
     },
     changed_cases: check.changed_case_ids,
-    diagnostics: check.diagnostics,
+    diagnostics: [...check.diagnostics, ...manualDiagnostics],
     runners: check.runners,
     failed_cases: failed.map(r => ({ id: r.id, error: r.error ?? 'unknown' })),
     uncovered_cases: uncovered,
@@ -541,6 +651,7 @@ export function collectSmokeData(
     sandbox: sandbox ?? buildInitialSandboxData(normalizeSandboxConfig({ sandbox_mode: 'auto' })),
     report_path: reportPath,
     result_path: resultPath,
+    manual_acceptance: defaultManualAcceptance(environment ?? null),
   };
   if (options.warnings && options.warnings.length > 0) data.diagnostics = [...data.diagnostics, ...options.warnings];
   if (options.scope) data.scope = { ...options.scope, out_of_scope_result_count: outOfScope };
@@ -663,6 +774,10 @@ export interface SmokeRunOptions {
   freshSandbox?: boolean;
   /** 仅供测试注入：写账本路径上的标记与账本写入口（未给出的项用缺省实现）。 */
   writeIo?: Partial<SmokeWriteIo>;
+  /** 仅供测试：人工阶段取得账本锁之前（构造锁外判定之后写入 manual 记录的交错，UT-S46-24）。 */
+  beforeLedgerLock?: () => void;
+  /** 仅供测试：账本 smoke 行追加之后、提案标记阶段之前（构造交错执行，ST-S46-08 / ST-S46-11）。 */
+  afterLedgerAppend?: () => void;
 }
 
 function errorReason(error: unknown): string {
@@ -769,7 +884,8 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
     data.history = writeHistoryRun(historyRun, {
       ...historyBase(),
       outcome: 'completed',
-      gate: { result: data.gate.result, reason: data.gate.reason },
+      // PENDING（等待人工验收）不是 PASS / FAIL 门禁结论：历史 gate.result 记为 null，reason 保留 manual_acceptance_pending
+      gate: { result: data.gate.result === 'PENDING' ? null : data.gate.result, reason: data.gate.reason },
       errorCode: null,
       counts: {
         defined: data.summary.defined_count,
@@ -871,8 +987,83 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
    * 门禁结论的统一收尾（code-r1 F3）：环境证据（spec/environments.md §6）→ 账本 smoke 行（§5.1）→ smoke marker。
    * 所有已形成 PASS / FAIL 结论的路径都必须经过这里，不得在输出前提前返回而遗漏证据与账本。
    */
+  /**
+   * smoke-manual-acceptance（§2.107.4、§2.107.6）：传入 --env 且（该环境写了 manual_acceptance，或项目存在人工用例）时
+   * 计算 data.manual_acceptance；否则保持默认值，未配置项目的输出逐字不变。本切片只计算与展示，不改变门禁结论。
+   */
+  /** 人工阶段上下文（开启人工验收时由 applyManualAcceptance 设置）：锁内复核据此重读该部署的 manual 记录。 */
+  let manualCtx: { scopeUnresolved: boolean; deployId: string | null } | null = null;
+  /** 自动阶段（含环境证据改判）是否通过：人工阶段只在自动阶段 PASS 后判定（§2.107.6）。 */
+  let autoStagePassed = false;
+
+  /** 按该部署的 manual 记录刷新 passed / failed / remaining（同一部署同一用例以最后一条为准）。 */
+  const refreshManualResults = (data: SmokeData, results: Map<string, { result: 'pass' | 'fail'; note: string | null }>): void => {
+    const ma = data.manual_acceptance;
+    ma.passed = ma.pending.filter(id => results.get(id)?.result === 'pass');
+    ma.failed = ma.pending.filter(id => results.get(id)?.result === 'fail').map(id => ({ id, note: results.get(id)?.note ?? '' }));
+    ma.remaining = ma.pending.filter(id => !results.has(id));
+  };
+
+  // 评审 code-r1 F1 / code-r2 F1：本次运行开始时的部署 D（编号、提交、确认状态整组），贯穿清单计算、报告与证据写入
+  const expectedDeploy: CurrentDeployment | null = envCtx.deployId === null ? null
+    : envCtx.startDeploy && envCtx.startDeploy.deploy_id === envCtx.deployId ? envCtx.startDeploy
+      : { deploy_id: envCtx.deployId, ref: envCtx.ref, result: 'unknown', confirmed: false };
+  // 惰性求值：只有自动用例为零或需要决定是否输出人工验收段时才读取已部署版本（未使用人工用例的项目不多跑 git）
+  let deployedHasManualMemo: boolean | null = null;
+  // 评审 code-r3 F5：无活跃提案且部署执行未启用（只经 deploy-done 登记部署）时 envCtx.deployId 为空，改用开始时读到的
+  // 环境部署快照判断已部署版本是否含人工用例；smoke 是否写账本仍只由部署执行开关决定
+  const deployedHasManual = (): boolean => (deployedHasManualMemo ??= envCtx.target !== null
+    && deploymentHasManualCases(root, expectedDeploy ?? envCtx.startDeploy));
+  const applyManualAcceptance = (data: SmokeData): void => {
+    manualCtx = null;
+    if (envCtx.target === null) return;
+    const reg = loadEnvironmentRegistry(root);
+    const env = reg.state === 'loaded' ? reg.environments.find(e => e.id === envCtx.target) ?? null : null;
+    const ledger = readDeploymentLedger(root);
+    const state = ledger.byEnvironment.get(envCtx.target);
+    // 评审 code-r1 F1：以本次运行开始时解析出的部署身份（envCtx.deployId）贯穿清单计算、锁内复核与证据写入
+    const scope = computeManualAcceptanceScope(root, env, state, { expected: expectedDeploy });
+    // 评审 code-r1 F5：关闭环境按部署提交与上一部署提交计算「未执行的人工用例」，不依赖调用者当前工作区；
+    // 环境未配置该字段、计算结果为空、已部署版本与工作区都没有人工用例时保持默认输出（未使用人工用例的项目逐字不变）
+    if (!env?.manualAcceptance && scope.unexecuted.length === 0 && !hasAnyManualCases(root) && !deployedHasManual()) return;
+    data.manual_acceptance = {
+      enabled: scope.enabled,
+      environment: envCtx.target,
+      deploy_id: scope.deploy_id,
+      deploy_confirmed: scope.deploy_confirmed,
+      ref: scope.ref,
+      baseline_ref: scope.baseline_ref,
+      pending: scope.pending,
+      passed: [],
+      failed: [],
+      remaining: [],
+      regression_unresolved: scope.regression_unresolved,
+      unexecuted: scope.unexecuted,
+      warnings: scope.warnings.map(w => ({ code: w.code, message: w.message })),
+    };
+    refreshManualResults(data, scope.deploy_id !== null ? manualResultsOf(state, scope.deploy_id) : new Map());
+    if (scope.enabled) manualCtx = { scopeUnresolved: scope.scope_unresolved, deployId: envCtx.deployId ?? scope.deploy_id };
+  };
+
+  /**
+   * 人工阶段判定（§2.107.6，顺序取第一条成立的）：清单无法确定 → 回归用例失效 → 有 fail → 全部 pass（含 P 为空）
+   * → 其余 PENDING。只在开启人工验收且自动阶段 PASS 时改判；返回是否为人工通过（写 manual_passed）。
+   */
+  const judgeManual = (data: SmokeData): boolean => {
+    if (!manualCtx || !autoStagePassed) return false;
+    const ma = data.manual_acceptance;
+    if (manualCtx.scopeUnresolved) { data.gate = { result: 'FAIL', reason: 'manual_scope_unresolved' }; return false; }
+    if (ma.regression_unresolved.length > 0) { data.gate = { result: 'FAIL', reason: 'manual_regression_unresolved' }; return false; }
+    if (ma.failed.length > 0) { data.gate = { result: 'FAIL', reason: 'manual_cases_failed' }; return false; }
+    if (ma.remaining.length === 0) { data.gate = { result: 'PASS', reason: null }; return true; }
+    data.gate = { result: 'PENDING', reason: 'manual_acceptance_pending' };
+    return false;
+  };
+
   const finalizeVerdict = (data: SmokeData): void => {
+    applyManualAcceptance(data);
     let evidence: SmokeEnvironmentEvidence | null = null;
+    let manualPassed = false;
     if (envCtx.target !== null) {
       // 与统计同一批计入门禁的结果行：范围外已定义结果不参与环境证据（code-r1 F1）
       const rows = filterScopedResults(readSmokeResults(root, resultPath), collectOptions.caseScope).kept as unknown as Array<Record<string, unknown>>;
@@ -901,6 +1092,15 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
         data.environment_evidence = evidence;
       }
     }
+    // 人工阶段（锁外预判，只用于报告；落账前在账本锁内复核，§2.107.6）
+    autoStagePassed = data.gate.result === 'PASS';
+    manualPassed = judgeManual(data);
+    if (evidence && manualCtx) {
+      evidence.verified = computeVerified({
+        result: data.gate.result === 'PASS' ? 'pass' : 'fail', env_evidence: evidence.env_evidence, fresh_results: freshResults,
+        deploy_env_confirmed: envCtx.deployEnvConfirmed, ref: envCtx.ref,
+      });
+    }
 
     // verification-history（§2.104.5）：沙箱失败改判与环境证据改判之后由最终数据渲染一次共用报告；
     // 同一份字节稍后用作报告快照，不从共用路径回读
@@ -910,7 +1110,7 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
     // 存在活跃提案且传入 --env 时先追加账本 smoke 行、再写 smoke marker（spec/environments.md §5.1，决策 C02）
     // 部署执行已启用而无活跃提案时也写账本（slug 为 null，只写账本、不写提案标记；environment-deploy 决策 C15）
     if (evidence && (envCtx.slug !== null || envCtx.deployEnabled) && !envCtx.moduleUndeclared) {
-      writeLedgerThenMarkers(data, evidence, envCtx.slug);
+      writeLedgerThenMarkers(data, evidence, envCtx.slug, manualPassed);
       return;
     }
 
@@ -928,6 +1128,8 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
               writeFileSync(join(proposalDir, 'SMOKE_PASS'), '');
               const failPath = join(proposalDir, 'SMOKE_FAIL');
               if (existsSync(failPath)) rmSync(failPath, { force: true });
+            } else if (data.gate.result === 'PENDING') {
+              for (const name of ['SMOKE_PASS', 'SMOKE_FAIL']) rmSync(join(proposalDir, name), { force: true });
             } else {
               writeFileSync(join(proposalDir, 'SMOKE_FAIL'), '');
               const passPath = join(proposalDir, 'SMOKE_PASS');
@@ -943,8 +1145,8 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
    * 账本先写、标记后写（EX-19.20、EX-19.21）：账本追加失败不碰任何 marker；账本已写后标记阶段任一步失败，
    * 按变更前快照恢复两种 marker 并撤销本次账本行。失败以 SMOKE_LEDGER_WRITE_FAILED 结束，恢复动作逐项捕获。
    */
-  const writeLedgerThenMarkers = (data: SmokeData, evidence: SmokeEnvironmentEvidence, slug: string | null): void => {
-    const gateResult = data.gate.result;
+  const writeLedgerThenMarkers = (data: SmokeData, evidence: SmokeEnvironmentEvidence, slug: string | null, manualPassedPre = false): void => {
+    let gateResult = data.gate.result;
     // 门禁已形成后的账本 / 标记失败（code-r1 F4）：先经同一收尾入口写 completed 历史（最终门禁与同一份报告字节），
     // 再沿用 SMOKE_LEDGER_WRITE_FAILED 错误信封退出，历史元数据追加在既有 details 中
     const ledgerFailure = (stage: 'ledger' | 'marker', message: string, details: Record<string, unknown>): never => {
@@ -953,28 +1155,65 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
     };
 
     const observed = observeWorkspace(root);
-    const record: SmokeLedgerRecord = {
-      kind: 'smoke',
-      environment: evidence.target,
-      slug,
-      recorded_at: new Date().toISOString(),
-      observed_head: observed.head,
-      observed_dirty: observed.dirty,
-      deploy_id: evidence.deploy_id,
-      ref: evidence.ref,
-      result: gateResult === 'PASS' ? 'pass' : 'fail',
-      env_evidence: evidence.env_evidence,
-      fresh_results: evidence.fresh_results,
-      deploy_env_confirmed: evidence.deploy_env_confirmed,
-      verified: evidence.verified,
+    const buildRecord = (manualPassed: boolean): SmokeLedgerRecord => {
+      const pending = data.gate.result === 'PENDING';
+      return {
+        kind: 'smoke',
+        environment: evidence.target,
+        slug,
+        recorded_at: new Date().toISOString(),
+        observed_head: observed.head,
+        observed_dirty: observed.dirty,
+        deploy_id: evidence.deploy_id,
+        ref: evidence.ref,
+        result: data.gate.result === 'PASS' ? 'pass' : pending ? 'pending' : 'fail',
+        env_evidence: evidence.env_evidence,
+        fresh_results: evidence.fresh_results,
+        deploy_env_confirmed: evidence.deploy_env_confirmed,
+        verified: pending ? false : evidence.verified,
+        ...(manualPassed ? { manual_passed: true } : {}),
+        ...(pending ? { manual_pending: [...data.manual_acceptance.remaining] } : {}),
+      };
     };
-    const line = `${JSON.stringify(record)}\n`;
+    let line = `${JSON.stringify(buildRecord(manualPassedPre))}\n`;
     const ledgerExisted = existsSync(join(root, DEPLOY_LEDGER_REL));
     let appendError: unknown = null;
     try {
-      // 与 deploy-done 共用账本锁（code-r2 F2）。抛错即账本保持调用前字节：末行缺换行时原样拒绝，追加经临时文件
-      // 原子替换、失败不留残片；释放锁失败不算追加失败（code-r1 F1、F2，code-r2 F1）
-      io.appendLedger(root, line);
+      if (manualCtx && autoStagePassed) {
+        // smoke-manual-acceptance（§2.107.6，评审 proposal-r2 F3/F6）：取得账本锁后、追加前重读该部署的 manual 记录并
+        // 重新判定人工阶段（锁外判定只用于提前报告）；PENDING 的 manual_pending 为锁内读取时仍无记录的用例
+        runOptions.beforeLedgerLock?.();
+        const before = data.gate.result;
+        withLedgerLock(root, () => {
+          const state = readDeploymentLedger(root).byEnvironment.get(evidence.target);
+          // 评审 code-r1 F1：锁内核对环境当前部署仍是本次运行的部署（ID、ref、确认状态）；已被更替时不得为旧部署签发人工通过
+          const current = currentDeploymentOf(state);
+          if (!current || current.deploy_id !== manualCtx!.deployId || !current.confirmed || current.ref !== evidence.ref) {
+            manualCtx!.scopeUnresolved = true;
+            if (!data.manual_acceptance.warnings.some(w => w.code === 'manual_deployment_replaced')) {
+              data.manual_acceptance.warnings.push({
+                code: 'manual_deployment_replaced',
+                message: `Environment deployment is no longer ${manualCtx!.deployId}; re-run smoke for the current deployment.`,
+              });
+            }
+          }
+          if (manualCtx!.deployId !== null) refreshManualResults(data, manualResultsOf(state, manualCtx!.deployId));
+          const passedNow = judgeManual(data);
+          evidence.verified = computeVerified({
+            result: data.gate.result === 'PASS' ? 'pass' : 'fail', env_evidence: evidence.env_evidence, fresh_results: freshResults,
+            deploy_env_confirmed: envCtx.deployEnvConfirmed, ref: envCtx.ref,
+          });
+          line = `${JSON.stringify(buildRecord(passedNow))}\n`;
+          appendLedgerLineLocked(root, line);
+        });
+        gateResult = data.gate.result;
+        // 锁内复核改判时按最终结论重写共用报告
+        if (gateResult !== before) finalReportBytes = writeSmokeReportBytes(root, data);
+      } else {
+        // 与 deploy-done 共用账本锁（code-r2 F2）。抛错即账本保持调用前字节：末行缺换行时原样拒绝，追加经临时文件
+        // 原子替换、失败不留残片；释放锁失败不算追加失败（code-r1 F1、F2，code-r2 F1）
+        io.appendLedger(root, line);
+      }
     } catch (error) {
       appendError = error;
     }
@@ -983,6 +1222,7 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
       ledgerFailure('ledger', t(locale, 'smoke.ledger.appendFailed', { reason, gate: gateResult }), { reason });
     }
     evidence.ledger_written = true;
+    runOptions.afterLedgerAppend?.();
     // 无活跃提案：没有提案标记阶段
     if (slug === null) return;
 
@@ -990,8 +1230,10 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
     const proposalDir = join(root, proposalRel);
     if (!existsSync(proposalDir)) return;
     const names = ['SMOKE_PASS', 'SMOKE_FAIL'] as const;
-    const target = gateResult === 'PASS' ? 'SMOKE_PASS' : 'SMOKE_FAIL';
-    const other = gateResult === 'PASS' ? 'SMOKE_FAIL' : 'SMOKE_PASS';
+    // PENDING（§2.107.6）：不写新标记，只清除两种旧标记（沿用同一快照恢复）
+    const target: string | null = gateResult === 'PASS' ? 'SMOKE_PASS' : gateResult === 'PENDING' ? null : 'SMOKE_FAIL';
+    const others: string[] = gateResult === 'PASS' ? ['SMOKE_FAIL'] : gateResult === 'PENDING' ? ['SMOKE_PASS', 'SMOKE_FAIL'] : ['SMOKE_PASS'];
+    const clearedMarkers: string[] = [];
     let snapshot: Map<string, Buffer | null> | null = null;
     let markerError: unknown = null;
     try {
@@ -1000,13 +1242,18 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
         const path = join(proposalDir, name);
         return [name, existsSync(path) ? readFileSync(path) : null] as [string, Buffer | null];
       }));
-      io.writeMarker(join(proposalDir, target), '');
-      const otherPath = join(proposalDir, other);
-      if (existsSync(otherPath)) io.removeMarker(otherPath);
+      if (target !== null) io.writeMarker(join(proposalDir, target), '');
+      for (const other of others) {
+        const otherPath = join(proposalDir, other);
+        if (existsSync(otherPath)) { io.removeMarker(otherPath); clearedMarkers.push(other); }
+      }
     } catch (error) {
       markerError = error;
     }
-    if (markerError === null) return;
+    if (markerError === null) {
+      if (gateResult === 'PENDING') (evidence as SmokeEnvironmentEvidence & { markers_cleared?: string[] }).markers_cleared = clearedMarkers;
+      return;
+    }
 
     const problems: SmokeRollbackProblem[] = [];
     const attempt = (path: string, fn: () => void) => {
@@ -1036,7 +1283,13 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
     }), { reason, rollback, rollback_problems: problems });
   };
 
-  if (!existsSync(join(root, resultPath))) {
+  // smoke-manual-acceptance（§2.107.6）：自动用例为零但存在人工用例（任意 UT / ST / SMOKE）时，自动阶段视为空通过——
+  // 不要求结果文件、不报 NO_SMOKE_RESULTS / NO_SMOKE_CASES；两类都没有时仍报 NO_SMOKE_CASES。
+  const autoDefinedIds = extractSmokeDefinedIds(root);
+  // 评审 code-r2 F5：已部署版本含人工用例（全部人工用例，不只本次增量）也构成空自动阶段，不因调用者工作区缺人工用例而
+  // 在读取部署清单前以 NO_SMOKE_RESULTS 退出；读取结果与人工清单计算共用（listManualCasesAt 按 commit 缓存）
+  const emptyAutoStage = autoDefinedIds.length === 0 && (hasAnyManualCases(root) || deployedHasManual());
+  if (!existsSync(join(root, resultPath)) && !emptyAutoStage) {
     if (coverageCheck.changed_case_ids.length > 0) {
       const data = collectSmokeData(root, reportedEnvironment, sandboxData, coverageCheck, collectOptions);
       collectedResult = captureResultBytes(root, resultPath);
@@ -1060,8 +1313,7 @@ export function smoke(format: OutputFormat = 'text', environment?: string, runOp
     abortWithHistory('NO_SMOKE_RESULTS', `No smoke results found at ${resultPath}.`);
   }
 
-  const defined = extractSmokeDefinedIds(root);
-  if (defined.length === 0) {
+  if (autoDefinedIds.length === 0 && !emptyAutoStage) {
     abortWithHistory('NO_SMOKE_CASES', 'No smoke case specs found in logos/resources/test/smoke/.');
   }
 

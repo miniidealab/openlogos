@@ -20,6 +20,7 @@ import {
 import { envCheck, envShow } from '../src/commands/env.js';
 // @ts-expect-error 夹具为 ESM .mjs（与基线生成脚本共用），无类型声明
 import { observeGateFixtures } from './golden/s41-gate-zero-regression-fixture.mjs';
+import { stripDefaultManualAcceptanceFromSteps } from './manual-acceptance-golden.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI = resolve(HERE, '../dist/index.js');
@@ -342,6 +343,8 @@ describe('S41 晋级与审批门禁字段 — 场景测试（environment-promoti
         expect(env.deploy).toMatchObject({ mode: 'script', script: `deploy/${env.id}.sh`, plan_section: null });
         delete env.deploy;
       }
+      // smoke-manual-acceptance（§2.107.13）：smoke 输出唯一声明的加法 data.manual_acceptance（默认值）先断言后剥离
+      stripDefaultManualAcceptanceFromSteps(current[name].steps, name);
       expect(current[name], `${name} 与引入前基线逐字一致`).toEqual(baseline[name]);
       for (const step of current[name].steps) {
         const text = JSON.stringify(step.stdout ?? '');

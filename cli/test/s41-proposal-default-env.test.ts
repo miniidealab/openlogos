@@ -20,6 +20,7 @@ import { envCheck, envList, envShow } from '../src/commands/env.js';
 import { observeGateFixtures } from './golden/s41-gate-zero-regression-fixture.mjs';
 // @ts-expect-error 同上
 import { REGISTRY_WITH_DEFAULT, observeDefaultEnvFixture } from './golden/s41-proposal-default-env-fixture.mjs';
+import { stripDefaultManualAcceptanceFromSteps } from './manual-acceptance-golden.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI = resolve(HERE, '../dist/index.js');
@@ -271,6 +272,8 @@ describe('S41 提案默认部署环境 — 场景测试（proposal-default-envir
     const baseline = JSON.parse(readFileSync(GATE_BASELINE, 'utf-8'));
     const current = observeGateFixtures(CLI);
     for (const name of ['no-registry', 'registry-without-gates']) {
+      // smoke-manual-acceptance（§2.107.13）：剥离 smoke 输出中值为默认的 data.manual_acceptance 后逐字比对
+      stripDefaultManualAcceptanceFromSteps(current[name].steps, name);
       expect(current[name], `${name} 与引入前基线逐字一致`).toEqual(baseline[name]);
       expect(JSON.stringify(current[name])).not.toContain(`"${FIELD}"`);
     }

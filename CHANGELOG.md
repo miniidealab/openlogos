@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.25] - 2026-11-27
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- SMOKE 人工标记：smoke 规格首格可写 `[manual]` / `[manual/<平台>]`。人工 SMOKE 不进自动集合、不要求 runner；整份文件只有人工行时不再退回全文扫描；结果文件出现人工 SMOKE 时报 `manual_smoke_result_id`。
+- 登记表 `manual_acceptance: {enabled, regression}`：按环境开关冒烟阶段人工验收。写了该字段的登记表受 guard 保护，字段本身不构成受门环境。
+- 冒烟阶段人工验收：开启的环境在自动阶段通过后计算待验收清单。以上次人工验收通过的部署为基线（排除当前部署自身），首次开启时取全部现有人工用例，并加入回归用例。判定结果：
+  - 有未记录的用例：`gate.result=PENDING`，账本写 `result=pending`；
+  - 全部通过：PASS，记 `manual_passed=true`；
+  - 有失败、清单无法确定或回归用例失效：FAIL。
+- 新命令 `openlogos accept`：把人工结果写进本机部署账本（`kind=manual`），并绑定当前部署。判定顺序为身份 → 确认状态 → 清单，在账本锁内复核，整批写入或零写入。本命令是 guard 受限命令。
+- next / status 新增驻留态 `awaiting-manual-acceptance`：有剩余用例时给出 accept 命令原文，`--auto` 不放行；全部记录后建议重跑 smoke。
+- 关闭人工验收的环境：smoke 报告与 JSON 列出「未执行的人工用例」，不阻断。
+
+### Changed
+
+- 只有人工用例的项目：smoke 自动阶段视为空通过，不再报 `NO_SMOKE_RESULTS` / `NO_SMOKE_CASES`。
+- 通过后又记录了人工结果时，原通过结论过期：accept 会删除 `SMOKE_PASS`；archive 以账本核对本部署自己的最近有效结论，不满足时报 `smoke_pass_expired`；晋级只认未过期的通过记录。
+- guard：`openlogos accept` 加入受限命令（Claude Code / Cursor 交宿主审批；qoder / workbuddy / zcode 在任何提前放行之前一律拒绝）。生成的 AGENTS.md / CLAUDE.md 硬红线新增「等待人工验收」。
+- 账本新增 `kind=manual` 记录、smoke `result=pending` 取值与可选字段 `manual_passed` / `manual_pending`。0.16.24 及更早的读取方会把这些行计为坏行并跳过。
+
 ## [0.16.24] - 2026-11-27
 
 本机全局发布（未发布到 npm）。

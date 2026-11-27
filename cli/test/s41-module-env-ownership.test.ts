@@ -22,6 +22,7 @@ import {
   LEDGER_REL, MES_BASELINE_FILE, PROPOSAL_REL, SLUG, buildEnvProject, callsLogPath, dataOf, errorOf, readJson, runCli, snapshot,
   zeroRegressionRun, type CliRun, type EnvFixtureOptions, type EnvKind,
 } from './s19-module-env-fixtures.js';
+import { stripDefaultManualAcceptanceFromRun } from './manual-acceptance-golden.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const cleanups: Array<() => void> = [];
@@ -238,7 +239,8 @@ describe('S41 按模块的环境归属（module-scoped-env-smoke 切片2）', ()
     for (const kind of ['S1', 'M0'] as const) {
       const runs = zeroRegressionRun(project(kind));
       for (const step of ['deploy-done', 'smoke', 'env-list', 'env-show-test']) {
-        expect(runs[step], `${kind} ${step}`).toEqual(expected[kind][step]);
+        // smoke-manual-acceptance（§2.107.13）：剥离值为默认的 data.manual_acceptance 后逐字比对
+        expect(stripDefaultManualAcceptanceFromRun(runs[step], `${kind} ${step}`), `${kind} ${step}`).toEqual(expected[kind][step]);
       }
     }
 

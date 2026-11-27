@@ -34,6 +34,7 @@ import {
 } from '../lib/test-slice-manifest.js';
 import type { StateInconsistency } from '../lib/lifecycle-gate.js';
 import { readDeployDoneMarker } from '../lib/lifecycle-gate.js';
+import { readProposalManualState } from '../lib/proposal-manual-state.js';
 
 export interface NextModuleItem {
   id: string;
@@ -111,6 +112,8 @@ export interface NextData {
   gate_auto_passed?: boolean;
   // auto-execute-redline-steps：--auto 下非门 CLI 命令步骤（verify/smoke/archive）就绪可自动执行时为 true（默认 next 省略）
   auto_execute?: boolean;
+  // smoke-manual-acceptance（§2.107.8）：驻留 awaiting-manual-acceptance 时附带（剩余清单只读账本）
+  manual_acceptance?: { environment: string; deploy_id: string; remaining: string[] };
   // M2 切片 1b：本次 next 执行了 cmd: 节点求值时附带（budget=1，transient，不写 marker）
   cmd_node_id?: string;
   cmd_predicate_field?: 'done_when' | 'fail_when';
@@ -402,6 +405,8 @@ function actionForProposalStep(locale: string, step: ProposalStep | null): { act
       return { action: t(locale as Parameters<typeof t>[0], 'next.authorizeDeploy'), command: null, detailKey: 'next.authorizeDeployDetail' };
     case 'ready-to-smoke':
       return { action: t(locale as Parameters<typeof t>[0], 'next.runSmoke'), command: null, detailKey: 'next.runSmokeDetail' };
+    case 'awaiting-manual-acceptance':
+      return { action: t(locale as Parameters<typeof t>[0], 'next.awaitManual'), command: null, detailKey: 'next.awaitManualDetail' };
     case 'smoke-failed':
       return { action: t(locale as Parameters<typeof t>[0], 'next.fixAndSmoke'), command: null, detailKey: 'next.fixAndSmokeDetail' };
     case 'verify-failed':
@@ -1075,6 +1080,37 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     if (mi) { action = mi.action; command = mi.command; detail = mi.detail; }
   }
 
+  // smoke-manual-acceptance（§2.107.8、§2.107.9）：等待人工验收——剩余非空时建议人执行的 accept 命令原文（--auto 不放行）；
+  // 剩余为空时建议重跑 smoke（与 ready-to-smoke 同口径）
+  let manualAcceptance: NextData['manual_acceptance'];
+  let manualRerunReady = false;
+  if (topProposalStep === 'awaiting-manual-acceptance' && topActiveChange) {
+    const ms = readProposalManualState(root, topActiveChange);
+    if (ms?.waiting) {
+      manualAcceptance = { environment: ms.environment, deploy_id: ms.waiting.deploy_id, remaining: ms.waiting.remaining };
+      const envArg = /^[A-Za-z0-9._:@/+-]+$/.test(ms.environment) ? ms.environment : `'${ms.environment.replace(/'/g, `'\\''`)}'`;
+      if (ms.waiting.remaining.length > 0) {
+        // 评审 code-r1 F2：结果是人的选择，不预填；占位符整体加引号，原样执行时 CLI 收到 `<pass 或 fail>` 而以 ACCEPT_ARGS_INVALID 零写入拒绝
+        command = `openlogos accept --env ${envArg} --deploy ${ms.waiting.deploy_id} --case ${ms.waiting.remaining.join(',')} --result '<pass 或 fail>'`;
+        action = locale === 'zh'
+          ? `等待人工验收：${ms.waiting.remaining.length} 条人工用例待人记录（只能由人执行）`
+          : `Awaiting manual acceptance: ${ms.waiting.remaining.length} manual case(s) to be recorded by a human`;
+        detail = locale === 'zh'
+          ? `人工验收结果只能由人记录：逐条执行后按实际结果把 '<pass 或 fail>' 替换为 pass 或 fail（未替换时命令被拒绝、不写入；失败须加 --note "<说明>"，可只填部分用例），在终端以 \`! <命令>\` 执行或在 RunLogos 界面记录；AI 不得代记。全部记录后重跑 openlogos smoke --env ${envArg}。`
+          : `Manual acceptance results can only be recorded by a human: after running each case, replace '<pass 或 fail>' with pass or fail (an unreplaced placeholder is rejected and nothing is written; add --note "<reason>" for failures; you may list only some cases), then run it in a terminal via \`! <command>\` or use the RunLogos UI; AI must not record them. Re-run openlogos smoke --env ${envArg} once all are recorded.`;
+      } else {
+        manualRerunReady = true;
+        command = `openlogos smoke --env ${envArg}`;
+        action = locale === 'zh' ? '人工结果已全部记录：重跑 openlogos smoke' : 'All manual results recorded: re-run openlogos smoke';
+        detail = locale === 'zh'
+          ? `人工用例已全部记录，明确授权执行 \`${command}\` 得出门禁结论。`
+          : `All manual cases are recorded — explicitly request \`${command}\` to reach the gate verdict.`;
+      }
+      const mi = moduleItems?.find(m => m.active_change === topActiveChange);
+      if (mi) { mi.action = action; mi.command = command; mi.detail = detail; }
+    }
+  }
+
   if (recoverableGlobalVerify && automationDiagnostic) {
     command = null;
     action = locale === 'zh'
@@ -1098,6 +1134,8 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     let autoCmd: string | null = null;
     if (topProposalStep === 'ready-to-verify') autoCmd = 'openlogos verify';
     else if (topProposalStep === 'ready-to-smoke') autoCmd = smokeAutoCommand(root, topActiveChange);
+    // 等待人工验收且剩余为空：重跑 smoke 属既有 smoke standing 授权；剩余非空时不放行（硬停点，§2.107.9）
+    else if (topProposalStep === 'awaiting-manual-acceptance' && manualRerunReady) autoCmd = command;
     else if (topProposalStep === 'verify-passed' || topProposalStep === 'deploy-done' || topProposalStep === 'smoke-passed') autoCmd = `openlogos archive ${topActiveChange}`;
     if (autoCmd) {
       autoExecute = true;
@@ -1140,6 +1178,7 @@ export async function next(format: OutputFormat = 'text', moduleId?: string, aut
     ...(baseNextNode ? { next_node: baseNextNode } : {}),
     ...(auto ? { auto: true, gate_id: autoGateId, skippable: autoSkippable, gate_auto_passed: gateAutoPassed } : {}),
     ...(autoExecute ? { auto_execute: true } : {}),
+    ...(manualAcceptance ? { manual_acceptance: manualAcceptance } : {}),
     ...(cmdResult ? {
       cmd_node_id: cmdResult.node_id,
       cmd_predicate_field: cmdResult.predicate_field,

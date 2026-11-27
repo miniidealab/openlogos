@@ -1,6 +1,6 @@
 {
   "schema": "openlogos/asset-manifest@1",
-  "version": "0.16.24",
+  "version": "0.16.25",
   "planContractVersion": "1.4.0",
   "skills": [
     {
@@ -9,7 +9,7 @@
     },
     {
       "path": "skills/change-writer/SKILL.md",
-      "sha256": "570973ae445c2eed49bc9e3d5ed2b0fd14b3beb582ff4232b87844661113199c"
+      "sha256": "e3ae5b63518370e24ee68f02aaeb7537ca55f606aa3998ecc1c174f277cf3d88"
     },
     {
       "path": "skills/change-writer/SKILL.en.md",
@@ -37,7 +37,7 @@
     },
     {
       "path": "skills/test-writer/SKILL.md",
-      "sha256": "cb385daa060991fceecef2931c204bf50178475bc0ebc653e83327bb26f95121"
+      "sha256": "98fba2c6ae2edc1b9a948005cfc82b4f6566ae0467564af9d6ded72c1ba804da"
     },
     {
       "path": "skills/code-reviewer/SKILL.md",
@@ -47,7 +47,7 @@
   "templates": [
     {
       "path": "dist/i18n.js",
-      "sha256": "5b151964ac6e644ceace647640491245833a0131f584b3da312c2f58194d8652"
+      "sha256": "42f4115820461d76b0d287e9fbd1082bd0466cce0bb4fc306ddb721ad56088fb"
     }
   ],
   "schemas": [
@@ -57,11 +57,11 @@
     },
     {
       "path": "spec/schema/next.schema.json",
-      "sha256": "0af3aca15f3af5ac7093b85b1e294ec912331c740cc43661ff663dbd9dcb5d12"
+      "sha256": "66b259be8fb4f6a2c9578c9ce1f638b55b657621de4162d784a3b9fb74ca8e5d"
     },
     {
       "path": "spec/schema/status.schema.json",
-      "sha256": "ee6b152060f4aafa12bd6f24cb38ad506fe838572357b3d75cfc1744abe05ec0"
+      "sha256": "d5d6b721451b7a3d35434e1be7a9307b2b5467fb8ff82242492cf00e75ce3e79"
     },
     {
       "path": "spec/schema/merge-transaction.schema.json",
@@ -71,11 +71,11 @@
   "plugins": [
     {
       "path": "claude-plugin-template/.claude-plugin/plugin.json",
-      "sha256": "f7e3c1ed865bc07c207cf55fa735fd9a6d7af6700e8dccf4a602156dcc683aa9"
+      "sha256": "e36574cd0d3914b01fcce23511cc906e40bdcad0f553b2ac291a40e5ab3f2767"
     },
     {
       "path": "claude-plugin-template/bin/guard-check",
-      "sha256": "3808b03aa96a8cc2398cc4f692a01e7c5b1d7b0118372b5e5421afcb6617f204"
+      "sha256": "c2224ec19e0e1dff25f1482d72033b7edd5bc068ab9ad6186b845fe0a926404a"
     },
     {
       "path": "claude-plugin-template/bin/guard-post-check.cjs",
@@ -114,5 +114,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "2acd3291def07d3efb86895cbfe3ac2f3e688b044f7cd61324d8786462b8b7d4"
+  "payloadHash": "0fff27fe71a41e8d35bd4ca2a71701dd99db2de4e49bd0e0da4310f6790f0b47"
 }

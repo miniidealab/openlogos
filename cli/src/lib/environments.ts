@@ -10,6 +10,7 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import { TEST_ID_ANCHORED_RE } from './test-id.js';
 
 export const ENV_REGISTRY_REL = 'logos/environments.yaml';
 export const DEPLOY_LEDGER_REL = 'logos/.openlogos-runtime/deployments.jsonl';
@@ -25,7 +26,10 @@ const COMMIT_RE = /^[0-9a-f]{40}$/;
 const TOP_FIELDS = new Set(['schema_version', 'environments', 'proposal_default_env']);
 /** 顶层「提案默认部署环境」字段（spec/environments.md §13，proposal-default-environment）。 */
 export const PROPOSAL_DEFAULT_ENV_FIELD = 'proposal_default_env';
-const ENV_FIELDS = new Set(['id', 'name', 'tier', 'aliases', 'description', 'health', 'version', 'secrets', 'deploy', 'promote_from', 'require_approval']);
+const ENV_FIELDS = new Set(['id', 'name', 'tier', 'aliases', 'description', 'health', 'version', 'secrets', 'deploy', 'promote_from', 'require_approval', 'manual_acceptance']);
+/** 人工验收开关字段（smoke-manual-acceptance，spec/environments.md §15.2）。 */
+export const MANUAL_ACCEPTANCE_FIELD = 'manual_acceptance';
+const MANUAL_ACCEPTANCE_KEYS = new Set(['enabled', 'regression']);
 /** 晋级与审批门禁字段（spec/environments.md §12.1，environment-promotion-approval）。 */
 const GATE_FIELDS = ['promote_from', 'require_approval'] as const;
 
@@ -186,6 +190,11 @@ export interface EnvironmentDef {
    * （含 require_approval: false）时才出现 gate 属性，未写时既有结构不变。
    */
   gate?: { promote_from: string | null; require_approval: boolean };
+  /**
+   * 人工验收开关（smoke-manual-acceptance，§15.2）：条目写有 manual_acceptance 时才出现。不构成受门环境
+   * （不影响 isGatedEnvironment、deploy-done 与审批）。
+   */
+  manualAcceptance?: { enabled: boolean; regression: string[] };
 }
 
 /** 受门环境（spec/environments.md §12.1）：配置了 promote_from，或 require_approval 为 true。 */
@@ -272,6 +281,7 @@ export function loadEnvironmentRegistry(root: string): RegistryLoad {
     if (!Array.isArray(secrets) || secrets.some(s => typeof s !== 'string' || !SECRET_RE.test(s))) bad('secrets', 'secrets must be environment variable names (^[A-Za-z_][A-Za-z0-9_]*$)');
     const deploy = raw.deploy === undefined || raw.deploy === null ? null : validateDeployConfig(raw.deploy, label, errors, warnings);
     const gate = validateGateFields(raw, text, raw.deploy !== undefined && raw.deploy !== null, bad);
+    const manualAcceptance = validateManualAcceptance(raw, text, label, bad, warnings);
     if (errors.length !== before) return;
     environments.push({
       id: raw.id as string,
@@ -284,6 +294,7 @@ export function loadEnvironmentRegistry(root: string): RegistryLoad {
       secrets: secrets as string[],
       ...(deploy ? { deploy } : {}),
       ...(gate ? { gate } : {}),
+      ...(manualAcceptance ? { manualAcceptance } : {}),
     });
   });
   validateGateReferences(environments, errors);
@@ -325,6 +336,46 @@ function validateGateFields(
   return {
     promote_from: typeof raw.promote_from === 'string' ? raw.promote_from : null,
     require_approval: raw.require_approval === true,
+  };
+}
+
+/**
+ * 人工验收字段校验（smoke-manual-acceptance，spec/environments.md §15.2）：必须是对象，只认 enabled（布尔）与
+ * regression（UT-/ST-/SMOKE- 前缀、首格 ID 格式合法、不重复的字符串数组）；其他键出 ENV_UNKNOWN_FIELD 警告；
+ * 须以普通键名书写（与门禁字段同一规则）。条目未写该字段时返回 null。regression 指向的用例是否存在、是否为人工用例
+ * 不在这里判定，由 smoke 在已部署版本上解析（§15.4）。
+ */
+function validateManualAcceptance(
+  raw: Record<string, unknown>, text: string, label: string, bad: (field: string, reason: string) => void, warnings: RegistryIssue[],
+): EnvironmentDef['manualAcceptance'] | null {
+  if (!has(raw, MANUAL_ACCEPTANCE_FIELD)) return null;
+  if (!text.includes(MANUAL_ACCEPTANCE_FIELD)) {
+    bad(MANUAL_ACCEPTANCE_FIELD, `${MANUAL_ACCEPTANCE_FIELD} must be written as a plain key; escaped or continued key spellings are rejected`);
+  }
+  const value = raw[MANUAL_ACCEPTANCE_FIELD];
+  if (!isRecord(value)) {
+    bad(MANUAL_ACCEPTANCE_FIELD, `${MANUAL_ACCEPTANCE_FIELD} must be a mapping with optional enabled (boolean) and regression (array of case IDs)`);
+    return null;
+  }
+  for (const key of Object.keys(value)) {
+    if (!MANUAL_ACCEPTANCE_KEYS.has(key)) {
+      warnings.push({ code: 'ENV_UNKNOWN_FIELD', environment: label, field: `${MANUAL_ACCEPTANCE_FIELD}.${key}`, reason: 'unknown manual_acceptance field' });
+    }
+  }
+  if (has(value, 'enabled') && typeof value.enabled !== 'boolean') bad(`${MANUAL_ACCEPTANCE_FIELD}.enabled`, 'enabled must be a boolean');
+  const regression = value.regression ?? [];
+  const validId = (v: unknown): v is string => typeof v === 'string' && /^(?:UT|ST|SMOKE)-/.test(v) && TEST_ID_ANCHORED_RE.test(v);
+  if (!Array.isArray(regression)) {
+    bad(`${MANUAL_ACCEPTANCE_FIELD}.regression`, 'regression must be an array of case IDs (UT-/ST-/SMOKE-)');
+  } else {
+    regression.forEach((id, i) => {
+      if (!validId(id)) bad(`${MANUAL_ACCEPTANCE_FIELD}.regression[${i}]`, 'regression entries must be UT-/ST-/SMOKE- case IDs');
+    });
+    if (new Set(regression).size !== regression.length) bad(`${MANUAL_ACCEPTANCE_FIELD}.regression`, 'regression must not contain duplicate IDs');
+  }
+  return {
+    enabled: value.enabled === true,
+    regression: Array.isArray(regression) ? regression.filter(validId) : [],
   };
 }
 
@@ -456,11 +507,33 @@ export interface SmokeLedgerRecord {
   observed_dirty: boolean | null;
   deploy_id: string | null;
   ref: string | null;
-  result: 'pass' | 'fail';
+  /** pending：等待人工验收（smoke-manual-acceptance，§15.6），此时 verified 恒为 false。 */
+  result: 'pass' | 'fail' | 'pending';
   env_evidence: EnvEvidence;
   fresh_results: boolean;
   deploy_env_confirmed: boolean;
   verified: boolean;
+  /** 人工阶段判定通过（§15.6）；只出现在开启人工验收的环境的 pass 记录上。 */
+  manual_passed?: boolean;
+  /** result=pending 时必有：锁内读取时 P(E, D) 中仍无该部署 manual 记录的用例 ID（§15.6）。 */
+  manual_pending?: string[];
+}
+
+/** manual 记录（smoke-manual-acceptance，spec/environments.md §5.2、§15.5）：openlogos accept 逐用例写入。 */
+export interface ManualLedgerRecord {
+  kind: 'manual';
+  environment: string;
+  slug: string | null;
+  recorded_at: string;
+  observed_head: string | null;
+  observed_dirty: boolean | null;
+  deploy_id: string;
+  ref: string | null;
+  case_id: string;
+  result: 'pass' | 'fail';
+  note: string | null;
+  evidence: string[];
+  recorder: string | null;
 }
 
 /** approval 记录（spec/environments.md §5.2，environment-promotion-approval 决策 C07）。 */
@@ -478,7 +551,7 @@ export interface ApprovalLedgerRecord {
   note: string | null;
 }
 
-export type LedgerRecord = DeployLedgerRecord | SmokeLedgerRecord | ApprovalLedgerRecord;
+export type LedgerRecord = DeployLedgerRecord | SmokeLedgerRecord | ApprovalLedgerRecord | ManualLedgerRecord;
 
 /** verified 判据（spec/environments.md §5.3）：五个条件同时满足才为 true。 */
 export function computeVerified(r: {
@@ -520,7 +593,7 @@ function validDeployExtension(o: Record<string, unknown>): boolean {
 export function validateLedgerRecord(value: unknown): LedgerRecord | null {
   if (!isRecord(value)) return null;
   const o = value;
-  if (o.kind !== 'deploy' && o.kind !== 'smoke' && o.kind !== 'approval') return null;
+  if (o.kind !== 'deploy' && o.kind !== 'smoke' && o.kind !== 'approval' && o.kind !== 'manual') return null;
   if (!isNonEmptyString(o.environment) || !(o.slug === null || isNonEmptyString(o.slug)) || typeof o.recorded_at !== 'string') return null;
   if (!has(o, 'observed_head') || !isRefOrNull(o.observed_head)) return null;
   if (!has(o, 'observed_dirty') || !isBoolOrNull(o.observed_dirty)) return null;
@@ -531,6 +604,16 @@ export function validateLedgerRecord(value: unknown): LedgerRecord | null {
     return o as unknown as ApprovalLedgerRecord;
   }
   if (!has(o, 'ref') || !isRefOrNull(o.ref)) return null;
+  if (o.kind === 'manual') {
+    // smoke-manual-acceptance（§5.4）：fail 必须带非空说明；evidence 为字符串数组
+    if (!isNonEmptyString(o.deploy_id) || typeof o.case_id !== 'string' || !/^(?:UT|ST|SMOKE)-/.test(o.case_id) || !TEST_ID_ANCHORED_RE.test(o.case_id)) return null;
+    if (o.result !== 'pass' && o.result !== 'fail') return null;
+    if (!has(o, 'note') || !isStringOrNull(o.note)) return null;
+    if (o.result === 'fail' && (typeof o.note !== 'string' || o.note.trim() === '')) return null;
+    if (!Array.isArray(o.evidence) || o.evidence.some(e => typeof e !== 'string')) return null;
+    if (!has(o, 'recorder') || !isStringOrNull(o.recorder)) return null;
+    return o as unknown as ManualLedgerRecord;
+  }
   if (o.kind === 'deploy') {
     if (!isNonEmptyString(o.deploy_id)) return null;
     // 受门环境的可选字段（§5.4）：出现时为字符串或 null
@@ -550,7 +633,11 @@ export function validateLedgerRecord(value: unknown): LedgerRecord | null {
     return o as unknown as DeployLedgerRecord;
   }
   if (!has(o, 'deploy_id') || !(o.deploy_id === null || isNonEmptyString(o.deploy_id))) return null;
-  if (o.result !== 'pass' && o.result !== 'fail') return null;
+  if (o.result !== 'pass' && o.result !== 'fail' && o.result !== 'pending') return null;
+  // smoke-manual-acceptance（§5.4）：pending 时 verified 恒为 false、manual_pending 为字符串数组；manual_passed 出现时为布尔
+  if (o.result === 'pending' && (!Array.isArray(o.manual_pending) || o.manual_pending.some(id => typeof id !== 'string'))) return null;
+  if (has(o, 'manual_pending') && (!Array.isArray(o.manual_pending) || o.manual_pending.some(id => typeof id !== 'string'))) return null;
+  if (!optional(o, 'manual_passed', v => typeof v === 'boolean')) return null;
   if (o.env_evidence !== 'declared' && o.env_evidence !== 'missing' && o.env_evidence !== 'mismatch') return null;
   if (typeof o.fresh_results !== 'boolean' || typeof o.deploy_env_confirmed !== 'boolean' || typeof o.verified !== 'boolean') return null;
   if (o.verified !== computeVerified(o as unknown as SmokeLedgerRecord)) return null;
@@ -574,6 +661,13 @@ export interface EnvLedgerState {
   verifiedRefs: Set<string>;
   /** 晋级候选：最近一条 verified=true smoke 记录的 ref。 */
   candidateRef: string | null;
+  /**
+   * 人工验收推导（smoke-manual-acceptance，§5.4、§15.3、§15.7）：按行序 seq 记录 verified / manual_passed 的 smoke 记录、
+   * 每个部署的 manual 记录与最近一条 smoke 记录；扫描结束后由 finalizeManualState 计算过期、verifiedRefs 与 candidateRef。
+   */
+  passRecords: Array<{ seq: number; record: SmokeLedgerRecord }>;
+  manualByDeploy: Map<string, Array<{ seq: number; record: ManualLedgerRecord }>>;
+  lastSmokeByDeploy: Map<string, { seq: number; record: SmokeLedgerRecord }>;
 }
 
 export interface LedgerSnapshot {
@@ -633,6 +727,7 @@ export function readDeploymentLedger(root: string): LedgerSnapshot {
   const snapshot: LedgerSnapshot = { path: DEPLOY_LEDGER_REL, corruptLines: 0, byEnvironment: new Map(), hasDeployExecutionRecords: false };
   const file = join(root, DEPLOY_LEDGER_REL);
   if (!existsSync(file)) return snapshot;
+  let seq = 0;
   try {
     forEachLine(file, raw => {
     const line = raw.replace(/\r$/, '');
@@ -641,11 +736,13 @@ export function readDeploymentLedger(root: string): LedgerSnapshot {
     try { parsed = JSON.parse(line); } catch { snapshot.corruptLines += 1; return; }
     const record = validateLedgerRecord(parsed);
     if (!record) { snapshot.corruptLines += 1; return; }
+    seq += 1;
     let state = snapshot.byEnvironment.get(record.environment);
     if (!state) {
       state = {
         lastDeploy: null, lastSmoke: null, history: [], currentRef: null, hasDone: false, priorRef1: null, priorRef2: null,
         openApprovals: [], verifiedRefs: new Set(), candidateRef: null,
+        passRecords: [], manualByDeploy: new Map(), lastSmokeByDeploy: new Map(),
       };
       snapshot.byEnvironment.set(record.environment, state);
     }
@@ -662,10 +759,13 @@ export function readDeploymentLedger(root: string): LedgerSnapshot {
       if (record.channel !== undefined) snapshot.hasDeployExecutionRecords = true;
     } else if (record.kind === 'smoke') {
       state.lastSmoke = record;
-      if (record.verified && record.ref !== null) {
-        state.verifiedRefs.add(record.ref);
-        state.candidateRef = record.ref;
-      }
+      if (record.deploy_id !== null) state.lastSmokeByDeploy.set(record.deploy_id, { seq, record });
+      if ((record.verified && record.ref !== null) || record.manual_passed === true) state.passRecords.push({ seq, record });
+    } else if (record.kind === 'manual') {
+      // manual 记录进入历史，不进入 last_deploy / last_smoke，不影响 current_ref / previous_ref（§5.4）
+      const list = state.manualByDeploy.get(record.deploy_id) ?? [];
+      list.push({ seq, record });
+      state.manualByDeploy.set(record.deploy_id, list);
     } else {
       // approval 记录进入历史，不进入 last_deploy / last_smoke，不影响 current_ref / previous_ref
       state.openApprovals.push(record);
@@ -681,7 +781,84 @@ export function readDeploymentLedger(root: string): LedgerSnapshot {
       readError: `${e.code ?? 'EIO'}: ${e.message}`,
     };
   }
+  for (const state of snapshot.byEnvironment.values()) finalizeManualState(state);
   return snapshot;
+}
+
+/** 该部署在 seq 之后是否出现过 manual 记录（通过记录过期判据，§15.3）。 */
+function hasManualAfter(state: EnvLedgerState, deployId: string | null, seq: number): boolean {
+  if (deployId === null) return false;
+  return (state.manualByDeploy.get(deployId) ?? []).some(m => m.seq > seq);
+}
+
+/** 一条 smoke 记录是否为已过期的人工通过记录（§15.3）：manual_passed=true 且其后出现同一部署的 manual 记录。 */
+export function isExpiredPass(state: EnvLedgerState, entry: { seq: number; record: SmokeLedgerRecord }): boolean {
+  return entry.record.manual_passed === true && hasManualAfter(state, entry.record.deploy_id, entry.seq);
+}
+
+/**
+ * 扫描结束后的推导：已验证 commit 集合与晋级候选只认未过期的 verified=true 记录（§5.4「人工验收推导」、§12.3）。
+ * 未开启人工验收、没有 manual 记录的项目，结果与按行累加逐字一致（没有记录会过期）。
+ */
+function finalizeManualState(state: EnvLedgerState): void {
+  state.verifiedRefs = new Set();
+  state.candidateRef = null;
+  for (const entry of state.passRecords) {
+    if (!entry.record.verified || entry.record.ref === null || isExpiredPass(state, entry)) continue;
+    state.verifiedRefs.add(entry.record.ref);
+    state.candidateRef = entry.record.ref;
+  }
+}
+
+/** 当前部署（§15.3）：环境最近一条 deploy 记录（任意 result，与 smoke 部署身份核对同一身份）。 */
+export interface CurrentDeployment {
+  deploy_id: string;
+  ref: string | null;
+  result: DeployLedgerRecord['result'];
+  /** 最终 result=done。 */
+  confirmed: boolean;
+}
+
+export function currentDeploymentOf(state: EnvLedgerState | undefined): CurrentDeployment | null {
+  const d = state?.lastDeploy;
+  if (!d) return null;
+  return { deploy_id: d.deploy_id, ref: d.ref, result: d.result, confirmed: d.result === 'done' };
+}
+
+/**
+ * 人工验收基线 B（§15.3）：deploy_id 不等于当前部署的部署中，最近一条未过期的 manual_passed=true smoke 记录的 ref。
+ * 当前部署自己的通过记录不作为它的基线。返回 null 表示无基线。
+ */
+export function manualBaselineOf(state: EnvLedgerState | undefined): string | null {
+  if (!state) return null;
+  const current = state.lastDeploy?.deploy_id ?? null;
+  for (let i = state.passRecords.length - 1; i >= 0; i--) {
+    const entry = state.passRecords[i];
+    if (entry.record.manual_passed !== true || entry.record.deploy_id === current) continue;
+    if (isExpiredPass(state, entry)) continue;
+    return entry.record.ref;
+  }
+  return null;
+}
+
+/** 某部署每个用例的最后一条 manual 记录（同一部署同一用例以文件中最后一条为准，§5.2）。 */
+export function manualResultsOf(state: EnvLedgerState | undefined, deployId: string): Map<string, ManualLedgerRecord> {
+  const out = new Map<string, ManualLedgerRecord>();
+  for (const m of state?.manualByDeploy.get(deployId) ?? []) out.set(m.record.case_id, m.record);
+  return out;
+}
+
+/**
+ * 等待人工验收（§15.7）：当前部署最近一条 smoke 记录为 pending 时返回剩余清单 = manual_pending 减去其后该部署
+ * manual 记录覆盖的用例；否则 null。只读账本、不读 git。
+ */
+export function waitingStateOf(state: EnvLedgerState | undefined): { deploy_id: string; remaining: string[] } | null {
+  const current = state?.lastDeploy?.deploy_id;
+  if (!state || !current) return null;
+  const last = state.lastSmokeByDeploy.get(current);
+  if (!last || last.record.result !== 'pending') return null;
+  const covered = new Set((state.manualByDeploy.get(current) ?? []).filter(m => m.seq > last.seq).map(m => m.record.case_id));
+  return { deploy_id: current, remaining: (last.record.manual_pending ?? []).filter(id => !covered.has(id)) };
 }
 
 // ───────────────────────────── 视图投影 ─────────────────────────────
@@ -706,7 +883,7 @@ export interface SmokeRecordView {
   deploy_id: string | null;
   slug: string | null;
   ref: string | null;
-  result: 'pass' | 'fail';
+  result: 'pass' | 'fail' | 'pending';
   env_evidence: EnvEvidence;
   fresh_results: boolean;
   deploy_env_confirmed: boolean;
@@ -742,6 +919,8 @@ export interface EnvView {
   require_approval?: boolean;
   open_approvals?: ApprovalView[];
   promotion?: { from: string; candidate_ref: string | null } | null;
+  /** 只在该环境登记表条目写有 manual_acceptance 时输出（smoke-manual-acceptance，§15.7）。 */
+  manual_acceptance?: { enabled: boolean; regression: string[]; waiting: { deploy_id: string; remaining: string[] } | null };
 }
 
 /** 未使用审批的视图项（spec/environments.md §7.1）。 */
@@ -803,11 +982,14 @@ function gateRecordFields(r: DeployLedgerRecord): Record<string, string | null> 
   return out;
 }
 
-export function projectSmokeRecord(r: SmokeLedgerRecord): SmokeRecordView {
+export function projectSmokeRecord(r: SmokeLedgerRecord): SmokeRecordView & { manual_passed?: boolean; manual_pending?: string[] } {
   return {
     deploy_id: r.deploy_id, slug: r.slug, ref: r.ref, result: r.result, env_evidence: r.env_evidence,
     fresh_results: r.fresh_results, deploy_env_confirmed: r.deploy_env_confirmed, verified: r.verified,
     observed_head: r.observed_head, recorded_at: r.recorded_at,
+    // smoke-manual-acceptance：可选字段只在记录带有时输出，未开启人工验收的记录投影逐字不变
+    ...(r.manual_passed !== undefined ? { manual_passed: r.manual_passed } : {}),
+    ...(r.manual_pending !== undefined ? { manual_pending: r.manual_pending } : {}),
   };
 }
 
@@ -817,9 +999,16 @@ const projectApproval = (r: ApprovalLedgerRecord): ApprovalView => ({
 
 export function projectHistoryRecord(
   r: LedgerRecord, deployEnabled = false,
-): ({ kind: 'deploy' } & DeployRecordView) | ({ kind: 'smoke' } & SmokeRecordView) | ({ kind: 'approval' } & ApprovalRecordView) {
+): ({ kind: 'deploy' } & DeployRecordView) | ({ kind: 'smoke' } & SmokeRecordView) | ({ kind: 'approval' } & ApprovalRecordView)
+  | ({ kind: 'manual' } & Omit<ManualLedgerRecord, 'kind' | 'environment'>) {
   if (r.kind === 'deploy') return { kind: 'deploy', ...projectDeployHistory(r, deployEnabled) };
   if (r.kind === 'smoke') return { kind: 'smoke', ...projectSmokeRecord(r) };
+  if (r.kind === 'manual') {
+    return {
+      kind: 'manual', slug: r.slug, deploy_id: r.deploy_id, ref: r.ref, case_id: r.case_id, result: r.result, note: r.note,
+      evidence: r.evidence, recorder: r.recorder, observed_head: r.observed_head, observed_dirty: r.observed_dirty, recorded_at: r.recorded_at,
+    };
+  }
   return {
     kind: 'approval', approval_id: r.approval_id, slug: r.slug, ref: r.ref, ref_input: r.ref_input, approver: r.approver, note: r.note,
     observed_head: r.observed_head, observed_dirty: r.observed_dirty, recorded_at: r.recorded_at,
@@ -894,7 +1083,11 @@ export function buildEnvView(env: EnvironmentDef, ledger: LedgerSnapshot, option
     last_smoke: state?.lastSmoke ? projectSmokeRecord(state.lastSmoke) : null,
   };
   const gate = gateViewFields(env, ledger);
-  if (!options.deployEnabled) return { ...base, ...tail, ...gate };
+  // smoke-manual-acceptance（§15.7）：只在条目写有 manual_acceptance 时输出，未配置的环境视图逐字不变
+  const manual = env.manualAcceptance
+    ? { manual_acceptance: { enabled: env.manualAcceptance.enabled, regression: env.manualAcceptance.regression, waiting: waitingStateOf(state) } }
+    : {};
+  if (!options.deployEnabled) return { ...base, ...tail, ...gate, ...manual };
   return {
     ...base,
     previous_ref: previousRefOf(state),
@@ -902,6 +1095,7 @@ export function buildEnvView(env: EnvironmentDef, ledger: LedgerSnapshot, option
     deploy_in_progress: options.root ? readDeployInProgress(options.root, env.id) : null,
     ...tail,
     ...gate,
+    ...manual,
   };
 }
 

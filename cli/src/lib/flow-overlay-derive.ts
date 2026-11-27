@@ -98,6 +98,7 @@ export const STEP_TO_CURRENT_BUILTIN: Record<string, string> = {
   'ready-to-deploy': 'deploy',
   'deploy-done': 'archive',
   'ready-to-smoke': 'smoke',
+  'awaiting-manual-acceptance': 'smoke',
   'smoke-failed': 'smoke',
   'smoke-passed': 'archive',
   'archived': 'archive',

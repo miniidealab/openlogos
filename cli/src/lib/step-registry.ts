@@ -66,6 +66,7 @@ export const STEP_REGISTRY: Record<ProposalStep, StepMeta> = {
   'ready-to-deploy': { phase: 'post-implement', kind: 'gate' },
   'deploy-done': { phase: 'post-implement', kind: 'residency' },
   'ready-to-smoke': { phase: 'post-implement', kind: 'command-required' },
+  'awaiting-manual-acceptance': { phase: 'post-implement', kind: 'residency' },
   'smoke-passed': { phase: 'post-implement', kind: 'residency' },
   'smoke-failed': { phase: 'post-implement', kind: 'residency' },
   // 旧兼容值（spec/cli-json-output.md §3.3：implementing / in-progress 为旧版本兼容值）

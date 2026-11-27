@@ -983,6 +983,8 @@ function classifyScopeCommand(cmd) {
       const rest = ws.slice(i + 1).filter(x => !x.startsWith('-'));
       if ((rest[0] === 'exempt' || rest[0] === 'ignore') && (rest[1] === 'add' || rest[1] === 'remove')) return 'scope';
       if (rest[0] === 'approve') return 'approve';
+      // smoke-manual-acceptance：人工验收记录命令（任何参数形态）
+      if (rest[0] === 'accept') return 'accept';
       if (rest[0] === 'deploy' && ws.slice(i + 1).some(x => x === '--force-promote' || x.startsWith('--force-promote='))) return 'force';
     }
     return null;
@@ -1011,6 +1013,12 @@ const SCOPE_CATEGORY_TEXT = {
     deny: '部署审批需要用户在宿主界面批准：该命令会写入部署审批（openlogos approve），审批只能由人产生。',
     user: '该命令会写入部署审批，需要您确认后执行',
     agent: '该命令写入部署审批',
+  },
+  accept: {
+    compound: '人工验收记录命令必须单独执行：一次调用只能包含一条 openlogos accept',
+    deny: '人工验收结果只能由人记录：该命令会写入人工验收结果（openlogos accept）。请在终端执行或在 RunLogos 界面逐条记录；不要由 AI 代记。',
+    user: '该命令会记录人工验收结果，人工验收结果只能由人记录，需要您确认后执行',
+    agent: '该命令记录人工验收结果（只能由人记录）',
   },
   force: {
     compound: '部署审批类命令必须单独执行：一次调用只能包含一条 openlogos approve 或带 --force-promote 的 openlogos deploy',
@@ -1061,7 +1069,7 @@ const GATED_REGISTRY_REL = 'logos/environments.yaml';
 function registryHasGates(root) {
   try {
     const text = fs.readFileSync(path.join(root, ...GATED_REGISTRY_REL.split('/')), 'utf8');
-    return text.includes('promote_from') || text.includes('require_approval') || text.includes('\\');
+    return text.includes('promote_from') || text.includes('require_approval') || text.includes('manual_acceptance') || text.includes('\\');
   } catch {
     return false;
   }

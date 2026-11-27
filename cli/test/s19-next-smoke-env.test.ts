@@ -14,6 +14,7 @@ import {
   MES_BASELINE_FILE, SLUG, buildEnvProject, callsLogPath, readJson, runCli, zeroRegressionRun,
   type CliRun, type EnvKind,
 } from './s19-module-env-fixtures.js';
+import { stripDefaultManualAcceptanceFromRun } from './manual-acceptance-golden.js';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
@@ -88,7 +89,8 @@ describe('S19 next --auto 带 --env（module-scoped-env-smoke 切片1）', () =>
           expect(run.stdout, kind).toContain('"command":"openlogos smoke --env test"');
           expect({ ...run, stdout: run.stdout.split('openlogos smoke --env test').join('openlogos smoke') }, `${kind} ${step}`).toEqual(expected[step]);
         } else {
-          expect(run, `${kind} ${step}`).toEqual(expected[step]);
+          // smoke-manual-acceptance（§2.107.13）：剥离值为默认的 data.manual_acceptance 后逐字比对
+          expect(stripDefaultManualAcceptanceFromRun(run, `${kind} ${step}`), `${kind} ${step}`).toEqual(expected[step]);
         }
       }
       expect(runs.smoke.stdout, kind).not.toContain('"scope"');

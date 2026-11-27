@@ -2,6 +2,7 @@ import { dirname, join } from 'node:path';
 import { readLocale, t, type Locale } from '../i18n.js';
 import { runGuardBoundary } from '../lib/guard-boundary.js';
 import { evaluateArchiveChain, readLifecycleFactsAt } from '../lib/lifecycle-gate.js';
+import { readProposalManualState } from '../lib/proposal-manual-state.js';
 import {
   ARCHIVE_WATCH_ERROR_CODES,
   ArchiveWatchError,
@@ -191,6 +192,17 @@ export function archive(slug?: string, options: ArchiveCommandOptions = {}): Arc
       // archive 保持纯文本命令：稳定错误码 + 可执行补救命令写 stderr，非零退出。
       console.error(`Error: [${rejection.code}] ${rejection.message}`);
       process.exit(1);
+    }
+    // smoke-manual-acceptance（spec/environments.md §15.8）：DEPLOY_DONE 的环境开启人工验收（本部署零条 manual 记录也核对），
+    // 或本部署有 manual 记录时，以账本核对本部署自己的最近有效结论——标记只是投影，可能由并发重跑或旧部署写回
+    if (lifecycleFacts.deploymentRequired === true && lifecycleFacts.smokeRequired === true) {
+      const manual = readProposalManualState(root, slug);
+      if (manual && manual.applicable && !manual.passValid) {
+        const details = { reason: 'smoke_pass_expired', environment: manual.environment, deploy_id: manual.deploy_id };
+        console.error(`Error: [ARCHIVE_SMOKE_NOT_PASSED] ${t(locale, 'archive.gate.smokePassExpired', { environment: manual.environment, deploy: manual.deploy_id })}`);
+        console.error(`details: ${JSON.stringify(details)}`);
+        process.exit(1);
+      }
     }
   }
 
