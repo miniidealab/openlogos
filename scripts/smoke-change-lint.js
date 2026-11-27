@@ -127,6 +127,9 @@ function scaffoldLintFixture(root, opts = {}) {
     '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
     ...authorityNotApplicableSection(),
     ...completeClarificationSection(),
+    // 0.16.24 起 openlogos change 脚手架带「验收标准」段（verify-self-sufficient-cases，AC-VERIFY-SELF-09）；
+    // 夹具代表一份按当前脚手架填好的全过提案，缺段会多出 acceptance_criteria_missing 警告
+    '## 验收标准', '- 自动验收环境要求：无', '- 平台限定用例：无', '- 需要人参与的验收：无', '',
     '## 变更概述', '纯文档更新，无需代码。',
   ].join('\n'));
   writeFileSync(join(root, 'logos/changes', slug, 'tasks.md'),
