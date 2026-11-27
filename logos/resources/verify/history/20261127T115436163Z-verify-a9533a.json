@@ -1,0 +1,40 @@
+{
+  "schema": "openlogos/verification-run@1",
+  "run_id": "20261127T115436163Z-verify-a9533a",
+  "kind": "verify",
+  "started_at": "2026-11-27T11:54:36.164Z",
+  "finished_at": "2026-11-27T11:55:36.145Z",
+  "outcome": "completed",
+  "gate": {
+    "result": "PASS",
+    "reason": null
+  },
+  "error_code": null,
+  "proposal": {
+    "slug": "smoke-manual-acceptance",
+    "run_dir": "verify-runs/20261127T115436163Z-verify-a9533a"
+  },
+  "module_scope": null,
+  "verify_mode": "slice-checkpoint",
+  "attempted_slice_id": "slice-04-human-only-guard-and-release",
+  "environment": null,
+  "deploy_id": null,
+  "counts": {
+    "defined": 97,
+    "executed": 97,
+    "passed": 97,
+    "failed": 0,
+    "skipped": 0,
+    "uncovered": 0
+  },
+  "failed_ids": [],
+  "skipped_ids": [],
+  "uncovered_ids": [],
+  "result_source": "executed",
+  "commit": {
+    "head": "f72e8aa03cd70a27b43b303c50360b4ad0b7fe74",
+    "dirty": true
+  },
+  "cli_version": "0.16.24",
+  "raw_location": "proposal"
+}
