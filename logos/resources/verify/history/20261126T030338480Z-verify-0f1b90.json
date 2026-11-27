@@ -1,0 +1,42 @@
+{
+  "schema": "openlogos/verification-run@1",
+  "run_id": "20261126T030338480Z-verify-0f1b90",
+  "kind": "verify",
+  "started_at": "2026-11-26T03:03:38.480Z",
+  "finished_at": "2026-11-26T03:04:04.388Z",
+  "outcome": "completed",
+  "gate": {
+    "result": "PASS",
+    "reason": null
+  },
+  "error_code": null,
+  "proposal": {
+    "slug": "fix-claude-hook-windows-powershell-fallback",
+    "run_dir": "verify-runs/20261126T030338480Z-verify-0f1b90"
+  },
+  "module_scope": null,
+  "verify_mode": "slice-checkpoint",
+  "attempted_slice_id": "slice-01-hook-closed-table-migration",
+  "environment": null,
+  "deploy_id": null,
+  "counts": {
+    "defined": 13,
+    "executed": 13,
+    "passed": 12,
+    "failed": 0,
+    "skipped": 1,
+    "uncovered": 0
+  },
+  "failed_ids": [],
+  "skipped_ids": [
+    "ST-S09-219"
+  ],
+  "uncovered_ids": [],
+  "result_source": "executed",
+  "commit": {
+    "head": "ba5a4de84b4ae5a4e321dff3488614f607a38c05",
+    "dirty": true
+  },
+  "cli_version": "0.16.21",
+  "raw_location": "proposal"
+}

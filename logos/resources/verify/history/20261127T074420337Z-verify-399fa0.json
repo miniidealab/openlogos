@@ -1,0 +1,40 @@
+{
+  "schema": "openlogos/verification-run@1",
+  "run_id": "20261127T074420337Z-verify-399fa0",
+  "kind": "verify",
+  "started_at": "2026-11-27T07:44:20.337Z",
+  "finished_at": "2026-11-27T07:44:44.356Z",
+  "outcome": "completed",
+  "gate": {
+    "result": "PASS",
+    "reason": null
+  },
+  "error_code": null,
+  "proposal": {
+    "slug": "verify-self-sufficient-cases",
+    "run_dir": "verify-runs/20261127T074420337Z-verify-399fa0"
+  },
+  "module_scope": null,
+  "verify_mode": "slice-checkpoint",
+  "attempted_slice_id": "slice-04-verify-skip-classification-and-release",
+  "environment": null,
+  "deploy_id": null,
+  "counts": {
+    "defined": 39,
+    "executed": 39,
+    "passed": 39,
+    "failed": 0,
+    "skipped": 0,
+    "uncovered": 0
+  },
+  "failed_ids": [],
+  "skipped_ids": [],
+  "uncovered_ids": [],
+  "result_source": "executed",
+  "commit": {
+    "head": "a2d890efbb9577b39de0579a763a369d101ff15a",
+    "dirty": true
+  },
+  "cli_version": "0.16.23",
+  "raw_location": "proposal"
+}

@@ -1,0 +1,47 @@
+{
+  "schema": "openlogos/verification-run@1",
+  "run_id": "20261126T095739230Z-verify-dea799",
+  "kind": "verify",
+  "started_at": "2026-11-26T09:57:39.230Z",
+  "finished_at": "2026-11-26T10:01:43.279Z",
+  "outcome": "completed",
+  "gate": {
+    "result": "PASS",
+    "reason": null
+  },
+  "error_code": null,
+  "proposal": {
+    "slug": "fix-smoke-runner-discovery-overflow",
+    "run_dir": "verify-runs/20261126T095739230Z-verify-dea799"
+  },
+  "module_scope": null,
+  "verify_mode": null,
+  "attempted_slice_id": null,
+  "environment": null,
+  "deploy_id": null,
+  "counts": {
+    "defined": 2733,
+    "executed": 2733,
+    "passed": 2727,
+    "failed": 0,
+    "skipped": 6,
+    "uncovered": 0
+  },
+  "failed_ids": [],
+  "skipped_ids": [
+    "ST-S08-45",
+    "ST-S09-219",
+    "ST-S13-26",
+    "ST-S19-35",
+    "ST-S19-36",
+    "ST-S19-37"
+  ],
+  "uncovered_ids": [],
+  "result_source": "executed",
+  "commit": {
+    "head": "3577575f54abfb1602263114516af633334a77fa",
+    "dirty": true
+  },
+  "cli_version": "0.16.23",
+  "raw_location": "proposal"
+}

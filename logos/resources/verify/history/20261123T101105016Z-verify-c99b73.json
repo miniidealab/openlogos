@@ -1,0 +1,45 @@
+{
+  "schema": "openlogos/verification-run@1",
+  "run_id": "20261123T101105016Z-verify-c99b73",
+  "kind": "verify",
+  "started_at": "2026-11-23T10:11:05.016Z",
+  "finished_at": "2026-11-23T10:14:50.341Z",
+  "outcome": "completed",
+  "gate": {
+    "result": "PASS",
+    "reason": null
+  },
+  "error_code": null,
+  "proposal": {
+    "slug": "windows-latest-release-gate",
+    "run_dir": "verify-runs/20261123T101105016Z-verify-c99b73"
+  },
+  "module_scope": null,
+  "verify_mode": null,
+  "attempted_slice_id": null,
+  "environment": null,
+  "deploy_id": null,
+  "counts": {
+    "defined": 2706,
+    "executed": 2706,
+    "passed": 2702,
+    "failed": 0,
+    "skipped": 4,
+    "uncovered": 0
+  },
+  "failed_ids": [],
+  "skipped_ids": [
+    "ST-S13-26",
+    "ST-S19-35",
+    "ST-S19-36",
+    "ST-S19-37"
+  ],
+  "uncovered_ids": [],
+  "result_source": "executed",
+  "commit": {
+    "head": "9f6cfa48c34008a9921823c7a0c1f0c904fa4f2d",
+    "dirty": true
+  },
+  "cli_version": "0.16.21",
+  "raw_location": "proposal"
+}
