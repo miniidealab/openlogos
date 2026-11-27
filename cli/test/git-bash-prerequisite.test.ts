@@ -10,6 +10,7 @@
  * 结果由全局 OpenLogos reporter 写入 logos/resources/verify/test-results.jsonl。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { itOnPlatform } from './platform-skip.js';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -152,7 +153,7 @@ describe('S08 sync 的 Git Bash 前提警告', () => {
     } finally { c2(); }
   });
 
-  it.skipIf(!IS_WIN)('ST-S08-45: windows-latest 真实 CLI 的前提警告（非 Windows 平台跳过）', async () => {
+  itOnPlatform(IS_WIN, 'requires win32', 'ST-S08-45: windows-latest 真实 CLI 的前提警告（非 Windows 平台跳过）', async () => {
     await initProject(root, 'claude-code');
     const cli = (env: NodeJS.ProcessEnv) => {
       const r = spawnSync(process.execPath, [CLI_ENTRY, 'sync'], { cwd: root, env, encoding: 'utf-8', timeout: 120_000 });

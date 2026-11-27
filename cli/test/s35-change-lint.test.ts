@@ -3,6 +3,7 @@
  * 用例 ID 与 logos/resources/test/core-S35-test-cases.md 严格对齐（UT-S35-01..25 / ST-S35-01..06）。
  */
 import { describe, it, expect, afterEach } from 'vitest';
+import { stripAcceptanceMissingFromData, stripAcceptanceMissingFromText } from './acceptance-criteria-lint-codes.js';
 import {
   writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, statSync, symlinkSync, chmodSync,
   lstatSync, readlinkSync,
@@ -1006,7 +1007,9 @@ describe('S35 — 同源锚与契约', () => {
     // knowledge_reference_unknown、knowledge_id_duplicate、knowledge_removal_forbidden、knowledge_retired_id_mutated。
     // 55 → 58：§2.103.11（knowledge-direct-intake）L10 新增 knowledge_tag_unknown、knowledge_tags_missing、
     // knowledge_apply_incomplete。
-    expect(registry.size).toBe(58);
+    // 58 → 59：§2.106.8（verify-self-sufficient-cases）L11 新增 acceptance_criteria_invalid；
+    // 缺段提醒 acceptance_criteria_missing 走 warning 通道，不进违规码闭合枚举。
+    expect(registry.size).toBe(59);
     const flowReasonCodes = new Set(['tasks_code_header_missing', 'code_change_requires_real_test_ids', 'deployment_decision_conflict']);
     for (const v of violations) {
       expect(typeof v.code).toBe('string');
@@ -1116,7 +1119,7 @@ describe('S35 — ST 场景测试', () => {
     const rp = spawnCli(pass.root, ['change-lint']);
     expect(rp.status).toBe(0);
     expect(rp.stdout).toContain('✓ L1');
-    expect(rp.stdout).toMatch(/PASS（\d+\/\d+）/);
+    expect(stripAcceptanceMissingFromText(rp.stdout)).toMatch(/PASS（\d+\/\d+）/);
     expect(rp.stdout.trim().startsWith('{')).toBe(false);
 
     const fail = setup({ tasks: '# 任务\n\n## [delta] 规格变更\n- [ ] 产出 delta 到 `deltas/prd/`' });
@@ -1125,7 +1128,7 @@ describe('S35 — ST 场景测试', () => {
     expect(rf.stdout).toContain('✗');
     // code-r1 F13：每个 ✗ 固定三段「缺什么 / 在哪补 / 补成什么样」
     expect(rf.stdout).toMatch(/✗ L\d \[[a-z_]+\]\n\s+缺什么：.+\n\s+在哪补：.+\n\s+补成什么样：.+/);
-    expect(rf.stdout).toMatch(/FAIL（\d+\/\d+，\d+ 项违规）/);
+    expect(stripAcceptanceMissingFromText(rf.stdout)).toMatch(/FAIL（\d+\/\d+，\d+ 项违规）/);
     expect(rf.stdout.trim().startsWith('{')).toBe(false);
 
     const { root } = setup({ guard: false, proposal: proposalMd({ codeRequired: false }) });
@@ -1636,7 +1639,8 @@ describe('S35 — L7 缺段警告化与判定源统一', () => {
     const clean = guiSetup(VALID_UI_DECL);
     const r3 = lintFull(clean.root);
     expect(r3.code).toBe(0);
-    expect('warnings' in r3.raw.data).toBe(false);
+    // verify-self-sufficient-cases：夹具早于「验收标准」段，缺段提醒是有意新增的 warning，剔除后仍须零漂移。
+    expect('warnings' in stripAcceptanceMissingFromData(r3.raw.data)).toBe(false);
   });
 
   it('ST-S35-29: 20260914 事故端到端复现（真实 CLI）——缺段提案 merge 不再硬停；损坏仍 fail-closed', { timeout: 120_000 }, () => {

@@ -526,6 +526,9 @@ describe('S31 — 场景测试', () => {
   it('ST-S31-EX-2: 配置类早退（NO_TEST_RESULTS）→ process.exit(1)、账本无新增行', () => {
     // 切片循环激活（launched 默认）但无 test-results → verify 早退、不计迭代、不写账本
     const { root, dir } = setupCmd(CODE3([true, true, true]), ['SPEC_MERGED']);
+    // verify-self-sufficient-cases（评审 code-r2/r3 F1）：空 SPEC_MERGED 不是可信变更集——早退前确认变更集状态时会判
+    // test_change_set_invalid 并进入 FAIL 收尾。本用例锁定的是「变更集可信、仅缺结果」的配置类早退，故写读取器认可的完成标记。
+    writeFileSync(join(dir, 'SPEC_MERGED'), '{"type":"no_delta_spec_complete"}\n');
     writeVerifyFixture(root); // 有用例、无结果 → NO_TEST_RESULTS
     const r = runVerify(root);
     expect(r.exited).toBe(true);

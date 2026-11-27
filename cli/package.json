@@ -1,6 +1,6 @@
 {
   "name": "@miniidealab/openlogos",
-  "version": "0.16.23",
+  "version": "0.16.24",
   "description": "CLI tool for the OpenLogos software engineering methodology",
   "type": "module",
   "bin": {
@@ -16,6 +16,7 @@
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "lint": "eslint src/",
+    "pretest": "node ../scripts/apply-repo-verify-requirements.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:windows": "vitest run test/s39-windows-durability.test.ts test/windows-cli-derive-paths.test.ts test/s13-windows-sandbox.test.ts test/s08-windows-sync.test.ts test/s09-windows-guard.test.ts test/windows-rename-callsites.test.ts test/s19-windows-public-upgrade.test.ts test/s09-claude-hook-powershell.test.ts test/git-bash-prerequisite.test.ts",

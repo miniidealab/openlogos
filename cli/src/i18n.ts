@@ -1213,6 +1213,11 @@ unresolved: []
 defaults: []
 \`\`\`
 
+## 验收标准
+- 自动验收环境要求：[无 / \`env:<变量名>\`、\`command:<命令名>\`、\`check:<检查名>\` 条目，即预期写入 verify.requirements 的配置差异]
+- 平台限定用例：[无 / 用例 ID 与适用平台或执行条件]
+- 需要人参与的验收：[无 / 人工验收事项与执行环节]
+
 ## 变更概述
 [用 1-3 段话概述具体改什么]
 `;
@@ -1286,6 +1291,11 @@ decisions: []
 unresolved: []
 defaults: []
 \`\`\`
+
+## Acceptance Criteria
+- Automated verification requirements: [none / \`env:<VAR>\`, \`command:<name>\`, \`check:<name>\` entries — the config diff expected in verify.requirements]
+- Platform-limited cases: [none / case IDs with the platform or execution condition]
+- Human-involved acceptance: [none / manual acceptance items and the stage they run in]
 
 ## Summary
 [Describe what will change in 1-3 paragraphs]

@@ -56,7 +56,8 @@ export interface VerificationRun {
   failed_ids: string[];
   skipped_ids: string[];
   uncovered_ids: string[];
-  result_source: 'executed' | 'reused';
+  /** verify-self-sufficient-cases（§2.104.3 修改）：none = 环境预检类原因判 FAIL，既未执行命令也未读取结果。 */
+  result_source: 'executed' | 'reused' | 'none';
   commit: { head: string | null; dirty: boolean | null };
   cli_version: string;
   raw_location: RawLocation;
@@ -97,7 +98,7 @@ export interface HistoryFinish {
   failedIds?: string[];
   skippedIds?: string[];
   uncoveredIds?: string[];
-  resultSource: 'executed' | 'reused';
+  resultSource: 'executed' | 'reused' | 'none';
   /** 本次实际采集的结果文件（项目根相对）；不存在或未采集时为 null。 */
   resultPath: string | null;
   /**
@@ -212,7 +213,7 @@ export function buildRunRecord(ctx: HistoryRunContext, finish: HistoryFinish, co
     failed_ids: sortedIds(finish.failedIds),
     skipped_ids: sortedIds(finish.skippedIds),
     uncovered_ids: sortedIds(finish.uncoveredIds),
-    result_source: finish.resultSource === 'executed' ? 'executed' : 'reused',
+    result_source: finish.resultSource === 'executed' ? 'executed' : finish.resultSource === 'none' ? 'none' : 'reused',
     commit: { head: commit.head, dirty: commit.dirty },
     cli_version: VERSION,
     raw_location: rawLocationOf(ctx),
@@ -368,7 +369,7 @@ function validRecord(value: unknown, fileRunId: string): value is VerificationRu
   if (!isStrOrNull(v.attempted_slice_id) || !isStrOrNull(v.environment) || !isStrOrNull(v.deploy_id)) return false;
   if (!isObj(v.counts) || !['defined', 'executed', 'passed', 'failed', 'skipped', 'uncovered'].every(k => isNumOrNull((v.counts as Record<string, unknown>)[k]))) return false;
   if (!isStrArray(v.failed_ids) || !isStrArray(v.skipped_ids) || !isStrArray(v.uncovered_ids)) return false;
-  if (v.result_source !== 'executed' && v.result_source !== 'reused') return false;
+  if (v.result_source !== 'executed' && v.result_source !== 'reused' && v.result_source !== 'none') return false;
   if (!isObj(v.commit) || !isStrOrNull(v.commit.head) || !(v.commit.dirty === null || typeof v.commit.dirty === 'boolean')) return false;
   if (!isStr(v.cli_version)) return false;
   return v.raw_location === 'proposal' || v.raw_location === 'local' || v.raw_location === 'none';

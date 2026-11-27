@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.24] - 2026-11-27
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- `verify.requirements`（以及 `verify.modules.<id>.requirements`）：声明 verify 需要的环境变量、命令与检查命令。verify 在执行任何预跑命令之前检查，缺任一项判 FAIL（`verify_env_not_ready`），不启动测试；诊断与报告只写变量名，检查命令只写退出码或「超时」。检查命令经与预跑命令同一沙箱执行器运行，60 秒限时。
+- proposal「验收标准」段（自动验收环境要求、平台限定用例、需要人参与的验收）：`openlogos change` 脚手架生成，`change-lint` 缺段提醒、格式非法报 `acceptance_criteria_invalid`；verify 把段中列出的环境要求与配置对账，漏写报 `acceptance_requirement_undeclared`。
+- UT/ST 结果可带 `reason_code` / `detail`；平台跳过（`platform-unavailable` 且带说明）单独列为 `platform_skipped_cases`。
+- 验收历史 `result_source` 新增 `"none"`：预检类原因判 FAIL 时既未执行命令也未读取结果。
+
+### Changed
+
+- 活跃提案新增或修改的 UT/ST 写非平台 skip 时 verify 判 FAIL（`case_tier_mismatch`）；已合并提案的测试变更集校验失败时判 FAIL（`test_change_set_invalid`）；存量用例的非平台 skip 只出提醒 `unclassified_skipped_cases`。
+- 预检失败或用例分层错误会使受影响 initial 模块的模块验收报告判 FAIL，旧的 PASS 报告不再残留。
+- `[manual]` 改为「需要人参与」，以换版本判据判断；生成的 AGENTS.md / CLAUDE.md 保护范围条款只禁止直接修改忽略规则文件与 `logos.config.json` 的 `guard` 字段，其余字段限已立案的提案范围内修改。
+
 ## [0.16.23] - 2026-11-26
 
 本机全局发布（未发布到 npm）。

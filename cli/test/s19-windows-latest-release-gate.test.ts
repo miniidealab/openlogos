@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { itOnPlatform } from './platform-skip.js';
 import { parse } from 'yaml';
 import { assertInstallation, checkRegistry, packageName, verifyWindowsRelease } from '../../scripts/windows-latest-release-gate.mjs';
 import { distributeRelease, readBundle } from '../../scripts/release-publish-bundle.mjs';
@@ -135,7 +136,7 @@ describe('Windows 公网升级就绪门', () => {
     }
   });
 
-  it.skipIf(process.platform !== 'win32')('ST-S19-37: 从两个公开源在真实 Windows 原地升级到当前公开版', async () => {
+  itOnPlatform(process.platform === 'win32', 'requires win32', 'ST-S19-37: 从两个公开源在真实 Windows 原地升级到当前公开版', async () => {
     const response = await fetch('https://registry.npmjs.org/@miniidealab%2fopenlogos/latest', { signal: AbortSignal.timeout(30_000) });
     expect(response.ok).toBe(true);
     const publicVersion = (await response.json()).version;

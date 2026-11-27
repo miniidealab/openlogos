@@ -12,6 +12,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { withDeployPlanCoverageCodes } from './deploy-plan-coverage-codes.js';
+import { withAcceptanceCriteriaCodes, stripAcceptanceMissingFromData, stripAcceptanceMissingFromText } from './acceptance-criteria-lint-codes.js';
 import { withKnowledgeCodes } from './knowledge-lint-codes.js';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -232,7 +233,8 @@ describe('S35 违规层归属单点与人类可读输出的逐条可归因', () 
     for (const kind of ['l4-only', 'clean'] as LintRenderFixtureKind[]) {
       const f = fixture(kind);
       const run = runCommand(f.root, 'json');
-      const data = JSON.parse(run.stdout.trim().split('\n').pop()!).data;
+      // verify-self-sufficient-cases：夹具提案早于「验收标准」段，缺段提醒是有意新增的 warning，比对前剔除。
+      const data = stripAcceptanceMissingFromData(JSON.parse(run.stdout.trim().split('\n').pop()!).data);
       // envelope 的 timestamp/version 与本刀无关；契约主体（pass / plan_package / violations /
       // warnings 的出现与省略形态）按序列化字节逐字比对改动前实测基线。
       expect(JSON.stringify(data)).toBe(JSON.stringify(baseline(kind).json.data));
@@ -250,7 +252,7 @@ describe('S35 违规层归属单点与人类可读输出的逐条可归因', () 
   it('UT-S35-194: 零回归锚——检查项、违规码集合、exit code 与结论文案零改动', () => {
     // ② 违规码注册表：断言集合本身（被意外扩充同样是回归）。
     // deploy-plan-gate-release-0-15-19（§2.90）有意新增四码，按登记位置插入后对照。
-    const expectedCodes = withKnowledgeCodes(withDeployPlanCoverageCodes(GOLDEN._violation_codes as string[]));
+    const expectedCodes = withAcceptanceCriteriaCodes(withKnowledgeCodes(withDeployPlanCoverageCodes(GOLDEN._violation_codes as string[])));
     expect([...CHANGE_LINT_VIOLATION_CODES]).toEqual(expectedCodes);
     expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(expectedCodes.length);
 
@@ -262,7 +264,7 @@ describe('S35 违规层归属单点与人类可读输出的逐条可归因', () 
       // ③ 退出码。
       expect(run.status).toBe(baseline(kind).text.status);
       // ④ 末行结论文案（PASS（…）/ FAIL（…，N 项违规[，M warning]）形态不变）。
-      expect(run.stdout.trimEnd().split('\n').pop())
+      expect(stripAcceptanceMissingFromText(run.stdout).trimEnd().split('\n').pop())
         .toBe(baseline(kind).text.stdout.trimEnd().split('\n').pop());
     }
   });
@@ -271,7 +273,7 @@ describe('S35 违规层归属单点与人类可读输出的逐条可归因', () 
     const f = fixture('clean');
     const run = runCommand(f.root);
     // 与改动前逐字相同——本刀不新增任何行。
-    expect(run.stdout).toBe(baseline('clean').text.stdout);
+    expect(stripAcceptanceMissingFromText(run.stdout)).toBe(baseline('clean').text.stdout);
     expect(run.status).toBe(0);
     // 每个检查项恰打印一行 `✓ L<id> <label>`；末行 PASS。
     const result = lintOk(f);
@@ -301,15 +303,15 @@ describe('S35 违规层归属单点与人类可读输出的逐条可归因', () 
     // ② JSON 输出与改动前同夹具实测逐字节相同。
     const badJson = spawnCli(bad.root, ['change-lint', '--slug', LINT_RENDER_SLUG, '--format', 'json']);
     expect(badJson.status).toBe(2);
-    expect(JSON.stringify(JSON.parse(badJson.stdout.trim().split('\n').pop()!).data))
+    expect(JSON.stringify(stripAcceptanceMissingFromData(JSON.parse(badJson.stdout.trim().split('\n').pop()!).data)))
       .toBe(JSON.stringify(baseline('l4-only').json.data));
 
     // ③ 合法夹具：全 ✓ 行 + PASS、退出码 0，形态与改动前逐字相同。
     const goodText = spawnCli(good.root, ['change-lint', '--slug', LINT_RENDER_SLUG]);
     expect(goodText.status).toBe(0);
-    expect(goodText.stdout).toBe(baseline('clean').text.stdout);
+    expect(stripAcceptanceMissingFromText(goodText.stdout)).toBe(baseline('clean').text.stdout);
     const goodJson = spawnCli(good.root, ['change-lint', '--slug', LINT_RENDER_SLUG, '--format', 'json']);
-    expect(JSON.stringify(JSON.parse(goodJson.stdout.trim().split('\n').pop()!).data))
+    expect(JSON.stringify(stripAcceptanceMissingFromData(JSON.parse(goodJson.stdout.trim().split('\n').pop()!).data)))
       .toBe(JSON.stringify(baseline('clean').json.data));
 
     // ④ 零写入：运行前后夹具与本仓项目根字节快照均不变。

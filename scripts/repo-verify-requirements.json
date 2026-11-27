@@ -1,0 +1,6 @@
+{
+  "$comment": "本仓可共享的 verify.requirements 声明（verify-self-sufficient-cases，评审 code-r2 F4）。根目录 logos/ 按 .gitignore 只留本机、不入库；干净检出由 npm test 的 pretest（scripts/apply-repo-verify-requirements.mjs）把这里的声明应用到真实的 logos/logos.config.json。只放可共享的检查声明，不放本机专属路径。",
+  "checks": [
+    { "name": "linux-nondump-cc", "command": "node scripts/linux-nondump-cc.mjs" }
+  ]
+}

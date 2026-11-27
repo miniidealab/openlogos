@@ -17,6 +17,8 @@ const RESULT_PATH = resolve(
 const TEST_CASES_DIR = resolve(process.cwd(), '..', 'logos/resources/test');
 const ID_RE = /\b(?:UT|ST)-[A-Za-z0-9]+(?:-[A-Za-z0-9.]+)*\b/g;
 const MANUAL_SUFFIX = /\[manual\]/i;
+/** 平台跳过标记（见 test/platform-skip.ts）：不适用时编码在用例或所在 describe 的名称里。 */
+const PLATFORM_SKIP_MARKER_RE = /\[platform-unavailable: ([^\]]+)\]/;
 const TABLE_CELL_ID_PATTERN = /^\s*(?:UT|ST)-[A-Za-z0-9]+(?:-[A-Za-z0-9.]+)*(?:\s*\[manual\])?\s*$/i;
 
 function loadDefinedIds(): Set<string> {
@@ -90,15 +92,18 @@ export default class OpenLogosReporter implements Reporter {
     }
   }
 
-  private walkTasks(tasks: readonly any[]) {
+  private walkTasks(tasks: readonly any[], suitePath = '') {
     for (const task of tasks) {
       if (task.type === 'suite' && task.tasks) {
-        this.walkTasks(task.tasks);
+        this.walkTasks(task.tasks, suitePath ? `${suitePath} > ${task.name}` : task.name);
         continue;
       }
       if (task.type !== 'test') continue;
 
       const nameForMatch = typeof task.fullName === 'string' ? task.fullName : task.name;
+      // 平台跳过标记可能在所在 describe 的名称上（describeOnPlatform）：整组跳过时 fullName 不一定含组名，
+      // 因此另按遍历得到的用例组链拼出完整名称来识别标记
+      const nameWithSuites = suitePath ? `${suitePath} > ${task.name}` : task.name;
       const ids = [...new Set([...nameForMatch.matchAll(ID_RE)].map(match => match[0]))]
         .filter(id => this.definedIds.has(id) && (!this.eligibleIds || this.eligibleIds.has(id)));
       if (ids.length === 0) continue;
@@ -131,6 +136,14 @@ export default class OpenLogosReporter implements Reporter {
         if (scenario) record.scenario = scenario;
         if (durationMs !== undefined) record.duration_ms = Math.round(durationMs);
         if (error) record.error = error.slice(0, 500);
+        // verify-self-sufficient-cases：平台跳过写机器可读原因（spec/test-results.md「平台跳过原因的 reporter 写法」）
+        if (status === 'skip') {
+          const platform = PLATFORM_SKIP_MARKER_RE.exec(nameForMatch) ?? PLATFORM_SKIP_MARKER_RE.exec(nameWithSuites);
+          if (platform) {
+            record.reason_code = 'platform-unavailable';
+            record.detail = platform[1].trim();
+          }
+        }
 
         appendFileSync(RESULT_PATH, JSON.stringify(record) + '\n');
       }

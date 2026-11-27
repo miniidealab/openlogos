@@ -11,6 +11,7 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { withDeployPlanCoverageCodes } from './deploy-plan-coverage-codes.js';
+import { withAcceptanceCriteriaCodes, withoutAcceptanceMissing, stripAcceptanceMissingFromData } from './acceptance-criteria-lint-codes.js';
 import { withKnowledgeCodes } from './knowledge-lint-codes.js';
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -315,7 +316,7 @@ describe('S35 变更类型 ↔ delta 层面观测 warning', () => {
   it('UT-S35-171 零回归锚：违规码全集、检查项集合与失败结论对齐上线前实测基线', () => {
     // ① 违规码**全集**逐字相同——新增任一其它码同样会红，不只是「新 warning 不在其中」。
     // deploy-plan-gate-release-0-15-19（§2.90）有意新增四码，并入基线后对照。
-    expect([...CHANGE_LINT_VIOLATION_CODES].sort()).toEqual(withKnowledgeCodes(withDeployPlanCoverageCodes(BASELINE.violationCodes)).sort());
+    expect([...CHANGE_LINT_VIOLATION_CODES].sort()).toEqual(withAcceptanceCriteriaCodes(withKnowledgeCodes(withDeployPlanCoverageCodes(BASELINE.violationCodes))).sort());
     expect(CHANGE_LINT_VIOLATION_CODES).not.toContain(WARN);
 
     // ② 逐场景对齐基线：检查项集合（id + label + violations）、violations 完整字段、pass 结论。
@@ -374,7 +375,8 @@ describe('S35 变更类型 ↔ delta 层面观测 warning', () => {
       expect(hit[0].fix_hint, '观测启发式不得断言违规').not.toContain(banned);
     }
     const quiet = setup('代码级', [D_TEST], 'attrib-quiet');
-    expect(lint(quiet.root, quiet.dir, quiet.slug).warnings).toHaveLength(0);
+    // verify-self-sufficient-cases：夹具早于「验收标准」段，缺段提醒不属本断言范围。
+    expect(withoutAcceptanceMissing(lint(quiet.root, quiet.dir, quiet.slug).warnings)).toHaveLength(0);
   });
 
   it('ST-S35-31 真实 CLI 端到端：观测 warning 出数而不改变任何门禁结论', () => {
@@ -403,7 +405,7 @@ describe('S35 变更类型 ↔ delta 层面观测 warning', () => {
     const b = setup('代码级', [D_TEST], 'st-exempt');
     const rb = run(b.root);
     expect(rb.status).toBe(0);
-    expect(rb.json.data.warnings).toBeUndefined(); // 非空才出现，零漂移
+    expect(stripAcceptanceMissingFromData(rb.json.data).warnings).toBeUndefined(); // 非空才出现，零漂移（剔除有意新增的缺段提醒）
 
     // ④ 对照臂·歧义（独立夹具；必须带 prd/1 才有鉴别力——该层对设计级与代码级都不免计，
     //    实现若把歧义错误解析成两者中任一个都会告警而使本臂红）。

@@ -616,8 +616,9 @@ describe('S37 — 契约、同源与零漂移', () => {
     //          deployment_plan_reference_unresolved，L0 新增其 Plan Package 投影两码。
     // 50 → 55：§2.102.10（enterprise-knowledge-base S45）L10 企业知识 5 码。
     // 55 → 58：§2.103.11（knowledge-direct-intake）L10 标签判据 / 词表丢失 / 未完成录入事务 3 码。
-    expect(CHANGE_LINT_VIOLATION_CODES).toHaveLength(58);
-    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(58);
+    // 58 → 59：§2.106.8（verify-self-sufficient-cases）L11 acceptance_criteria_invalid。
+    expect(CHANGE_LINT_VIOLATION_CODES).toHaveLength(59);
+    expect(new Set(CHANGE_LINT_VIOLATION_CODES).size).toBe(59);
     // 合法形态全过：纯 ADDED / 全量 MODIFIED / 整节 REMOVED / 成对部分删除
     const legalDeltas = [
       delta('ADDED', '新章节', table('SMOKE-core-99')),

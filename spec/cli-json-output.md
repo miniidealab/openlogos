@@ -3748,12 +3748,14 @@ L10 的启用条件：本提案有 `deltas/knowledge/`，或本提案场景 delt
   "failed_ids": ["UT-S01-01", "UT-S01-02"],
   "skipped_ids": [],
   "uncovered_ids": [],
-  "result_source": "executed" | "reused",
+  "result_source": "executed" | "reused" | "none",
   "commit": { "head": "000ac05…", "dirty": false },
   "cli_version": "0.16.20",
   "raw_location": "proposal" | "local" | "none"
 }
 ```
+
+`result_source: "none"`（verify-self-sufficient-cases）只出现在 verify 因环境预检类原因（`verify_requirements_invalid`、`acceptance_requirement_undeclared`、`verify_env_not_ready`）判 FAIL 的记录中：本次既未执行命令也未读取结果，`outcome` 为 `"completed"`，`gate.result` 为 `"FAIL"`、`gate.reason` 为该原因，`counts` 各项为 null，三个 ID 数组为空。`history show` 对这类记录不给出逐用例结果；报告快照按既有留存策略提供——有活跃提案时从提案完整记录（`raw_in_proposal: true`）或本机原文目录（`raw_in_proposal: false`）读取，无活跃提案时只有中央索引、注明本次没有完整记录。0.16.24 之前的读取方把它当作损坏记录跳过并提示。
 
 ### `openlogos history list [--kind verify|smoke] [--slug <slug>] [--result pass|fail|aborted] [--module <id>] [--limit <n>] --format json`
 

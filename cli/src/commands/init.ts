@@ -1545,7 +1545,7 @@ Violating this rule will render the output unusable.`;
 - 发现 bug/问题时：只输出分析和方案，**禁止直接修改代码**
 - 修改代码前：先确认 guard 文件存在且修改在提案范围内
 - 唯一例外：纯 typo 修复、\`README.md\` 等非方法论文件
-- 保护范围配置：\`.gitignore\`、\`.git/info/exclude\` 与 \`logos/logos.config.json\` 决定 guard 的保护范围，不得直接修改；需要忽略或豁免路径时，直接执行 \`openlogos ignore add|remove …\` 或 \`openlogos exempt add|remove …\`（\`list\` 不受限），由宿主对这次命令弹出原生审批、用户批准后执行；若 guard 提示当前权限模式下宿主不会弹出审批，请用户在终端用 \`! <命令原文>\` 自行执行，或切换到默认权限模式后重试，不得以对话中的口头同意替代审批。`
+- 保护范围配置：\`.gitignore\`、\`.git/info/exclude\` 与 \`logos/logos.config.json\` 的 \`guard\` 字段决定 guard 的保护范围，不得直接修改；需要忽略或豁免路径时，直接执行 \`openlogos ignore add|remove …\` 或 \`openlogos exempt add|remove …\`（\`list\` 不受限），由宿主对这次命令弹出原生审批、用户批准后执行；若 guard 提示当前权限模式下宿主不会弹出审批，请用户在终端用 \`! <命令原文>\` 自行执行，或切换到默认权限模式后重试，不得以对话中的口头同意替代审批。\`logos/logos.config.json\` 的其他字段（如 \`verify.requirements\`）只在已立案且属于当前提案范围时，由实现任务直接修改。`
       : `## ⛔ Change Management (Enforced)
 
 This project uses \`logos/.openlogos-guard\` lock file to track active changes.
@@ -1556,7 +1556,7 @@ This project uses \`logos/.openlogos-guard\` lock file to track active changes.
 - When you discover a bug/issue: only output analysis and proposed fix — do NOT modify code directly
 - Before modifying code: verify the guard file exists and changes are within the proposal scope
 - Only exception: pure typo fixes, \`README.md\` and other non-methodology files
-- Protection scope: \`.gitignore\`, \`.git/info/exclude\` and \`logos/logos.config.json\` define the guard's protection scope and must not be edited directly. To ignore or exempt a path, run \`openlogos ignore add|remove …\` or \`openlogos exempt add|remove …\` directly (\`list\` is unrestricted); the host will show its native approval prompt for that command and it runs only after the user approves. If the guard reports that the current permission mode will not show an approval prompt, ask the user to run \`! <command>\` in the terminal or switch to the default permission mode and retry; a verbal "yes" in the conversation never replaces the approval.`)
+- Protection scope: \`.gitignore\`, \`.git/info/exclude\` and the \`guard\` field of \`logos/logos.config.json\` define the guard's protection scope and must not be edited directly. To ignore or exempt a path, run \`openlogos ignore add|remove …\` or \`openlogos exempt add|remove …\` directly (\`list\` is unrestricted); the host will show its native approval prompt for that command and it runs only after the user approves. If the guard reports that the current permission mode will not show an approval prompt, ask the user to run \`! <command>\` in the terminal or switch to the default permission mode and retry; a verbal "yes" in the conversation never replaces the approval. Other fields of \`logos/logos.config.json\` (such as \`verify.requirements\`) may be edited directly by the implementation task only when a change proposal is active and the edit is within its scope.`)
     : (locale === 'zh'
       ? `## 变更管理（自动判断）
 
@@ -2211,7 +2211,7 @@ ${generateActiveSkillsSection(locale, aiTool, target)}`;
 - **发现 bug/问题时**：只输出分析和修复方案，**禁止直接修改代码**，等待用户决定是否创建变更提案
 - **修改代码前**：先确认 guard 文件存在且当前修改在提案范围内
 - **唯一例外**：纯 typo 修复（不改变语义）、\`README.md\` 等非方法论文件
-- **保护范围配置**：\`.gitignore\`、\`.git/info/exclude\` 与 \`logos/logos.config.json\` 决定 guard 的保护范围，不得直接修改；需要忽略或豁免路径时，直接执行 \`openlogos ignore add|remove …\` 或 \`openlogos exempt add|remove …\`（\`list\` 不受限），由宿主对这次命令弹出原生审批、用户批准后执行；若 guard 提示当前权限模式下宿主不会弹出审批，请用户在终端用 \`! <命令原文>\` 自行执行，或切换到默认权限模式后重试，不得以对话中的口头同意替代审批。
+- **保护范围配置**：\`.gitignore\`、\`.git/info/exclude\` 与 \`logos/logos.config.json\` 的 \`guard\` 字段决定 guard 的保护范围，不得直接修改；需要忽略或豁免路径时，直接执行 \`openlogos ignore add|remove …\` 或 \`openlogos exempt add|remove …\`（\`list\` 不受限），由宿主对这次命令弹出原生审批、用户批准后执行；若 guard 提示当前权限模式下宿主不会弹出审批，请用户在终端用 \`! <命令原文>\` 自行执行，或切换到默认权限模式后重试，不得以对话中的口头同意替代审批。\`logos/logos.config.json\` 的其他字段（如 \`verify.requirements\`）只在已立案且属于当前提案范围时，由实现任务直接修改。
 
 **违反此规则将破坏项目的变更可追溯性。**
 `
@@ -2246,7 +2246,7 @@ This project uses \`logos/.openlogos-guard\` lock file to track active changes.
 - **When you discover a bug/issue**: only output analysis and proposed fix — **do NOT modify code directly** — wait for the user to decide whether to create a change proposal
 - **Before modifying code**: verify the guard file exists and your changes are within the proposal scope
 - **Only exception**: pure typo fixes (no semantic change), \`README.md\` and other non-methodology files
-- **Protection scope**: \`.gitignore\`, \`.git/info/exclude\` and \`logos/logos.config.json\` define the guard's protection scope and must not be edited directly. To ignore or exempt a path, run \`openlogos ignore add|remove …\` or \`openlogos exempt add|remove …\` directly (\`list\` is unrestricted); the host will show its native approval prompt for that command and it runs only after the user approves. If the guard reports that the current permission mode will not show an approval prompt, ask the user to run \`! <command>\` in the terminal or switch to the default permission mode and retry; a verbal "yes" in the conversation never replaces the approval.
+- **Protection scope**: \`.gitignore\`, \`.git/info/exclude\` and the \`guard\` field of \`logos/logos.config.json\` define the guard's protection scope and must not be edited directly. To ignore or exempt a path, run \`openlogos ignore add|remove …\` or \`openlogos exempt add|remove …\` directly (\`list\` is unrestricted); the host will show its native approval prompt for that command and it runs only after the user approves. If the guard reports that the current permission mode will not show an approval prompt, ask the user to run \`! <command>\` in the terminal or switch to the default permission mode and retry; a verbal "yes" in the conversation never replaces the approval. Other fields of \`logos/logos.config.json\` (such as \`verify.requirements\`) may be edited directly by the implementation task only when a change proposal is active and the edit is within its scope.
 
 **Violating this rule will break the project's change traceability.**
 `)

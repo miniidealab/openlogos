@@ -350,7 +350,7 @@ async function discoveryProject(entryPath, arm) {
     '## 变更范围', '- CLI', '', '## 部署影响', '- 是否需要部署：否', '- 是否需要 smoke：否', '', '## 变更概述', '夹具。', '',
   ].join('\n'));
   put(root, `logos/changes/${PROPOSAL_SLUG}/tasks.md`, ['# 实现任务', '', '## [code] 代码实现', '- [x] 实现（覆盖 UT-S01-01）', ''].join('\n'));
-  put(root, `logos/changes/${PROPOSAL_SLUG}/SPEC_MERGED`, '{}\n');
+  put(root, `logos/changes/${PROPOSAL_SLUG}/SPEC_MERGED`, '{"type":"no_delta_spec_complete"}\n'); // verify-self-sufficient-cases：空对象不是合法变更集（test_change_set_invalid），夹具写读取器认可的 no-delta 完成标记
   if (arm === 'B') {
     put(root, `logos/changes/${PROPOSAL_SLUG}/deltas/test/smoke/core-smoke-test-cases.md`, '| ID | 描述 |\n|---|---|\n| SMOKE-core-950 | 夹具专用 |\n');
   }

@@ -11,6 +11,7 @@
  * 结果由全局 OpenLogos reporter 写入 logos/resources/verify/test-results.jsonl。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { itOnPlatform } from './platform-skip.js';
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -66,7 +67,7 @@ async function launchedClaudeProject(base: string): Promise<Hooks> {
 const registered = (hooks: Hooks, event: string): string => hooks[event][hooks[event].length - 1].hooks[0].command;
 
 describe('S09 PowerShell 宿主下的 Claude hook 行为', () => {
-  it.skipIf(IS_WIN)('ST-S09-218: bash 宿主上门禁入口不依赖 node', async () => {
+  itOnPlatform(!IS_WIN, 'requires a non-Windows bash host', 'ST-S09-218: bash 宿主上门禁入口不依赖 node', async () => {
     const hooks = await launchedClaudeProject(root);
     const preToolUse = hooks.PreToolUse.find(g => g.matcher === 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell')!.hooks[0].command;
     expect(preToolUse).toBe('"$CLAUDE_PROJECT_DIR"/.claude/openlogos/bin/guard-check');
@@ -108,7 +109,7 @@ describe('S09 PowerShell 宿主下的 Claude hook 行为', () => {
     for (const r of [blocked, failClosed]) expect(r.stderr).not.toMatch(/node: (command )?not found/);
   });
 
-  it.skipIf(!IS_WIN)('ST-S09-219: windows-latest：PowerShell 执行 sync 生成的命令（非 Windows 平台跳过）', async () => {
+  itOnPlatform(IS_WIN, 'requires win32', 'ST-S09-219: windows-latest：PowerShell 执行 sync 生成的命令（非 Windows 平台跳过）', async () => {
     const hooks = await launchedClaudeProject(root);
     const ps = (command: string, input: unknown) => {
       const r = spawnSync('powershell.exe', ['-NoProfile', '-Command', command], {

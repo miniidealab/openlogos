@@ -111,6 +111,10 @@
           },
           "additionalProperties": false
         },
+        "requirements": {
+          "$ref": "#/definitions/VerifyRequirements",
+          "description": "verify 环境要求（可选，verify-self-sufficient-cases，功能规格 §2.106.4）。verify 在执行任何预跑命令之前检查：env 中的变量存在且非空、commands 中的命令可在 PATH 上解析、checks 中的检查命令经与预跑命令同一沙箱执行器在 60 秒内以 0 退出；缺任一项判 FAIL（verify_env_not_ready），不执行预跑命令。只做声明与预检，不过滤未声明的环境变量。"
+        },
         "modules": {
           "type": "object",
           "description": "模块级测试命令（可选，module-scoped-verify）。键为 logos-project.yaml 中已登记的模块 id，值为该模块的命令组；三个字段与项目级同名字段同语义、同互斥与兼容规则，都缺省视为该模块未配置模块级命令。只在模块范围启用（至少一个模块声明了非空 modules[].paths）或传入 --all 时使用；未登记的模块 id 产生警告 verify_module_unknown 并被忽略",
@@ -128,6 +132,10 @@
               "incremental_command": {
                 "type": "string",
                 "description": "该模块的增量测试命令，在回归测试后执行"
+              },
+              "requirements": {
+                "$ref": "#/definitions/VerifyRequirements",
+                "description": "该模块的环境要求（verify-self-sufficient-cases）。只对本次实际执行的命令组服务的模块生效；与项目级取并集，同名 check 以本模块为准（只替换本模块的那一项）。"
               }
             },
             "additionalProperties": false
@@ -281,6 +289,35 @@
     }
   },
   "definitions": {
+    "VerifyRequirements": {
+      "type": "object",
+      "properties": {
+        "env": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "需要的环境变量名（只写名字，诊断与报告不写变量值）"
+        },
+        "commands": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[^\\s/\\\\]+$" },
+          "description": "需要在 PATH 上的命令名（不含路径与参数）"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "command"],
+            "properties": {
+              "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+              "command": { "type": "string", "minLength": 1, "description": "只读的检查命令（推荐跨平台 node 脚本）；以 0 退出表示满足" }
+            },
+            "additionalProperties": false
+          },
+          "description": "检查命令；name 在同一层级内唯一"
+        }
+      },
+      "additionalProperties": false
+    },
     "DocumentModule": {
       "type": "object",
       "required": ["label", "path", "pattern"],

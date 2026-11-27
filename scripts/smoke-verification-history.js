@@ -275,7 +275,7 @@ async function historyProject(entryPath) {
   ].join('\n'));
   put(root, `logos/changes/${PROPOSAL_SLUG}/tasks.md`, ['# 实现任务', '', '## [code] 代码实现', '- [x] 实现（覆盖 UT-S01-01）', '',
     '## [deploy] 部署到 test', '- [ ] 部署到 test', ''].join('\n'));
-  put(root, `logos/changes/${PROPOSAL_SLUG}/SPEC_MERGED`, '{}\n');
+  put(root, `logos/changes/${PROPOSAL_SLUG}/SPEC_MERGED`, '{"type":"no_delta_spec_complete"}\n'); // verify-self-sufficient-cases：空对象不是合法变更集（test_change_set_invalid），夹具写读取器认可的 no-delta 完成标记
   put(root, 'logos/.openlogos-guard', JSON.stringify({ activeChange: PROPOSAL_SLUG, module: 'core' }));
   git(root, ['init', '-q', '-b', 'main']);
   git(root, ['config', 'user.name', 'openlogos-smoke']);

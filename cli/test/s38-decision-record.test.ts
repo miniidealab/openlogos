@@ -4,6 +4,7 @@
  * 测试结果由全局 OpenLogos reporter（vitest.config.ts 注册）写入 logos/resources/verify/test-results.jsonl。
  */
 import { describe, it, expect, afterEach } from 'vitest';
+import { ACCEPTANCE_NONE_SECTION_ZH } from './acceptance-criteria-lint-codes.js';
 import { writeFileSync, mkdirSync, existsSync, rmSync, readFileSync, chmodSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, resolve, dirname } from 'node:path';
@@ -51,6 +52,8 @@ function setupProj(o: ProjOpts = {}): { root: string; slug: string; dir: string 
     ...(o.decisionSection ? ['## 已确定的设计决策', '- D07 选 X 而非 Y，因为不变量约束。', ''] : []),
     '## 部署影响', '- 是否需要部署：否', '- 部署原因：本地测试', '- 影响环境：无',
     '- 是否涉及数据迁移：否', '- 是否需要回滚预案：否', '- 是否需要 smoke：否', '',
+    // verify-self-sufficient-cases：带合法「验收标准」段，使 warnings 通道只承载本测试关心的决策记录提醒。
+    ACCEPTANCE_NONE_SECTION_ZH,
     '## 变更概述', '需要 CLI 代码、测试和 reporter 实现。',
   ].join('\n');
   writeFileSync(join(dir, 'proposal.md'), withCompleteClarification(proposal));
@@ -518,6 +521,7 @@ describe('S38 决策记录 — CLI 端到端（ST）', () => {
       '## 变更原因', '需要能力。', '', '## 变更类型', '设计级变更', '',
       '```markdown', '## 已确定的设计决策', '- 这是模板示例、非本提案的真实决策章节', '```', '',
       '## 部署影响', '- 是否需要部署：否', '- 是否需要 smoke：否', '',
+      ACCEPTANCE_NONE_SECTION_ZH,
     ].join('\n'));
     writeFileSync(join(dir, 'tasks.md'), [
       '# 任务', '', '## [delta] 规格变更', '- [ ] 产出 `deltas/test/x.md`', '',

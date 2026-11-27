@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { describeOnPlatform } from './platform-skip.js';
 import { installArgs, promoteUserPath, runUpgrade, windowsOperations } from '../../website/public/downloads/openlogos-upgrade.cjs';
 
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -53,7 +54,7 @@ it('UT-S19-109: npm 短路径与 CMD 长入口为同一文件时保留现有 Pat
   expect(writeUserPath).not.toHaveBeenCalled();
 });
 
-describe.skipIf(process.platform !== 'win32')('真实 Windows 升级', () => {
+describeOnPlatform(process.platform === 'win32', 'requires win32', '真实 Windows 升级', () => {
   let temporary: string;
   let candidate: string;
   const registryKeys: string[] = [];

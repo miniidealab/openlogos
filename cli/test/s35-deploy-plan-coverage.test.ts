@@ -11,6 +11,7 @@
  *   OPENLOGOS_S35_PRECHANGE_CLI=<变更前 CLI 的 dist/index.js> npx vitest run test/s35-deploy-plan-coverage.test.ts
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { stripAcceptanceMissingFromText } from './acceptance-criteria-lint-codes.js';
 import {
   chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync,
 } from 'node:fs';
@@ -119,7 +120,9 @@ function project(o: FixtureOpts = {}): { root: string; dir: string; slug: string
 /** ST-S35-38 的事故复刻夹具：原始 proposal / tasks 原文 + 只含其它版本章节的部署方案。 */
 function incidentProject(): { root: string; dir: string; slug: string } {
   const p = scaffold('sync-claude-response-language');
-  copyFileSync(join(INCIDENT_DIR, 'proposal.md'), join(p.dir, 'proposal.md'));
+  // verify-self-sufficient-cases（评审 code-r1 F5）：事故原文早于结构化「验收标准」段，其自由文本段在新口径下
+  // 按段在场逐项报 L11——与本用例锁定的 L5 事故无关。复制时只把该段标题改名（正文保留），使其按缺段处理（只提醒、比对前剔除）。
+  writeFileSync(join(p.dir, 'proposal.md'), readFileSync(join(INCIDENT_DIR, 'proposal.md'), 'utf8').replace(/^## 验收标准$/m, '## 验收要点（事故原文）'));
   copyFileSync(join(INCIDENT_DIR, 'tasks.md'), join(p.dir, 'tasks.md'));
   writePlan(p.root, PLAN_FIXTURE);
   return p;
@@ -173,7 +176,8 @@ interface Observed { status: number | null; violations: unknown[]; text: string 
 function observe(p: { root: string; slug: string }, entry = CLI): Observed {
   const j = lintJson(p, entry);
   const t = cli(p.root, ['change-lint', '--slug', p.slug], entry);
-  return { status: j.status, violations: j.data.violations, text: t.stdout };
+  // verify-self-sufficient-cases：夹具早于结构化「验收标准」段，缺段提醒是有意新增的 warning，比对前剔除。
+  return { status: j.status, violations: j.data.violations, text: stripAcceptanceMissingFromText(t.stdout) };
 }
 
 function repairedIncident(): { root: string; dir: string; slug: string } {
@@ -396,7 +400,7 @@ describe('S35 L5 部署方案覆盖——场景测试', () => {
     // ① 人读输出：L0 与 L5 各一条，三段式，末行 FAIL（7/9，2 项违规）。
     const text = cli(p.root, ['change-lint', '--slug', p.slug]);
     expect(text.status).toBe(2);
-    const lines = text.stdout.trimEnd().split('\n');
+    const lines = stripAcceptanceMissingFromText(text.stdout).trimEnd().split('\n');
     const i0 = lines.indexOf('  ✗ L0 [tasks_deployment_plan_missing]');
     const i5 = lines.indexOf('  ✗ L5 [deployment_plan_missing]');
     expect(i0).toBeGreaterThan(-1);
@@ -423,7 +427,7 @@ describe('S35 L5 部署方案覆盖——场景测试', () => {
     expect(pkg.issues.map((i: any) => i.code)).toContain('tasks_deployment_plan_missing');
     // ④ 修复后：L0 / L5 行与 PASS 末行；next 进入 ready-to-delta。
     const fixed = repairedIncident();
-    const fixedText = cli(fixed.root, ['change-lint', '--slug', fixed.slug]).stdout.trimEnd().split('\n');
+    const fixedText = stripAcceptanceMissingFromText(cli(fixed.root, ['change-lint', '--slug', fixed.slug]).stdout).trimEnd().split('\n');
     expect(fixedText).toContain('  ✓ L0 Plan Package 完成合同');
     expect(fixedText).toContain('  ✓ L5 部署决策一致');
     expect(fixedText[fixedText.length - 1]).toBe('PASS（9/9）');

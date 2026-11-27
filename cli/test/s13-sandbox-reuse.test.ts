@@ -11,6 +11,8 @@
  * 结果由 OpenLogos reporter 依 it 标题中的 ID 写入 logos/resources/verify/test-results.jsonl。
  */
 import { afterAll, describe, expect, it } from 'vitest';
+import { itOnPlatform } from './platform-skip.js';
+import { nondumpApplicable, NONDUMP_SKIP_DETAIL } from '../../scripts/linux-nondump-cc.mjs';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync,
@@ -1070,10 +1072,9 @@ fs.writeFileSync(${JSON.stringify(RESULT)}, ${JSON.stringify(PASS_LEDGER)});
     expect(runs.map(r => r.data.sandbox.reuse.state)).toEqual(['created', 'reused', 'reused', 'fresh']);
   }, 120_000);
 
-  const linuxNonRoot = process.platform === 'linux' && typeof process.getuid === 'function' && process.getuid() !== 0;
-  // 需编译不可转储夹具，以及臂 ⑤ 中 leader 已退出、工作线程仍存活的夹具。
-  const hasCc = linuxNonRoot && spawnSync('cc', ['--version'], { stdio: 'ignore' }).status === 0;
-  it.skipIf(!(REUSE_CAPABLE && linuxNonRoot && hasCc))('ST-S13-26: Linux 真实不可转储进程下的复用', async () => {
+  // verify-self-sufficient-cases：适用条件（Linux、非 root、复用能力可用）取自与 verify 检查 linux-nondump-cc 同一判定；
+  // 不适用时写平台跳过原因。适用时不再因缺 cc 而跳过——缺 cc 由 verify 预检报 verify_env_not_ready。
+  itOnPlatform(nondumpApplicable({ liveness: REUSE_CAPABLE }), NONDUMP_SKIP_DETAIL, 'ST-S13-26: Linux 真实不可转储进程下的复用', async () => {
     // 自行编译仅保留执行权限的 sleep 夹具。非转储状态设置成功后才发布就绪标记。
     const binDir = tmp('openlogos-s13-nodump-');
     const sleepBin = join(binDir, 'sleep-xonly');

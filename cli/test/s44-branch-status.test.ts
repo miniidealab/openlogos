@@ -294,7 +294,9 @@ describe('S44 branch status 与主分支确定', () => {
     // required / definitions / examples 与 properties 中的其他属性同基线逐项相等
     expect(baseline.properties.branch_sync).toBeUndefined();
     expect(schema.required).toEqual(baseline.required);
-    expect(schema.definitions).toEqual(baseline.definitions);
+    // verify-self-sufficient-cases：新增 VerifyRequirements 定义（verify.requirements 引用），属该提案的增量，比较前剔除
+    const { VerifyRequirements: _req, ...restDefinitions } = schema.definitions;
+    expect(restDefinitions).toEqual(baseline.definitions);
     expect(schema.examples).toEqual(baseline.examples);
     const { branch_sync: _added, ...restProps } = schema.properties;
     // verification-history：verify 节新增 history（raw_in_proposal），属该提案的增量，比较前剔除
@@ -302,10 +304,20 @@ describe('S44 branch status 与主分支确定', () => {
       restProps.verify = { ...restProps.verify, properties: { ...restProps.verify.properties } };
       delete restProps.verify.properties.history;
     }
+    // verify-self-sufficient-cases：verify 节与 verify.modules.<id> 新增 requirements，属该提案的增量，比较前剔除
+    if (restProps.verify?.properties?.requirements) {
+      restProps.verify = { ...restProps.verify, properties: { ...restProps.verify.properties } };
+      delete restProps.verify.properties.requirements;
+      const mod = restProps.verify.properties.modules;
+      if (mod?.additionalProperties?.properties?.requirements) {
+        const { requirements: _mr, ...modProps } = mod.additionalProperties.properties;
+        restProps.verify.properties.modules = { ...mod, additionalProperties: { ...mod.additionalProperties, properties: modProps } };
+      }
+    }
     expect(restProps).toEqual(baseline.properties);
-    const { properties: _p1, ...restTop } = schema;
-    const { properties: _p2, ...baselineTop } = baseline;
-    expect(restTop).toEqual(baselineTop);
+    const { properties: _p1, definitions: _d1, ...restTop } = schema;
+    const { properties: _p2, definitions: _d2, ...baselineTop } = baseline;
+    expect(restTop).toEqual(baselineTop); // definitions 已在上方剔除本提案增量后逐项比对
 
     // 用 Schema 校验配置样例
     const { default: Ajv } = await import('ajv');

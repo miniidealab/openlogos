@@ -143,7 +143,8 @@ describe('S13 按模块限定 verify 范围 — 命令选择（module-scoped-ver
     const schema = JSON.parse(readFileSync(join(REPO, 'spec/logos.config.schema.json'), 'utf8'));
     const modulesSchema = schema.properties.verify.properties.modules;
     expect(modulesSchema.type).toBe('object');
-    expect(Object.keys(modulesSchema.additionalProperties.properties).sort()).toEqual(['incremental_command', 'pre_run_command', 'regression_command']);
+    // verify-self-sufficient-cases 为模块命令组新增可选 requirements（模块级环境要求）
+    expect(Object.keys(modulesSchema.additionalProperties.properties).sort()).toEqual(['incremental_command', 'pre_run_command', 'regression_command', 'requirements']);
     expect(modulesSchema.additionalProperties.additionalProperties).toBe(false);
     try { registerSchema(schema); } catch { /* 同一 worker 内已注册 */ }
     const cfg = JSON.parse(readFileSync(join(withMobile.root, 'logos/logos.config.json'), 'utf8'));

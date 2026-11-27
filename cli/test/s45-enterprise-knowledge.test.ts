@@ -5,6 +5,7 @@
  * 测试结果由全局 OpenLogos reporter（vitest.config.ts 注册）写入 logos/resources/verify/test-results.jsonl。
  */
 import { afterAll, describe, expect, it } from 'vitest';
+import { withoutAcceptanceMissing } from './acceptance-criteria-lint-codes.js';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -511,9 +512,11 @@ describe('S45 企业知识 — 类别注册与解析（UT）', () => {
     expect(r1.status).toBe(0);
     expect(r1.data.pass).toBe(true);
     expect(knowledgeViolations(r1.data)).toEqual([]);
-    expect(r1.data.warnings?.map(w => w.code)).toEqual(['knowledge_reference_deprecated']);
-    expect(r1.data.warnings![0].message).toContain('K03-R2');
-    expect(Object.keys(r1.data.warnings![0]).sort()).toEqual(['code', 'fix_hint', 'message']);
+    // verify-self-sufficient-cases：夹具早于「验收标准」段，缺段提醒是有意新增的 warning，不属本断言范围。
+    const w1 = withoutAcceptanceMissing(r1.data.warnings);
+    expect(w1.map(w => w.code)).toEqual(['knowledge_reference_deprecated']);
+    expect(w1[0].message).toContain('K03-R2');
+    expect(Object.keys(w1[0]).sort()).toEqual(['code', 'fix_hint', 'message']);
 
     // ② 本提案把已合并 K05 改为 deprecated；未改动的已合并场景仍引用 K05
     const k05 = entry('K05', '结算日', { type: 'term' });
@@ -524,9 +527,10 @@ describe('S45 企业知识 — 类别注册与解析（UT）', () => {
     const r2 = lintJson(f2.root);
     expect(r2.status).toBe(0);
     expect(knowledgeViolations(r2.data)).toEqual([]);
-    expect(r2.data.warnings?.filter(w => w.code === 'knowledge_reference_deprecated')).toHaveLength(1);
-    expect(r2.data.warnings![0].message).toContain(`${SCEN}/core-S40-settle.md`);
-    expect(r2.data.warnings![0].message).toContain('K05');
+    const w2 = withoutAcceptanceMissing(r2.data.warnings);
+    expect(w2.filter(w => w.code === 'knowledge_reference_deprecated')).toHaveLength(1);
+    expect(w2[0].message).toContain(`${SCEN}/core-S40-settle.md`);
+    expect(w2[0].message).toContain('K05');
   });
 
   it('UT-S45-09: 同批新增条目被新场景引用——通过', () => {

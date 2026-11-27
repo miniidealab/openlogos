@@ -9,6 +9,7 @@
  * 只读：本文件所有函数不写任何项目文件 / marker / 哈希清单。
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { parseAcceptanceCriteria, describeAcceptanceProblem } from './acceptance-criteria.js';
 import { join } from 'node:path';
 import {
   parseTaskSections,
@@ -166,6 +167,9 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   'knowledge_tag_unknown',
   'knowledge_tags_missing',
   'knowledge_apply_incomplete',
+  // L11 proposal「验收标准」段格式（verify-self-sufficient-cases，功能规格 §2.106.8）：段在场时才检查；
+  // 缺段走 warning `acceptance_criteria_missing`，不进本枚举。
+  'acceptance_criteria_invalid',
 ] as const;
 
 export type ChangeLintViolationCode = typeof CHANGE_LINT_VIOLATION_CODES[number];
@@ -250,7 +254,9 @@ export type ChangeLintWarningCode =
   // ——传播规则给的是「最少需要更新」下界，超出不等于违规，故只走 warning、不进违规码集合。
   | 'change_type_delta_layer_mismatch'
   // S45 L10：引用了 deprecated 的知识条目 / 规则——提醒、不阻断（文件与行写在 message）。
-  | 'knowledge_reference_deprecated';
+  | 'knowledge_reference_deprecated'
+  // §2.106.8：proposal 缺「验收标准」段——非 canonical 段，提醒补段、不阻断在途提案。
+  | 'acceptance_criteria_missing';
 
 export interface ChangeLintWarning {
   code: ChangeLintWarningCode;
@@ -2156,6 +2162,23 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
     }
   }
 
+  // L11：proposal「验收标准」段（§2.106.8）——解析与 verify 对账同源（parseAcceptanceCriteria）。
+  // 缺段只警告（不计违规、不改退出码）；段在场时字段缺失 / 空值 / 占位 / 条目格式非法报违规。
+  const acceptance = parseAcceptanceCriteria(proposalContent);
+  const acceptanceWarnings: ChangeLintWarning[] = [];
+  if (!acceptance.present) {
+    acceptanceWarnings.push({
+      code: 'acceptance_criteria_missing',
+      message: `${relProposal}：缺少「验收标准」段（自动验收环境要求、平台限定用例、需要人参与的验收）`,
+      fix_hint: '按 openlogos change 脚手架在「变更概述」之前补回「## 验收标准」段（自动验收环境要求、平台限定用例、需要人参与的验收），三个字段没有就写「无」',
+    });
+  } else {
+    for (const problem of acceptance.problems) {
+      const { message, fix_hint } = describeAcceptanceProblem(problem, relProposal);
+      pushViolation(acc, 11, { code: 'acceptance_criteria_invalid', path: relProposal, message, fix_hint });
+    }
+  }
+
   // L8：条目守恒（S37）——仅 mergeable+valid 的 `.md` 规格 delta（原型资产天然被 .md 过滤排除）；
   // 目标主文档不存在（全新文档）跳过；目标存在但不可读 → artifact_unreadable（操作级红线）。
   // SPEC_MERGED 后已没有 merge 前目标快照，拿 delta 再对最终目标做守恒会制造假阳性；纵深守恒必须发生在
@@ -2312,12 +2335,13 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
     { id: 8, label: '条目守恒（ID 隐式删除拦截）', violations: countFor(8) },
     { id: 9, label: '下游阻塞理由预检（ProposalBlockReason 全覆盖）', violations: countFor(9) },
     ...(knowledgeLayer.enabled ? [{ id: 10, label: '企业知识（结构 / 引用 / 重号）', violations: countFor(10) }] : []),
+    ...(acceptance.present ? [{ id: 11, label: '验收标准段格式', violations: countFor(11) }] : []),
   ];
 
   // 决策记录 warning（S38，delta-r1 F4）：独立通道，不影响 pass / exit code / violations 枚举。
   // 按 §3.15 稳定排序（code 后 message）；本命令仅一种 warning code，排序为恒等。
   const hasDecisionsDeltaEntry = deltaEntries.some(e => e.category === 'decisions' && e.mergeDisposition === 'mergeable');
-  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...computeChangeTypeLayerWarnings(proposalContent, deltaEntries), ...sqlWarnings, ...conservationWarnings, ...blockWarnings, ...uiWarnings, ...knowledgeLayer.warnings]
+  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...computeChangeTypeLayerWarnings(proposalContent, deltaEntries), ...sqlWarnings, ...conservationWarnings, ...blockWarnings, ...uiWarnings, ...knowledgeLayer.warnings, ...acceptanceWarnings]
     .sort((a, b) => (a.code !== b.code ? (a.code < b.code ? -1 : 1) : (a.message < b.message ? -1 : a.message > b.message ? 1 : 0)));
 
   return {

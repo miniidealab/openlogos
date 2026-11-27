@@ -5,6 +5,7 @@
  * 检查项收敛为 L0～L9，其余级别结论零漂移；存量 `authority_impact` 块一律忽略而非报错。
  */
 import { afterAll, describe, expect, it } from 'vitest';
+import { withoutAcceptanceMissing, stripAcceptanceMissingFromText } from './acceptance-criteria-lint-codes.js';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runChangeLint } from '../src/lib/change-lint.js';
@@ -82,7 +83,8 @@ describe('L10 删除后的 change-lint 检查项与兼容 — S35', () => {
       // 块内容不被解析——诊断中不出现 fact_id / 字段名相关线索
       const text = JSON.stringify(result);
       expect(text, `${block.label}`).not.toMatch(/authority_impact|authority_closure|fact_id|sole_writer/);
-      expect(result.warnings ?? [], `${block.label}：也不得降级为 warning`).toEqual([]);
+      // verify-self-sufficient-cases：夹具早于「验收标准」段，缺段提醒是有意新增的 warning，不属本断言范围。
+      expect(withoutAcceptanceMissing(result.warnings), `${block.label}：也不得降级为 warning`).toEqual([]);
     }
   });
 });
@@ -105,7 +107,7 @@ describe('L10 删除后的端到端 — S35', () => {
     expect(JSON.stringify(envelope)).not.toMatch(/authority_closure_incomplete|authority_impact_/);
     // 文本形态：检查项编号上界为 9，无 L10 行（总数随 L7/L9 的条件在场而变，最多 10 项）
     const lintText = invoke(['change-lint', '--slug', f.slug], f.root);
-    expect(lintText.stdout).toMatch(/PASS（\d+\/\d+）/);
+    expect(stripAcceptanceMissingFromText(lintText.stdout)).toMatch(/PASS（\d+\/\d+）/);
     expect(lintText.stdout).not.toMatch(/Authority|权威闭包/);
     expect(lintText.stdout).not.toMatch(/^\s*[✓✗] L10 /m);
     const shown = [...lintText.stdout.matchAll(/^\s*[✓✗] L(\d+) /gm)].map(m => Number(m[1]));
