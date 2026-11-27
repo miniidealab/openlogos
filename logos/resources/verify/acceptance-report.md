@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 2874 |
+| Defined cases | 2915 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 2874 |
-| Passed | 2869 |
+| Executed cases | 2915 |
+| Passed | 2910 |
 | Failed | 0 |
 | Skipped | 5 |
 | Uncovered | 0 |
@@ -21,8 +21,8 @@
 
 - Mode: `final`
 - Attempted slice: `null`
-- Confirmed slices: `slice-01-smoke-manual-marker`, `slice-02-registry-ledger-pending-list`, `slice-03-accept-gate-waiting-archive`, `slice-04-human-only-guard-and-release`
-- Eligible tests: 2874
+- Confirmed slices: `slice-01-single-command-rerun`, `slice-02-multi-source-rerun`, `slice-03-flaky-record-and-release`
+- Eligible tests: 2915
 - Pending tests: 0
 - Final: true
 

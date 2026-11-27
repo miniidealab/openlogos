@@ -1,0 +1,40 @@
+{
+  "schema": "openlogos/verification-run@1",
+  "run_id": "20261127T155531541Z-verify-22411f",
+  "kind": "verify",
+  "started_at": "2026-11-27T15:55:31.541Z",
+  "finished_at": "2026-11-27T15:55:58.249Z",
+  "outcome": "completed",
+  "gate": {
+    "result": "PASS",
+    "reason": null
+  },
+  "error_code": null,
+  "proposal": {
+    "slug": "verify-flaky-rerun",
+    "run_dir": "verify-runs/20261127T155531541Z-verify-22411f"
+  },
+  "module_scope": null,
+  "verify_mode": "slice-checkpoint",
+  "attempted_slice_id": "slice-02-multi-source-rerun",
+  "environment": null,
+  "deploy_id": null,
+  "counts": {
+    "defined": 34,
+    "executed": 34,
+    "passed": 34,
+    "failed": 0,
+    "skipped": 0,
+    "uncovered": 0
+  },
+  "failed_ids": [],
+  "skipped_ids": [],
+  "uncovered_ids": [],
+  "result_source": "executed",
+  "commit": {
+    "head": "53420629edb881b9dce655bcb44581ec1364aa66",
+    "dirty": true
+  },
+  "cli_version": "0.16.25",
+  "raw_location": "proposal"
+}
