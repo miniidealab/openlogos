@@ -1,0 +1,47 @@
+{
+  "schema": "openlogos/verification-run@1",
+  "run_id": "20261127T191032746Z-verify-a2372d",
+  "kind": "verify",
+  "started_at": "2026-11-27T19:10:32.746Z",
+  "finished_at": "2026-11-27T19:17:02.132Z",
+  "outcome": "completed",
+  "gate": {
+    "result": "PASS",
+    "reason": null
+  },
+  "error_code": null,
+  "proposal": {
+    "slug": "layered-verification",
+    "run_dir": "verify-runs/20261127T191032746Z-verify-a2372d"
+  },
+  "module_scope": null,
+  "verify_mode": "final",
+  "attempted_slice_id": null,
+  "environment": null,
+  "deploy_id": null,
+  "counts": {
+    "defined": 2997,
+    "executed": 2997,
+    "passed": 2992,
+    "failed": 0,
+    "skipped": 5,
+    "uncovered": 0
+  },
+  "failed_ids": [],
+  "skipped_ids": [
+    "ST-S08-45",
+    "ST-S09-219",
+    "ST-S19-35",
+    "ST-S19-36",
+    "ST-S19-37"
+  ],
+  "uncovered_ids": [],
+  "flaky_ids": [],
+  "result_source": "executed",
+  "commit": {
+    "head": "2f72eb66d9d4794314c42afc195bd9eba492d971",
+    "dirty": true
+  },
+  "cli_version": "0.16.26",
+  "raw_location": "proposal"
+}

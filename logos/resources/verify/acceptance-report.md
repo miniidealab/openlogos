@@ -6,10 +6,10 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 2915 |
+| Defined cases | 2997 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 2915 |
-| Passed | 2910 |
+| Executed cases | 2997 |
+| Passed | 2992 |
 | Failed | 0 |
 | Skipped | 5 |
 | Uncovered | 0 |
@@ -21,8 +21,8 @@
 
 - Mode: `final`
 - Attempted slice: `null`
-- Confirmed slices: `slice-01-single-command-rerun`, `slice-02-multi-source-rerun`, `slice-03-flaky-record-and-release`
-- Eligible tests: 2915
+- Confirmed slices: `slice-01-main-path-and-affected-declaration`, `slice-02-layered-proposal-verify`, `slice-03-layered-slice-checkpoint`, `slice-04-release-verify-and-release`
+- Eligible tests: 2997
 - Pending tests: 0
 - Final: true
 
