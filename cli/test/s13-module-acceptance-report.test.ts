@@ -372,6 +372,9 @@ fs.appendFileSync(out, JSON.stringify({ id: 'UT-S60-01', status: 'pass', timesta
     const single = project({ singleModule: true });
     expect([...verifyReportAllowPaths(single, readVerifyConfig(single))].sort())
       .toEqual([`${VERIFY}/acceptance-report.md`, 'logos/resources/verify/test-results.jsonl'].sort());
+    // layered-verification（§2.109.13、code-r1 F5）：发布级的回收清单只有结果文件与发布级报告，不含共用与模块验收报告
+    expect([...verifyReportAllowPaths(root, readVerifyConfig(root), 'release')].sort())
+      .toEqual([`${VERIFY}/release/acceptance-report.md`, 'logos/resources/verify/test-results.jsonl'].sort());
   });
 });
 

@@ -1,6 +1,6 @@
 {
   "schema": "openlogos/asset-manifest@1",
-  "version": "0.16.26",
+  "version": "0.16.27",
   "planContractVersion": "1.4.0",
   "skills": [
     {
@@ -9,7 +9,7 @@
     },
     {
       "path": "skills/change-writer/SKILL.md",
-      "sha256": "e3ae5b63518370e24ee68f02aaeb7537ca55f606aa3998ecc1c174f277cf3d88"
+      "sha256": "f8ba2352e6215eab637d21763e1ec0f0b6eb7702213086b848441599ae1368aa"
     },
     {
       "path": "skills/change-writer/SKILL.en.md",
@@ -37,7 +37,7 @@
     },
     {
       "path": "skills/test-writer/SKILL.md",
-      "sha256": "98fba2c6ae2edc1b9a948005cfc82b4f6566ae0467564af9d6ded72c1ba804da"
+      "sha256": "c92368777a4070e1df2221a5716f30d9344fe9fa419fcbc58d4ef748540529f1"
     },
     {
       "path": "skills/code-reviewer/SKILL.md",
@@ -47,7 +47,7 @@
   "templates": [
     {
       "path": "dist/i18n.js",
-      "sha256": "fba766d96407d75d77724396dc82e8e25934c8a13e97d2eccbd3e42d54766acc"
+      "sha256": "5cf630efd15a0ffc1e12c66c26f3fcace8acb5a895b11b5ec2b034b6adf31180"
     }
   ],
   "schemas": [
@@ -71,7 +71,7 @@
   "plugins": [
     {
       "path": "claude-plugin-template/.claude-plugin/plugin.json",
-      "sha256": "b24020006cabd6a4fd3c0a3764af6fa1f897c2d49f6fc6e3937a4c26de138fd5"
+      "sha256": "6cc25bf8919027b443710d21b62929955240db80a96795d85d6d79c23555d7cb"
     },
     {
       "path": "claude-plugin-template/bin/guard-check",
@@ -114,5 +114,5 @@
       "sha256": "e7dfaa666b8c5a8a3aaa70a5a44fbd36afaa10d9a91e47738a803968353b594d"
     }
   ],
-  "payloadHash": "139d93d11cf76e62587c4461c22a45669d27d433fb221b79724da5cdfad9de43"
+  "payloadHash": "6f10659a29878ce5173d951278796d579bf75493ec23501aa383883e0902ac1f"
 }

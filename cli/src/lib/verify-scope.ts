@@ -164,6 +164,36 @@ export function collectChangedFiles(root: string, baseRef: string, git: GitRunne
   return { ok: true, files: [...files].sort() };
 }
 
+export type ProposalBaseFailureCode = 'no_active_change' | 'not_git_repository' | 'base_ref_missing' | 'base_ref_unreachable' | 'diff_failed';
+
+export type ProposalChangedFiles =
+  | { ok: true; guard: Record<string, unknown>; slug: string; proposalDir: string; baseRef: string; files: string[] }
+  | { ok: false; code: ProposalBaseFailureCode; detail: string; slug: string | null; proposalDir: string | null };
+
+/**
+ * 活跃提案起点（guard.baseRef）到工作区的改动文件集合及其不可用判定（§2.96.3、§2.96.6）。
+ * 模块范围计算与分层验收的扩大规则（§2.109.7）共用这一份判定：没有活跃提案、不是 git 仓库、缺 baseRef、
+ * baseRef 不可达、差异计算失败，依次判断。
+ */
+export function resolveProposalChangedFiles(root: string, git: GitRunner = defaultGitRunner): ProposalChangedFiles {
+  const guard = readGuard(root);
+  const slug = typeof guard?.activeChange === 'string' ? guard.activeChange : null;
+  const proposalDir = slug ? join(root, 'logos', 'changes', slug) : null;
+  if (!guard || !slug || !proposalDir || !existsSync(proposalDir)) {
+    return { ok: false, code: 'no_active_change', detail: '没有活跃提案', slug: null, proposalDir: null };
+  }
+  const fail = (code: ProposalBaseFailureCode, detail: string): ProposalChangedFiles => ({ ok: false, code, detail, slug, proposalDir });
+  const inRepo = git(root, ['rev-parse', '--is-inside-work-tree']);
+  if (inRepo.error || inRepo.status !== 0 || inRepo.stdout.trim() !== 'true') return fail('not_git_repository', '项目不是 git 仓库');
+  const baseRef = typeof guard.baseRef === 'string' && guard.baseRef ? guard.baseRef : null;
+  if (!baseRef) return fail('base_ref_missing', 'guard 缺 baseRef（旧版 CLI 创建的提案）');
+  const reachable = git(root, ['cat-file', '-e', `${baseRef}^{commit}`]);
+  if (reachable.error || reachable.status !== 0) return fail('base_ref_unreachable', `baseRef ${baseRef} 不可达`);
+  const changed = collectChangedFiles(root, baseRef, git);
+  if (!changed.ok) return fail('diff_failed', changed.detail);
+  return { ok: true, guard, slug, proposalDir, baseRef, files: changed.files };
+}
+
 function fallback(modules: string[], code: VerifyScopeFallbackCode, detail: string): VerifyScopeData {
   return { mode: 'fallback-full', modules, reasons: [], fallback_reason: { code, detail }, out_of_scope_result_count: 0 };
 }
@@ -183,19 +213,10 @@ export function resolveVerifyScope(root: string, opts: ResolveVerifyScopeOptions
   const invalid = modules.flatMap(m => (m.paths ?? []).filter(entry => !isValidModulePath(entry)).map(entry => `${m.id}: ${JSON.stringify(entry)}`));
   if (invalid.length > 0) return fallback(allIds, 'module_paths_invalid', invalid.join('；'));
 
-  const guard = readGuard(root);
-  const slug = typeof guard?.activeChange === 'string' ? guard.activeChange : null;
-  const proposalDir = slug ? join(root, 'logos', 'changes', slug) : null;
-  if (!slug || !proposalDir || !existsSync(proposalDir)) return fallback(allIds, 'no_active_change', '没有活跃提案');
-
-  const inRepo = git(root, ['rev-parse', '--is-inside-work-tree']);
-  if (inRepo.error || inRepo.status !== 0 || inRepo.stdout.trim() !== 'true') return fallback(allIds, 'not_git_repository', '项目不是 git 仓库');
-  const baseRef = typeof guard?.baseRef === 'string' && guard.baseRef ? guard.baseRef : null;
-  if (!baseRef) return fallback(allIds, 'base_ref_missing', 'guard 缺 baseRef（旧版 CLI 创建的提案）');
-  const reachable = git(root, ['cat-file', '-e', `${baseRef}^{commit}`]);
-  if (reachable.error || reachable.status !== 0) return fallback(allIds, 'base_ref_unreachable', `baseRef ${baseRef} 不可达`);
-  const changed = collectChangedFiles(root, baseRef, git);
-  if (!changed.ok) return fallback(allIds, 'diff_failed', changed.detail);
+  const base = resolveProposalChangedFiles(root, git);
+  if (!base.ok) return fallback(allIds, base.code, base.detail);
+  const { guard, slug, proposalDir } = base;
+  const changed = base;
 
   const inScope = new Set<string>();
   const reasons: VerifyScopeReason[] = [];

@@ -27,6 +27,13 @@ export type HistoryKind = 'verify' | 'smoke';
 export type HistoryOutcome = 'completed' | 'aborted';
 export type RawLocation = 'proposal' | 'local' | 'none';
 
+export type HistoryLevel = 'proposal' | 'release';
+
+/** 运行所在平台标识：`<process.platform>-<process.arch>`（如 darwin-arm64）。 */
+export function currentPlatform(): string {
+  return `${process.platform}-${process.arch}`;
+}
+
 export interface HistoryCounts {
   defined: number | null;
   executed: number | null;
@@ -61,6 +68,13 @@ export interface VerificationRun {
    * smoke 记录不写；读取时缺失的 verify 记录按空数组补齐，存在但不是字符串数组时整条按损坏记录跳过。
    */
   flaky_ids?: string[];
+  /**
+   * layered-verification（§2.104.3）：verify 的验收级别与运行所在平台（`<process.platform>-<process.arch>`）。
+   * 0.16.27 起的 verify 记录恒写入，smoke 记录不写；读取时缺少 `level` 的 verify 记录按 "proposal"、缺少 `platform` 的按 null 补齐，
+   * 存在但取值非法时整条按损坏记录跳过。
+   */
+  level?: HistoryLevel;
+  platform?: string | null;
   /** verify-self-sufficient-cases（§2.104.3 修改）：none = 环境预检类原因判 FAIL，既未执行命令也未读取结果。 */
   result_source: 'executed' | 'reused' | 'none';
   commit: { head: string | null; dirty: boolean | null };
@@ -105,6 +119,10 @@ export interface HistoryFinish {
   uncoveredIds?: string[];
   /** verify-flaky-rerun：偶发用例 ID（只对 verify 记录写入）。 */
   flakyIds?: string[];
+  /** layered-verification：验收级别（只对 verify 记录写入；缺省 proposal）。 */
+  level?: HistoryLevel;
+  /** layered-verification：发布级验收在执行前固定的提交身份；给出时不在写入时重新读取 HEAD。 */
+  commit?: { head: string; dirty: boolean };
   resultSource: 'executed' | 'reused' | 'none';
   /** 本次实际采集的结果文件（项目根相对）；不存在或未采集时为 null。 */
   resultPath: string | null;
@@ -221,6 +239,7 @@ export function buildRunRecord(ctx: HistoryRunContext, finish: HistoryFinish, co
     skipped_ids: sortedIds(finish.skippedIds),
     uncovered_ids: sortedIds(finish.uncoveredIds),
     ...(ctx.kind === 'verify' ? { flaky_ids: sortedIds(finish.flakyIds) } : {}),
+    ...(ctx.kind === 'verify' ? { level: finish.level === 'release' ? 'release' as const : 'proposal' as const, platform: currentPlatform() } : {}),
     result_source: finish.resultSource === 'executed' ? 'executed' : finish.resultSource === 'none' ? 'none' : 'reused',
     commit: { head: commit.head, dirty: commit.dirty },
     cli_version: VERSION,
@@ -283,7 +302,7 @@ export function writeHistoryRun(ctx: HistoryRunContext, finish: HistoryFinish): 
   };
   let record: VerificationRun;
   try {
-    record = buildRunRecord(ctx, finish);
+    record = finish.commit ? buildRunRecord(ctx, finish, finish.commit) : buildRunRecord(ctx, finish);
   } catch {
     fail('index', indexRel);
     return meta;
@@ -379,6 +398,9 @@ function validRecord(value: unknown, fileRunId: string): value is VerificationRu
   if (!isStrArray(v.failed_ids) || !isStrArray(v.skipped_ids) || !isStrArray(v.uncovered_ids)) return false;
   // verify-flaky-rerun：flaky_ids 可选；存在时必须是字符串数组
   if ('flaky_ids' in v && !isStrArray(v.flaky_ids)) return false;
+  // layered-verification：level / platform 可选；存在时取值必须合法
+  if ('level' in v && v.level !== 'proposal' && v.level !== 'release') return false;
+  if ('platform' in v && !isStrOrNull(v.platform)) return false;
   if (v.result_source !== 'executed' && v.result_source !== 'reused' && v.result_source !== 'none') return false;
   if (!isObj(v.commit) || !isStrOrNull(v.commit.head) || !(v.commit.dirty === null || typeof v.commit.dirty === 'boolean')) return false;
   if (!isStr(v.cli_version)) return false;
@@ -403,6 +425,9 @@ export function readAllRuns(root: string): { runs: VerificationRun[]; warnings: 
       if (validRecord(parsed, name.slice(0, -'.json'.length))) {
         // verify-flaky-rerun：0.16.26 之前的 verify 记录没有 flaky_ids，读取时按空数组补齐
         if (parsed.kind === 'verify' && parsed.flaky_ids === undefined) parsed.flaky_ids = [];
+        // layered-verification：0.16.27 之前的 verify 记录没有 level / platform，读取时按 proposal / null 补齐
+        if (parsed.kind === 'verify' && parsed.level === undefined) parsed.level = 'proposal';
+        if (parsed.kind === 'verify' && parsed.platform === undefined) parsed.platform = null;
         runs.push(parsed);
       }
       else warnings.push({ code: 'verification_history_corrupt', path: rel, message: 'missing or invalid required fields' });

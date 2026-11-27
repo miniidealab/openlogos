@@ -668,7 +668,15 @@ export function deriveSliceVerificationState(
    * module-scoped-verify（spec/test-slice-manifest.md §7.1）：范围内用例集 S = D_M ∪ C 的成员判定。
    * 只有 verify 在模块范围 mode=module 时传入；缺省时集合计算逐字不变。
    */
-  scope?: { inScope: (id: string) => boolean },
+  scope?: {
+    inScope?: (id: string) => boolean;
+    /**
+     * layered-verification（功能规格 §2.109.9）：分层开启时的提案集合 P（三层集合计算的同一结果，本函数不另行计算
+     * 受影响用例；扩大到全量时即全部自动化用例）。只影响 `baseline` 范围 checkpoint 的基线部分：取「P 中的非本提案用例」，
+     * 不与 §2.96 的模块范围求交——扩大到全量时其他模块的基线同样进入（code-r1 F2）；`owned` 范围与 final 不读它。
+     */
+    layeredTotal?: ReadonlySet<string>;
+  },
 ): SliceVerificationState | null {
   if (!shouldUseSliceVerification(proposalDir)) return null;
   const manifestPath = join(proposalDir, TEST_SLICE_MANIFEST);
@@ -771,8 +779,9 @@ export function deriveSliceVerificationState(
   const confirmed = manifest.slices.map(slice => slice.slice_id).filter(id => confirmedSet.has(id));
   const attempted = manifest.slices.find(slice => !confirmedSet.has(slice.slice_id)) ?? null;
   // §7.1：先与范围内用例集求交；S 已含本提案变更测试 C，changed / pending 不会被范围裁掉。
-  const defined = scope
-    ? extractDefinedVerificationIds(root).filter(id => scope.inScope(id) || changedIds.includes(id))
+  const inScope = scope?.inScope;
+  const defined = inScope
+    ? extractDefinedVerificationIds(root).filter(id => inScope(id) || changedIds.includes(id))
     : extractDefinedVerificationIds(root);
   const definedSet = new Set(defined);
   const changedVerificationIds = changedIds.filter(id => definedSet.has(id));
@@ -786,9 +795,23 @@ export function deriveSliceVerificationState(
   // §7（slice-verify-efficient-mode）：owned 范围下基线 B 不进 eligible——不计分母、不计 uncovered，
   // 由 final 统一回归；baseline（含缺省）与引入前逐字一致。pending 与范围无关。
   const verifyScope = manifestVerifyScope(manifest);
-  const eligible = verifyScope === 'owned'
-    ? uniqSorted([...confirmedOwned, ...attemptedOwned])
-    : uniqSorted([...baseline, ...confirmedOwned, ...attemptedOwned]);
+  // §2.109.9：分层开启的 baseline checkpoint——基线部分取提案集合 P 中的非本提案用例；P 可以含模块范围之外的
+  // 已识别场景与主链路用例，故从完整的已定义集合取，不与 §2.96 的范围求交。已确认切片与本片的 owned 照旧并入。
+  const layeredTotal = verifyScope !== 'owned' ? scope?.layeredTotal : undefined;
+  let eligible: string[];
+  if (verifyScope === 'owned') {
+    eligible = uniqSorted([...confirmedOwned, ...attemptedOwned]);
+  } else if (layeredTotal) {
+    const fullDefined = new Set(extractDefinedVerificationIds(root));
+    const layeredBaseline = [...layeredTotal].filter(id => fullDefined.has(id) && !changedIds.includes(id));
+    eligible = uniqSorted([
+      ...layeredBaseline,
+      ...confirmedOwnedAll.filter(id => fullDefined.has(id)),
+      ...attemptedOwnedAll.filter(id => fullDefined.has(id)),
+    ]);
+  } else {
+    eligible = uniqSorted([...baseline, ...confirmedOwned, ...attemptedOwned]);
+  }
   const pending = attempted
     ? changedIds.filter(id => !confirmedOwnedAll.includes(id) && !attemptedOwnedAll.includes(id)).sort()
     : [];

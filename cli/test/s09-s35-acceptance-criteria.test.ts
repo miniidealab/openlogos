@@ -54,9 +54,11 @@ describe('S09 提案验收标准段脚手架', () => {
     expect(heads.filter(h => h === '验收标准')).toHaveLength(1);
     const i = heads.indexOf('验收标准');
     expect(heads[i - 1]).toBe('决策澄清');
-    expect(heads[i + 1]).toBe('变更概述');
+    // layered-verification：其后新增「受影响场景」段，再后才是「变更概述」
+    expect(heads[i + 1]).toBe('受影响场景');
+    expect(heads[i + 2]).toBe('变更概述');
     // 其余既有段与顺序不变
-    expect(heads.filter(h => h !== '验收标准')).toEqual([
+    expect(heads.filter(h => h !== '验收标准' && h !== '受影响场景')).toEqual([
       '变更原因', '最小实现论证', '变更类型', '变更范围', '部署影响', 'UI/UX 变更声明', '决策澄清', '变更概述',
     ]);
     const parsed = parseAcceptanceCriteria(proposal);
@@ -73,7 +75,8 @@ describe('S09 提案验收标准段脚手架', () => {
     expect(heads.filter(h => h === 'Acceptance Criteria')).toHaveLength(1);
     const i = heads.indexOf('Acceptance Criteria');
     expect(heads[i - 1]).toBe('Decision Clarification');
-    expect(heads[i + 1]).toBe('Summary');
+    expect(heads[i + 1]).toBe('Affected Scenarios'); // layered-verification 新增段
+    expect(heads[i + 2]).toBe('Summary');
     for (const label of ['Automated verification requirements', 'Platform-limited cases', 'Human-involved acceptance']) {
       expect(proposal).toMatch(new RegExp(`^- ${label}: \\[.+\\]$`, 'm'));
     }

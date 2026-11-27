@@ -129,6 +129,30 @@
           },
           "additionalProperties": false
         },
+        "layered": {
+          "type": "object",
+          "description": "分层验收（可选，layered-verification，功能规格 §2.109.2）。开启后提案级 verify 只验收「本提案用例 ∪ 受影响用例 ∪ 主链路用例」，评估不可用或涉及共享改动时只扩大不缩小；发布级全量验收（openlogos verify --release）不读取本配置。整个对象可省略，省略等价于缺省值；取值非法的项按缺省值处理并输出警告 layered_config_invalid，不改变门禁结论。只有项目级配置。开启的前置条件：项目的测试入口按 OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS 选择要执行的测试文件。",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "是否开启分层验收（缺省 false）。未开启时验收范围、门禁、报告与退出码和 0.16.26 相同。"
+            },
+            "main_path_max": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 50,
+              "description": "全项目主链路用例总数的上限（缺省 50，正整数）。分层开启时超过上限在执行预跑命令之前判 FAIL（main_path_over_limit）；未开启时只由 change-lint 以警告给出。"
+            },
+            "shared_paths": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "default": ["**/package.json", "**/package-lock.json", "**/pnpm-lock.yaml", "**/yarn.lock", "**/Cargo.toml", "**/Cargo.lock", "**/go.mod", "**/go.sum", "**/pyproject.toml", "**/requirements*.txt"],
+              "description": "共享路径 glob（语法同 modules[].paths）。提案起点到工作区的改动命中任一条时，提案级验收扩大到全量（shared_path_changed）。配置后以配置值替换缺省清单（可以写空数组）；logos/logos.config.json 与 logos/logos-project.yaml 恒按共享配置处理，不受本项影响。"
+            }
+          },
+          "additionalProperties": false
+        },
         "requirements": {
           "$ref": "#/definitions/VerifyRequirements",
           "description": "verify 环境要求（可选，verify-self-sufficient-cases，功能规格 §2.106.4）。verify 在执行任何预跑命令之前检查：env 中的变量存在且非空、commands 中的命令可在 PATH 上解析、checks 中的检查命令经与预跑命令同一沙箱执行器在 60 秒内以 0 退出；缺任一项判 FAIL（verify_env_not_ready），不执行预跑命令。只做声明与预检，不过滤未声明的环境变量。"

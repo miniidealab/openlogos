@@ -82,6 +82,86 @@
         "properties": { "id": { "type": "string" }, "module": { "type": ["string", "null"] }, "first_error": { "type": ["string", "null"] } }
       }
     }
+    ,"level": {
+      "$comment": "layered-verification（功能规格 §2.109.14，spec/cli-json-output.md「verify 分层验收与发布级验收」）：验收级别，0.16.27 起恒输出；旧版输出没有该字段，消费方按 proposal 处理。",
+      "enum": ["proposal", "release"]
+    }
+    ,"release": {
+      "$comment": "layered-verification：只在发布级验收（openlogos verify --release）输出。commit 是执行前固定的完整提交号；commit_unchanged / worktree_clean 为收尾复核结果，任一为 false 时 gate.reason 为 release_commit_changed。",
+      "type": "object",
+      "required": ["commit", "platform", "commit_unchanged", "worktree_clean", "head_at_finish"],
+      "additionalProperties": true,
+      "properties": {
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+        "platform": { "type": "string", "minLength": 1 },
+        "commit_unchanged": { "type": "boolean" },
+        "worktree_clean": { "type": "boolean" },
+        "head_at_finish": { "type": ["string", "null"] }
+      }
+    }
+    ,"layers": {
+      "$comment": "layered-verification：只在分层开启（verify.layered.enabled: true）的提案级验收输出，含执行前判 FAIL 的响应。",
+      "type": "object",
+      "required": ["changed", "affected", "main_path", "total", "execution", "declaration", "expansion", "outside_result_count"],
+      "additionalProperties": true,
+      "properties": {
+        "changed": { "type": "object", "required": ["count", "ids"], "additionalProperties": true, "properties": { "count": { "type": "integer", "minimum": 0 }, "ids": { "$ref": "#/$defs/stringArray" } } },
+        "affected": {
+          "type": "object", "required": ["count", "ids", "scenarios"], "additionalProperties": true,
+          "properties": {
+            "count": { "type": "integer", "minimum": 0 },
+            "ids": { "$ref": "#/$defs/stringArray" },
+            "scenarios": { "type": "array", "items": {
+              "type": "object", "required": ["id", "sources"], "additionalProperties": true,
+              "properties": {
+                "id": { "type": "string", "pattern": "^S[0-9]+$" },
+                "sources": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["declared", "delta"] } }
+              }
+            } }
+          }
+        },
+        "main_path": {
+          "type": "object", "required": ["count", "limit", "ids", "problems", "flaky_ids"], "additionalProperties": true,
+          "properties": {
+            "count": { "type": "integer", "minimum": 0 },
+            "limit": { "type": "integer", "minimum": 1 },
+            "ids": { "$ref": "#/$defs/stringArray" },
+            "problems": { "type": "array", "items": {
+              "type": "object", "required": ["file", "id", "code"], "additionalProperties": true,
+              "properties": {
+                "file": { "type": "string" },
+                "id": { "type": ["string", "null"] },
+                "code": { "enum": ["undefined_id", "manual_case", "not_ut_st", "duplicate_id", "duplicate_section", "item_without_id"] }
+              }
+            } },
+            "flaky_ids": { "$ref": "#/$defs/stringArray" }
+          }
+        },
+        "total": { "type": "object", "required": ["count", "ids"], "additionalProperties": true, "properties": { "count": { "type": "integer", "minimum": 0 }, "ids": { "$ref": "#/$defs/stringArray" } } },
+        "execution": { "type": "object", "required": ["count", "ids"], "additionalProperties": true, "properties": { "count": { "type": "integer", "minimum": 0 }, "ids": { "$ref": "#/$defs/stringArray" } } },
+        "declaration": {
+          "type": "object", "required": ["status", "detail"], "additionalProperties": true,
+          "properties": {
+            "status": { "enum": ["usable", "missing", "invalid", "unknown", "scenario_unknown", "none"] },
+            "detail": { "type": ["string", "null"] }
+          }
+        },
+        "expansion": {
+          "type": "object", "required": ["level", "reasons"], "additionalProperties": true,
+          "properties": {
+            "level": { "enum": ["none", "module", "full"] },
+            "reasons": { "type": "array", "items": {
+              "type": "object", "required": ["code", "detail"], "additionalProperties": true,
+              "properties": {
+                "code": { "enum": ["no_active_change", "base_ref_unavailable", "shared_path_changed", "shared_change_declared", "declaration_missing", "declaration_invalid", "assessment_unknown", "scenario_unknown", "module_scope_unavailable"] },
+                "detail": { "type": "string" }
+              }
+            } }
+          }
+        },
+        "outside_result_count": { "type": "integer", "minimum": 0 }
+      }
+    }
   },
   "allOf": [
     {

@@ -1009,7 +1009,9 @@ describe('S35 — 同源锚与契约', () => {
     // knowledge_apply_incomplete。
     // 58 → 59：§2.106.8（verify-self-sufficient-cases）L11 新增 acceptance_criteria_invalid；
     // 缺段提醒 acceptance_criteria_missing 走 warning 通道，不进违规码闭合枚举。
-    expect(registry.size).toBe(59);
+    // 59 → 60：§2.109.4（layered-verification）L12 新增 affected_scenarios_invalid；
+    // 缺段提醒 affected_scenarios_missing 与主链路相关提醒走 warning 通道。
+    expect(registry.size).toBe(60);
     const flowReasonCodes = new Set(['tasks_code_header_missing', 'code_change_requires_real_test_ids', 'deployment_decision_conflict']);
     for (const v of violations) {
       expect(typeof v.code).toBe('string');

@@ -158,6 +158,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'verify.rerunWriteBackRefused': 'Refused to write the merged results to {path} ({reason}); rerun results were not adopted and the gate uses the first-run snapshot.',
     'verify.flakyTitle': 'Flaky cases ({count}): failed on the first run, passed on a rerun in the same sandbox',
     'verify.flakyHint': 'Make sure the first run did not change the environment; a case that keeps turning up here should be investigated, not left to the rerun.',
+    'verify.layeredLevel': 'Level: proposal (layered)',
+    'verify.releaseLevel': 'Level: release (full)',
+    'verify.releaseIdentity': 'Commit: {commit}  Platform: {platform}',
+    'verify.layeredScope': 'Scope: changed {changed} + affected {affected} + main path {mainPath} = {total} cases (expansion: {expansion})',
+    'verify.layeredNotRelease': 'A proposal-level pass does not mean the product can be released; a release-level full run for this commit is required before release.',
+    'verify.layeredFlakyHint': 'Main path cases must not rely on reruns: fix the case or remove it from the main path.',
     'verify.rerunNotNarrowed': 'The test entry did not narrow the rerun to OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS; records outside the rerun set were not adopted: {ids}',
     'verify.rerunSandboxUnavailable': 'The first-run execution environment can no longer be used ({reason}); not rerun, they remain failed: {ids}',
     'verify.rerunInvalidLines': 'Rerun output contained {count} invalid line(s); they are kept in the result ledger consistency diagnostics.',
@@ -727,6 +733,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'verify.rerunWriteBackRefused': '拒绝经 {path} 写回合并结果（{reason}）：复跑结果一律不采信，门禁以首跑快照判定。',
     'verify.flakyTitle': '偶发用例（{count} 条）：首跑失败、同一沙箱内复跑通过',
     'verify.flakyHint': '请确认不是首次运行改变了环境；同一用例反复偶发时应排查，而不是继续依赖复跑。',
+    'verify.layeredLevel': '级别：提案级（分层）',
+    'verify.releaseLevel': '级别：发布级（全量）',
+    'verify.releaseIdentity': '提交：{commit}  平台：{platform}',
+    'verify.layeredScope': '验收范围：本提案 {changed} + 受影响 {affected} + 主链路 {mainPath} = 共 {total} 条（扩大级别：{expansion}）',
+    'verify.layeredNotRelease': '提案级通过不等于可以发布；发布前须有该提交的发布级全量结论。',
+    'verify.layeredFlakyHint': '主链路用例不得依赖复跑通过：修复该用例，或把它移出主链路。',
     'verify.rerunNotNarrowed': '复跑时测试入口未按 OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS 收窄，集合之外的记录未采信：{ids}',
     'verify.rerunSandboxUnavailable': '首跑执行环境已无法继续使用（{reason}），未复跑，以下用例维持失败：{ids}',
     'verify.rerunInvalidLines': '复跑输出中有 {count} 行非法记录，已计入结果账本一致性诊断。',
@@ -1268,6 +1280,15 @@ defaults: []
 - 平台限定用例：[无 / 用例 ID 与适用平台或执行条件]
 - 需要人参与的验收：[无 / 人工验收事项与执行环节]
 
+## 受影响场景
+
+\`\`\`yaml
+schema: openlogos/affected-scenarios@1
+assessment: pending          # pending（未评估）| assessed（已逐个评估）| unknown（无法评估）
+shared_change: false         # 本次是否涉及共享代码、配置或依赖
+scenarios: []                # 每项 { id: "S13", reason: "<为什么受波及>" }
+\`\`\`
+
 ## 变更概述
 [用 1-3 段话概述具体改什么]
 `;
@@ -1346,6 +1367,15 @@ defaults: []
 - Automated verification requirements: [none / \`env:<VAR>\`, \`command:<name>\`, \`check:<name>\` entries — the config diff expected in verify.requirements]
 - Platform-limited cases: [none / case IDs with the platform or execution condition]
 - Human-involved acceptance: [none / manual acceptance items and the stage they run in]
+
+## Affected Scenarios
+
+\`\`\`yaml
+schema: openlogos/affected-scenarios@1
+assessment: pending          # pending (not assessed) | assessed | unknown (cannot assess)
+shared_change: false         # does this change touch shared code, configuration or dependencies
+scenarios: []                # each item { id: "S13", reason: "<why it is affected>" }
+\`\`\`
 
 ## Summary
 [Describe what will change in 1-3 paragraphs]

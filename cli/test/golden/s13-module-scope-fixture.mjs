@@ -189,6 +189,8 @@ function normalizeRun(root, run) {
   if (env && env.data && typeof env.data === 'object') { env.data = { ...env.data }; delete env.data.history; }
   // verify-flaky-rerun（§2.108.11）：0.16.26 起 data.rerun 恒输出，是引入后新增的字段，比较前剔除
   if (env && env.data && typeof env.data === 'object') delete env.data.rerun;
+  // layered-verification（§2.109.15）：0.16.27 起 data.level 恒输出，是引入后新增的字段，比较前剔除
+  if (env && env.data && typeof env.data === 'object') delete env.data.level;
   return {
     status: run.status,
     envelope: env ? JSON.parse(norm(JSON.stringify(env))) : null,

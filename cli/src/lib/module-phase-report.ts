@@ -215,18 +215,55 @@ export function normalizeRelPath(path: string): string {
   return posix.normalize(path.trim().replace(/\\/g, '/')).replace(/^\.\//, '');
 }
 
-/** 多模块项目中的模块报告保留路径（任一已登记模块的三类模块报告，§2.99.2）。单模块项目为空集。 */
+/**
+ * layered-verification（功能规格 §2.109.13）：发布级验收报告。放在独立子目录，不与模块验收报告
+ * `<module>-acceptance-report.md` 同形（模块名可以合法地叫 `release`）。
+ */
+export const RELEASE_ACCEPTANCE_REPORT_PATH = 'logos/resources/verify/release/acceptance-report.md';
+
+/**
+ * 报告保留路径：发布级验收报告（任何项目），以及多模块项目中任一已登记模块的三类模块报告（§2.99.2）。
+ */
 export function reservedModuleReportPaths(root: string): Set<string> {
   const modules = registeredModules(readProjectYaml(root).data?.modules);
-  const out = new Set<string>();
+  const out = new Set<string>([RELEASE_ACCEPTANCE_REPORT_PATH]);
   if (modules.length < 2) return out;
   for (const m of modules) for (const phase of ['acceptance', 'deployment', 'smoke'] as const) out.add(moduleReportPath(m.id, phase));
   return out;
 }
 
 /** 给定的输出路径中落在保留路径上的项（按 [配置项, 原路径] 返回）。 */
-export function reservedPathCollisions(root: string, paths: Array<[string, string | undefined | null]>): Array<[string, string]> {
+export function reservedPathCollisions(
+  root: string,
+  paths: Array<[string, string | undefined | null]>,
+  /** 本次调用额外保留的路径（如发布级验收下的共用验收报告）。 */
+  extraReserved: readonly string[] = [],
+): Array<[string, string]> {
   const reserved = reservedModuleReportPaths(root);
+  for (const path of extraReserved) reserved.add(normalizeRelPath(path));
   if (reserved.size === 0) return [];
-  return paths.filter((p): p is [string, string] => typeof p[1] === 'string' && reserved.has(normalizeRelPath(p[1])));
+  // 除路径文本外，再比较文件系统身份（code-r3 F5）：在不区分大小写的卷上仅大小写不同的拼写，以及硬链接、符号链接，
+  // 都可以指向同一份既有的保留文件——只比较字符串会放行，随后预跑在启动命令前把它清空。
+  const reservedIdentities = new Set<string>();
+  for (const path of reserved) {
+    const id = fileIdentity(root, path);
+    if (id) reservedIdentities.add(id);
+  }
+  return paths.filter((p): p is [string, string] => {
+    if (typeof p[1] !== 'string') return false;
+    const normalized = normalizeRelPath(p[1]);
+    if (reserved.has(normalized)) return true;
+    const id = fileIdentity(root, normalized);
+    return id !== null && reservedIdentities.has(id);
+  });
+}
+
+/** 已存在文件的文件系统身份（设备号 + inode，跟随符号链接）；不存在或不可读时为 null。 */
+function fileIdentity(root: string, rel: string): string | null {
+  try {
+    const st = statSync(join(root, rel), { bigint: true });
+    return `${st.dev}:${st.ino}`;
+  } catch {
+    return null;
+  }
 }

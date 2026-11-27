@@ -32,6 +32,8 @@ const WHITELIST = [
   'verify_mode', 'attempted_slice_id', 'environment', 'deploy_id', 'counts', 'failed_ids', 'skipped_ids', 'uncovered_ids',
   // verify-flaky-rerun（§2.104.3 修改）：0.16.26 起 verify 记录恒写入 flaky_ids（smoke 记录不写）
   'flaky_ids',
+  // layered-verification（§2.104.3 修改）：0.16.27 起 verify 记录恒写入 level、platform（smoke 记录不写）
+  'level', 'platform',
   'result_source', 'commit', 'cli_version', 'raw_location',
 ].sort();
 

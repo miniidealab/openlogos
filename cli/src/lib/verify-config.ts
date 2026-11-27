@@ -57,6 +57,61 @@ export interface NormalizedVerifyConfig {
    * 由 verify 输出警告 rerun_config_invalid（不改变门禁结论）。
    */
   rerunFailed?: NormalizedRerunFailedConfig;
+  /**
+   * layered-verification（功能规格 §2.109.2）：分层验收配置。非法项按缺省值处理，`invalid` 列出被替换的字段路径，
+   * 由 verify 输出警告 layered_config_invalid（不改变门禁结论）。
+   */
+  layered?: NormalizedLayeredConfig;
+}
+
+export interface NormalizedLayeredConfig {
+  enabled: boolean;
+  mainPathMax: number;
+  /** 生效的共享路径 glob：配置值替换缺省清单（可以为空数组）。 */
+  sharedPaths: string[];
+  /** 取值非法、已按缺省值处理的字段路径（如 `verify.layered.main_path_max`）。 */
+  invalid: string[];
+}
+
+export const DEFAULT_LAYERED_ENABLED = false;
+export const DEFAULT_LAYERED_MAIN_PATH_MAX = 50;
+export const DEFAULT_LAYERED_SHARED_PATHS: readonly string[] = Object.freeze([
+  '**/package.json', '**/package-lock.json', '**/pnpm-lock.yaml', '**/yarn.lock',
+  '**/Cargo.toml', '**/Cargo.lock', '**/go.mod', '**/go.sum',
+  '**/pyproject.toml', '**/requirements*.txt',
+]);
+
+/** glob 条目合法性与 modules[].paths 相同（§2.96.1）：非空字符串、不以 `/` 开头、不含 `..` 段。 */
+function isValidSharedGlob(entry: unknown): entry is string {
+  if (typeof entry !== 'string' || entry.trim() === '') return false;
+  if (entry.startsWith('/')) return false;
+  return !entry.split('/').some(seg => seg === '..');
+}
+
+/** 读取并归一化 `verify.layered`：整个对象可省略；非法项按缺省值处理并记录字段路径。 */
+export function normalizeLayeredConfig(raw: unknown): NormalizedLayeredConfig {
+  const out: NormalizedLayeredConfig = {
+    enabled: DEFAULT_LAYERED_ENABLED, mainPathMax: DEFAULT_LAYERED_MAIN_PATH_MAX, sharedPaths: [...DEFAULT_LAYERED_SHARED_PATHS], invalid: [],
+  };
+  if (raw === undefined) return out;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    out.invalid.push('verify.layered');
+    return out;
+  }
+  const record = raw as Record<string, unknown>;
+  if (record.enabled !== undefined) {
+    if (typeof record.enabled === 'boolean') out.enabled = record.enabled;
+    else out.invalid.push('verify.layered.enabled');
+  }
+  if (record.main_path_max !== undefined) {
+    if (typeof record.main_path_max === 'number' && Number.isInteger(record.main_path_max) && record.main_path_max > 0) out.mainPathMax = record.main_path_max;
+    else out.invalid.push('verify.layered.main_path_max');
+  }
+  if (record.shared_paths !== undefined) {
+    if (Array.isArray(record.shared_paths) && record.shared_paths.every(isValidSharedGlob)) out.sharedPaths = [...record.shared_paths];
+    else out.invalid.push('verify.layered.shared_paths');
+  }
+  return out;
 }
 
 export interface NormalizedRerunFailedConfig {
@@ -177,6 +232,7 @@ export function normalizeVerifyConfig(rawVerify: unknown): NormalizedVerifyConfi
     moduleCommands: normalizeModuleCommands(verify.modules),
     moduleCommandIds: Object.keys(asRecord(verify.modules) ?? {}),
     rerunFailed: normalizeRerunFailedConfig(verify.rerun_failed),
+    layered: normalizeLayeredConfig(verify.layered),
   };
 }
 
@@ -196,7 +252,14 @@ function normalizeModuleCommands(raw: unknown): Record<string, ModuleCommandConf
   return out;
 }
 
-export function readVerifyConfig(root: string): NormalizedVerifyConfig {
+/** 提案级的共用验收报告：发布级验收不得读写它（§2.109.11）。 */
+export const SHARED_ACCEPTANCE_REPORT_PATH = 'logos/resources/verify/acceptance-report.md';
+
+/**
+ * 读取 verify 配置。`opts.release`（发布级验收，code-r2 F5）：结果路径另外不得落在共用验收报告上——
+ * 与落在模块报告、发布级报告上同一处理（改写到默认路径并记录，配置了命令时由调用方阻止命令启动）。
+ */
+export function readVerifyConfig(root: string, opts: { release?: boolean } = {}): NormalizedVerifyConfig {
   const config = asRecord(readJsonFile(join(root, 'logos', 'logos.config.json')));
   const normalized = normalizeVerifyConfig(config?.verify);
   // 多模块项目中结果路径不得落在模块报告保留路径上（§2.99.2）：与 smoke 的报告路径同一处理——改写到默认路径
@@ -205,7 +268,7 @@ export function readVerifyConfig(root: string): NormalizedVerifyConfig {
     ['verify.result_path', normalized.resultPath],
     ['verify.regression_result_path', normalized.regressionResultPath],
     ['verify.incremental_result_path', normalized.incrementalResultPath],
-  ])) {
+  ], opts.release ? [SHARED_ACCEPTANCE_REPORT_PATH] : [])) {
     if (key === 'verify.result_path') {
       normalized.resultPath = DEFAULT_VERIFY_RESULT_PATH;
       redirects.push({ config_key: key, path, fallback: DEFAULT_VERIFY_RESULT_PATH });

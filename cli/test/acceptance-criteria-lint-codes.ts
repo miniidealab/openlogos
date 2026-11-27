@@ -7,6 +7,7 @@
  * 「改动前实测基线（golden）+ 本模块追加的部分」，承认这次有意扩充，同时保留「其它任何意外增删改序都会变红」的强度。
  */
 import type { ChangeLintWarning } from '../src/lib/change-lint.js';
+import { AFFECTED_MISSING_WARNING, AFFECTED_NONE_SECTION, LAYERED_VIOLATION_CODES } from './layered-lint-codes.js';
 
 /** 追加在注册表末尾（注册表中紧跟 `knowledge_apply_incomplete`；按序比对的测试中基线末项即该锚）。 */
 export const ACCEPTANCE_CRITERIA_CODES = ['acceptance_criteria_invalid'] as const;
@@ -15,20 +16,23 @@ export function withAcceptanceCriteriaCodes(codes: readonly string[]): string[] 
   if (!codes.includes('knowledge_apply_incomplete')) {
     throw new Error('golden 违规码基线缺少锚 knowledge_apply_incomplete（应先经 withKnowledgeCodes 并入 L10 码）');
   }
-  return [...codes, ...ACCEPTANCE_CRITERIA_CODES];
+  // layered-verification：注册表末尾继续追加 L12 的 affected_scenarios_invalid（见 layered-lint-codes.ts）
+  return [...codes, ...ACCEPTANCE_CRITERIA_CODES, ...LAYERED_VIOLATION_CODES];
 }
 
 export const ACCEPTANCE_MISSING_WARNING = 'acceptance_criteria_missing';
+/** 早于对应能力的夹具提案会多出的缺段提醒：「验收标准」与「受影响场景」（layered-verification）。 */
+const MISSING_SECTION_WARNINGS: readonly string[] = [ACCEPTANCE_MISSING_WARNING, AFFECTED_MISSING_WARNING];
 
 /** 去掉缺段提醒：夹具提案早于本能力、刻意不带「验收标准」段时，用于比对其余 warning 零漂移。 */
 export function withoutAcceptanceMissing<T extends Pick<ChangeLintWarning, 'code'>>(warnings: readonly T[] | undefined): T[] {
-  return (warnings ?? []).filter(w => w.code !== ACCEPTANCE_MISSING_WARNING);
+  return (warnings ?? []).filter(w => !MISSING_SECTION_WARNINGS.includes(w.code));
 }
 
 /** JSON 信封层面同口径去掉缺段提醒；剩余 warnings 为空时按契约省略整个字段。 */
 export function stripAcceptanceMissingFromData<T extends { warnings?: Array<{ code: string }> }>(data: T): T {
   if (!data.warnings) return data;
-  const rest = data.warnings.filter(w => w.code !== ACCEPTANCE_MISSING_WARNING);
+  const rest = data.warnings.filter(w => !MISSING_SECTION_WARNINGS.includes(w.code));
   const out = { ...data } as T;
   if (rest.length === 0) delete out.warnings;
   else out.warnings = rest;
@@ -42,6 +46,8 @@ export const ACCEPTANCE_NONE_SECTION_ZH = [
   '- 平台限定用例：无',
   '- 需要人参与的验收：无',
   '',
+  // layered-verification：同时带上合法的「受影响场景」段，夹具才没有任何缺段提醒
+  AFFECTED_NONE_SECTION,
 ].join('\n');
 
 /** 把 `openlogos change` 脚手架里「验收标准」段的三个占位填成「无」（zh / en 均可）。 */
@@ -64,7 +70,7 @@ export function stripAcceptanceMissingFromText(stdout: string): string {
   const out: string[] = [];
   let removed = 0;
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].startsWith(`  ⚠ [${ACCEPTANCE_MISSING_WARNING}] `)) {
+    if (MISSING_SECTION_WARNINGS.some(code => lines[i].startsWith(`  ⚠ [${code}] `))) {
       removed++;
       if (i + 1 < lines.length && lines[i + 1].startsWith('      建议：')) i++;
       continue;

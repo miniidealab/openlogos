@@ -69,6 +69,8 @@ Commands:
                        --module <id>               Filter to a specific module
                        --interval <seconds>        Polling interval (default: 2)
   verify             Verify test results against test case specs
+                       --release                    Release-level full verification of the current commit (clean git tree required)
+                       --release --check [--commit <sha>]  Read-only: does the commit have a valid release-level conclusion on this platform
   smoke              Verify deployed environment against smoke test specs
                        --env <name>                 Target environment label
   deploy-done        Mark the active change deployment as completed
@@ -117,7 +119,8 @@ Commands:
   knowledge <sub>    Enterprise knowledge without a proposal: apply <candidate-dir> [--init-tags] / apply --recover / index / check
                        list [--module <m>] [--tag <t>] / show <KXX> / refs <KXX|KXX-Rn>
   history <sub>      Verification history of verify / smoke runs (read-only): list [--kind verify|smoke] [--slug <s>]
-                       [--result pass|fail|aborted] [--module <id>] [--limit <n>] / show <run_id>
+                       [--result pass|fail|aborted] [--module <id>] [--level proposal|release]
+                       [--commit <sha>] [--limit <n>] / show <run_id>
   impact             Classify a git change range as lifecycle-only bookkeeping (read-only, for CI)
                        --base <rev> --head <rev>   Git range mode (safe revision resolution)
                        --stdin                      Read \`git diff --no-relative --name-status -z\` bytes from stdin
@@ -258,9 +261,28 @@ async function main() {
       watch(format, moduleArg, Number.isFinite(interval) ? interval : undefined);
       break;
     }
-    case 'verify':
-      verify(format, { freshSandbox: args.includes('--fresh-sandbox'), all: args.includes('--all') });
+    case 'verify': {
+      // layered-verification（§2.109.11、§2.109.12）：--release 发布级全量验收；--release --check [--commit <sha>] 只读查询
+      const releaseFlag = args.includes('--release');
+      const checkFlag = args.includes('--check');
+      const commitIndex = args.indexOf('--commit');
+      const commitValue = commitIndex === -1 ? undefined : args[commitIndex + 1];
+      const usage = (message: string): never => {
+        if (format === 'json') console.error(JSON.stringify({ command: 'verify', version: VERSION, timestamp: new Date().toISOString(), error: { code: 'INVALID_ARGUMENT', message } }));
+        else console.error(`Error: ${message}\nUsage: openlogos verify [--release [--check [--commit <sha>]]] [--all] [--fresh-sandbox] [--format json]`);
+        process.exit(2);
+      };
+      if (checkFlag && !releaseFlag) usage('--check requires --release');
+      if (commitIndex !== -1 && !(releaseFlag && checkFlag)) usage('--commit requires --release --check');
+      if (commitIndex !== -1 && (commitValue === undefined || commitValue.startsWith('--'))) usage('--commit requires a value');
+      if (releaseFlag && checkFlag) {
+        const { verifyReleaseCheck } = await import('./commands/verify-release.js');
+        verifyReleaseCheck(format, commitValue);
+        break;
+      }
+      verify(format, { freshSandbox: args.includes('--fresh-sandbox'), all: args.includes('--all'), release: releaseFlag });
       break;
+    }
     case 'smoke': {
       const envArg = args.includes('--env') ? args[args.indexOf('--env') + 1] : undefined;
       smoke(format, envArg, { freshSandbox: args.includes('--fresh-sandbox') });

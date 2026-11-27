@@ -10,6 +10,8 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { parseAcceptanceCriteria, describeAcceptanceProblem } from './acceptance-criteria.js';
+import { parseAffectedDeclaration, knownScenarioIds } from './affected-scenarios.js';
+import { readMainPathSet, readMainPathLimit } from './main-path.js';
 import { join } from 'node:path';
 import {
   parseTaskSections,
@@ -170,6 +172,9 @@ export const CHANGE_LINT_VIOLATION_CODES = [
   // L11 proposal「验收标准」段格式（verify-self-sufficient-cases，功能规格 §2.106.8）：段在场时才检查；
   // 缺段走 warning `acceptance_criteria_missing`，不进本枚举。
   'acceptance_criteria_invalid',
+  // L12 proposal「受影响场景」段结构（layered-verification，功能规格 §2.109.4）：段在场时才检查；
+  // 缺段走 warning `affected_scenarios_missing`，不进本枚举。
+  'affected_scenarios_invalid',
 ] as const;
 
 export type ChangeLintViolationCode = typeof CHANGE_LINT_VIOLATION_CODES[number];
@@ -256,7 +261,14 @@ export type ChangeLintWarningCode =
   // S45 L10：引用了 deprecated 的知识条目 / 规则——提醒、不阻断（文件与行写在 message）。
   | 'knowledge_reference_deprecated'
   // §2.106.8：proposal 缺「验收标准」段——非 canonical 段，提醒补段、不阻断在途提案。
-  | 'acceptance_criteria_missing';
+  | 'acceptance_criteria_missing'
+  // §2.109.4：proposal 缺「受影响场景」段——非 canonical 段，0.16.27 之前的提案没有它，只提醒。
+  | 'affected_scenarios_missing'
+  // §2.109.4：声明 assessment: unknown——合法，但分层开启时验收范围会扩大。
+  | 'affected_scenarios_unknown'
+  // §2.109.3：主链路小节结构错误 / 超过上限——写规格时的提醒；分层开启时 verify 据此判 FAIL。
+  | 'main_path_invalid'
+  | 'main_path_over_limit';
 
 export interface ChangeLintWarning {
   code: ChangeLintWarningCode;
@@ -2179,6 +2191,67 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
     }
   }
 
+  // L12：proposal「受影响场景」段（§2.109.4）——可用性判定与 verify 同源（parseAffectedDeclaration）。
+  // 缺段只警告；未填写（pending）、结构非法、理由为空、编号重复、场景不存在报违规；unknown 通过并提示。
+  const affected = parseAffectedDeclaration(proposalContent, knownScenarioIds(root, proposalDir));
+  const layeredWarnings: ChangeLintWarning[] = [];
+  const AFFECTED_FIX_HINT = '在「受影响场景」段的 YAML 中：assessment 写 assessed（已逐个评估）或 unknown（无法评估，不猜测）；shared_change 写布尔值；scenarios 每项写已存在的场景编号 id 与非空 reason，编号不重复';
+  if (affected.status === 'missing') {
+    layeredWarnings.push({
+      code: 'affected_scenarios_missing',
+      message: `${relProposal}：缺少「受影响场景」段；分层验收开启时验收范围会按「评估不可用」扩大`,
+      fix_hint: '按 openlogos change 脚手架在「变更概述」之前补回「## 受影响场景」段（fenced YAML：schema、assessment、shared_change、scenarios）',
+    });
+  } else if (affected.status === 'invalid') {
+    for (const problem of affected.problems) {
+      pushViolation(acc, 12, {
+        code: 'affected_scenarios_invalid',
+        path: relProposal,
+        message: `${relProposal}:${affected.line} 受影响场景段：${problem}`,
+        fix_hint: AFFECTED_FIX_HINT,
+      });
+    }
+  } else if (affected.status === 'scenario_unknown') {
+    pushViolation(acc, 12, {
+      code: 'affected_scenarios_invalid',
+      path: relProposal,
+      message: `${relProposal}:${affected.line} 受影响场景段引用了不存在的场景：${affected.unknownScenarioIds.join('、')}`,
+      fix_hint: '只写已存在的场景编号（已合并的场景文档或测试用例文档，或本提案 deltas 中新建的场景）；写错的编号改正或删除',
+    });
+  } else if (affected.status === 'unknown') {
+    layeredWarnings.push({
+      code: 'affected_scenarios_unknown',
+      message: `${relProposal}：受影响场景声明为「无法评估」（assessment: unknown）；分层验收开启时验收范围会扩大`,
+      fix_hint: '能够评估时改为 assessment: assessed 并列出受影响场景；确实无法判断时保持 unknown',
+    });
+  }
+
+  // 主链路小节（§2.109.3）——读取与 verify 同源（readMainPathSet）；对象是测试文档的有效视图：
+  // 已合并文档叠加本提案测试 delta 的合成后态（与上方 L4 同一合成结果）。问题一律为警告，不计违规。
+  const mainPathOverrides = new Map<string, string>();
+  // SPEC_MERGED 之后磁盘上的测试文档已是合并结果，不再叠加 delta（重放会把主链路小节算成两个）；
+  // 修正待应用时以合并基线叠加修正后的 delta（与 L4 的阶段边界相同）。
+  if (!specCompleteRaw || amendCtx !== null) {
+    for (const state of testAfterStates) mainPathOverrides.set(state.target.targetPath, state.target.afterBytes.toString('utf8'));
+  }
+  const mainPath = readMainPathSet(root, mainPathOverrides);
+  const mainPathLimit = readMainPathLimit(root);
+  const verifyNote = mainPathLimit.layeredEnabled ? '；分层验收已开启，verify 会据此在执行测试之前判 FAIL' : '';
+  for (const problem of mainPath.problems) {
+    layeredWarnings.push({
+      code: 'main_path_invalid',
+      message: `${problem.file}:${problem.line} 主链路小节 ${problem.code}${problem.id ? `（${problem.id}）` : ''}${verifyNote}`,
+      fix_hint: '主链路小节只能列本文档用例表中已定义、且不带 [manual] 的 UT/ST；每个列表项以用例 ID 开头；同一 ID 不重复；一个文档只有一个主链路小节',
+    });
+  }
+  if (mainPath.ids.length > mainPathLimit.limit) {
+    layeredWarnings.push({
+      code: 'main_path_over_limit',
+      message: `主链路用例共 ${mainPath.ids.length} 条，超过上限 ${mainPathLimit.limit}（verify.layered.main_path_max）${verifyNote}`,
+      fix_hint: '精简主链路：只保留「坏了就等于产品不可用」且快而稳定的用例；确需更多时由用户调整 verify.layered.main_path_max',
+    });
+  }
+
   // L8：条目守恒（S37）——仅 mergeable+valid 的 `.md` 规格 delta（原型资产天然被 .md 过滤排除）；
   // 目标主文档不存在（全新文档）跳过；目标存在但不可读 → artifact_unreadable（操作级红线）。
   // SPEC_MERGED 后已没有 merge 前目标快照，拿 delta 再对最终目标做守恒会制造假阳性；纵深守恒必须发生在
@@ -2336,12 +2409,13 @@ function runChangeLintChecks(root: string, proposalDir: string, slug: string): C
     { id: 9, label: '下游阻塞理由预检（ProposalBlockReason 全覆盖）', violations: countFor(9) },
     ...(knowledgeLayer.enabled ? [{ id: 10, label: '企业知识（结构 / 引用 / 重号）', violations: countFor(10) }] : []),
     ...(acceptance.present ? [{ id: 11, label: '验收标准段格式', violations: countFor(11) }] : []),
+    ...(affected.status !== 'missing' ? [{ id: 12, label: '受影响场景声明', violations: countFor(12) }] : []),
   ];
 
   // 决策记录 warning（S38，delta-r1 F4）：独立通道，不影响 pass / exit code / violations 枚举。
   // 按 §3.15 稳定排序（code 后 message）；本命令仅一种 warning code，排序为恒等。
   const hasDecisionsDeltaEntry = deltaEntries.some(e => e.category === 'decisions' && e.mergeDisposition === 'mergeable');
-  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...computeChangeTypeLayerWarnings(proposalContent, deltaEntries), ...sqlWarnings, ...conservationWarnings, ...blockWarnings, ...uiWarnings, ...knowledgeLayer.warnings, ...acceptanceWarnings]
+  const warnings = [...computeDecisionRecordWarnings(proposalContent, tasksContent, hasDecisionsDeltaEntry), ...computeChangeTypeLayerWarnings(proposalContent, deltaEntries), ...sqlWarnings, ...conservationWarnings, ...blockWarnings, ...uiWarnings, ...knowledgeLayer.warnings, ...acceptanceWarnings, ...layeredWarnings]
     .sort((a, b) => (a.code !== b.code ? (a.code < b.code ? -1 : 1) : (a.message < b.message ? -1 : a.message > b.message ? 1 : 0)));
 
   return {

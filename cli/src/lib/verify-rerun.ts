@@ -242,6 +242,8 @@ export interface PerformRerunParams {
   locale: Locale;
   format: OutputFormat;
   allowedWritePaths: string[];
+  /** layered-verification：发布级验收不依赖活跃提案与测试变更集，变更集无效不阻断复跑。 */
+  ignoreChangeSet?: boolean;
 }
 
 function pushDiagnostic(preRun: VerifyPreRunData, line: string): void {
@@ -271,7 +273,7 @@ export function performFailedRerun(params: PerformRerunParams): RerunOutcome {
       return outcome;
     }
     // 第 4 条：test_change_set_invalid
-    if (readStrictSkipSet(root).state === 'invalid') {
+    if (!params.ignoreChangeSet && readStrictSkipSet(root).state === 'invalid') {
       outcome.rerun = skippedRerun('gate_blocked', cfg.maxCases);
       return outcome;
     }

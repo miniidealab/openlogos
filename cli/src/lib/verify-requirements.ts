@@ -233,12 +233,14 @@ export interface PrecheckInput {
   rawVerify: Record<string, unknown>;
   /** null：未启用模块范围；数组：实际执行的命令组服务的模块（可为空）。 */
   servedModules: string[] | null;
+  /** layered-verification：发布级验收不读取活跃提案的「验收标准」段（有没有活跃提案结论相同）。 */
+  skipAcceptance?: boolean;
 }
 
 /** 依次执行结构校验 → 对账 → 预检（§2.106.5）。未声明任何要求且无对账条目时返回 data=null（零变化）。 */
 export function runVerifyPrecheck(input: PrecheckInput): PrecheckOutcome {
   const declared = readDeclaredRequirements(input.rawVerify);
-  const entries = readAcceptanceEntries(input.root);
+  const entries = input.skipAcceptance ? [] : readAcceptanceEntries(input.root);
   if (declared.errors.length > 0) {
     return {
       ok: false,

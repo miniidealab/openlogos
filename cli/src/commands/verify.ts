@@ -9,6 +9,7 @@ import type { OutputFormat } from '../lib/json-output.js';
 import {
   readVerifyConfig,
   type NormalizedVerifyConfig,
+  normalizeLayeredConfig,
 } from '../lib/verify-config.js';
 import {
   buildInitialSandboxData,
@@ -43,6 +44,12 @@ import {
 } from '../lib/verify-scope.js';
 import { MODULE_ROW_LABEL, moduleReportPath, publishReportAtomically, registeredModules } from '../lib/module-phase-report.js';
 import { readStrictSkipSet, classifySkips, type SkipClassification } from '../lib/verify-skip-classification.js';
+import {
+  computeLayeredPlan, renderLayeredScopeSection, LAYERED_LEVEL_LABEL,
+  type LayeredPlan, type VerifyLayersData,
+} from '../lib/layered-verify.js';
+import { checkReleasePreconditions, recheckRelease, type VerifyReleaseData } from './verify-release.js';
+import { RELEASE_ACCEPTANCE_REPORT_PATH } from '../lib/module-phase-report.js';
 import {
   runVerifyPrecheck, readRawVerifyConfig, describeMissing,
   type PrecheckOutcome, type VerifyRequirementsData,
@@ -180,11 +187,31 @@ export interface VerifyData {
     | { code: 'unclassified_skipped_cases'; ids: string[] }
     | { code: 'flaky_cases_present'; ids: string[] }
     | { code: 'rerun_config_invalid'; ids: string[]; fields: string[] }
+    // layered-verification（§2.109.8、§2.109.2）：测试入口上报了提案集合之外的用例；verify.layered 有非法项
+    | { code: 'layered_runner_not_narrowed'; ids: string[] }
+    | { code: 'layered_config_invalid'; ids: string[]; fields: string[] }
   >;
   /** verify-flaky-rerun（§2.108.9）：0.16.26 起恒输出。 */
   rerun?: VerifyRerunData;
   /** verify-flaky-rerun（§2.108.9）：首跑失败、同一执行环境内复跑通过的用例；为空时不出现。 */
   flaky_cases?: VerifyFlakyCase[];
+  /** layered-verification（§2.109.14）：验收级别，0.16.27 起恒输出。 */
+  level?: 'proposal' | 'release';
+  /** layered-verification（§2.109.14）：只在分层开启的提案级验收输出。 */
+  layers?: VerifyLayersData;
+  /** layered-verification（§2.109.14）：只在发布级验收输出。 */
+  release?: VerifyReleaseData;
+}
+
+/** 分层验收传给数据收集的上下文：计划与 §2.96 的原始计算结果（`data.scope` 照旧输出它）。 */
+export interface VerifyLayeredContext {
+  plan: LayeredPlan;
+  outputScope: VerifyScopeData | null;
+  /**
+   * owned 范围的 checkpoint：`layers.outside_result_count` 恒为 0、不给出 layered_runner_not_narrowed；
+   * 执行集合之外的任何已定义用例的结果行——包括 §2.96 范围之外模块的用例——都按越界判定，不按「范围外」忽略（code-r1 F3）。
+   */
+  legacyOutside?: boolean;
 }
 
 function safeReadFile(path: string): string {
@@ -369,6 +396,8 @@ export interface VerifyRunOptions {
   freshSandbox?: boolean;
   /** module-scoped-verify（§2.96.5）：`openlogos verify --all` 手动全量。 */
   all?: boolean;
+  /** layered-verification（§2.109.11）：`openlogos verify --release` 发布级全量验收。 */
+  release?: boolean;
   /** verify-flaky-rerun（§2.108.5 第 4 条）：保留首跑执行环境并返回结果来源，供失败用例复跑。 */
   retainForRerun?: boolean;
 }
@@ -376,7 +405,10 @@ export interface VerifyRunOptions {
 /**
  * verify 沙箱写入白名单：结果文件、共用验收报告，以及多模块项目中 initial 模块的模块验收报告（§2.99.9）。
  */
-export function verifyReportAllowPaths(root: string, config: NormalizedVerifyConfig): Set<string> {
+export function verifyReportAllowPaths(root: string, config: NormalizedVerifyConfig, level: 'proposal' | 'release' = 'proposal'): Set<string> {
+  // 发布级（§2.109.11、code-r1 F5）：只回收结果文件与发布级报告——测试入口在沙箱副本里生成的共用或模块验收报告
+  // 不得写回工作区覆盖提案级的报告。提案级的清单与引入前相同。
+  if (level === 'release') return new Set<string>([config.resultPath, RELEASE_ACCEPTANCE_REPORT_PATH]);
   const allowPaths = new Set<string>([config.resultPath, 'logos/resources/verify/acceptance-report.md']);
   const modules = registeredModules(readProjectYaml(root).data?.modules);
   if (modules.length >= 2) {
@@ -432,7 +464,7 @@ export function runVerifyPreRunWithSandbox(
   const preRun = buildInitialPreRunData(config);
   const sandboxConfig = config.sandbox ?? normalizeSandboxConfig({ sandbox_mode: 'auto' });
   let sandbox = buildInitialSandboxData(sandboxConfig);
-  const allowPaths = verifyReportAllowPaths(root, config);
+  const allowPaths = verifyReportAllowPaths(root, config, runOptions.release ? 'release' : 'proposal');
   if (config.regressionResultPath) allowPaths.add(config.regressionResultPath);
   if (config.incrementalResultPath) allowPaths.add(config.incrementalResultPath);
   const allowedWritePaths = Array.from(allowPaths).map(ensureRelativePath);
@@ -568,7 +600,7 @@ export function runVerifyModulePreRunWithSandbox(
   }
   const sandboxConfig = config.sandbox ?? normalizeSandboxConfig({ sandbox_mode: 'auto' });
   let sandbox = buildInitialSandboxData(sandboxConfig);
-  const allowPaths = verifyReportAllowPaths(root, config);
+  const allowPaths = verifyReportAllowPaths(root, config, runOptions.release ? 'release' : 'proposal');
   if (config.regressionResultPath) allowPaths.add(config.regressionResultPath);
   if (config.incrementalResultPath) allowPaths.add(config.incrementalResultPath);
   const allowedWritePaths = Array.from(allowPaths).map(ensureRelativePath);
@@ -949,6 +981,8 @@ export function generateReport(
   moduleReport: { moduleId: string; runLevelRejections: string[] } | null = null,
   skipInfo: { classification: SkipClassification; changeSetInvalid: string | null } | null = null,
   flakyCases: VerifyFlakyCase[] = [],
+  /** layered-verification（§2.109.13）：分层开启的提案级报告才传入；未开启时报告字节不变。 */
+  layered: { layers: VerifyLayersData; gateReason: string | null } | null = null,
 ): string {
   const now = new Date().toISOString().slice(0, 10);
   let md = `# Acceptance Report\n\n> Generated by \`openlogos verify\` on ${now}\n\n`;
@@ -958,6 +992,7 @@ export function generateReport(
   if (moduleReport) md += `| ${MODULE_ROW_LABEL} | ${moduleReport.moduleId} |\n`;
   // §2.96.7：只在启用模块范围或 --all 时出现，未启用时报告字节不变。
   if (scope) md += `| Scope | ${scopeReportValue(scope).replace(/\|/g, '\\|')} |\n`;
+  if (layered) md += `| 级别 / Level | ${LAYERED_LEVEL_LABEL} |\n`;
   md += `| Defined cases | ${defined.length} |\n`;
   md += `| Manual cases (excluded) | ${manualCount} |\n`;
   md += `| Executed cases | ${results.length} |\n`;
@@ -1050,6 +1085,7 @@ export function generateReport(
     for (const id of skipInfo.classification.unclassified) md += `- ${id}\n`;
     md += '\n';
   }
+  if (layered) md += renderLayeredScopeSection(layered.layers, layered.gateReason);
 
   return md;
 }
@@ -1218,6 +1254,28 @@ export function writeAcceptanceReport(root: string, data: VerifyData): string | 
   return bytes;
 }
 
+export const RELEASE_LEVEL_LABEL = '发布级（全量）/ release (full)';
+
+/**
+ * 发布级验收报告（§2.109.13）：在与全量 verify 相同的报告正文上，Summary 增加级别、提交号 R 与平台三行；
+ * `release_commit_changed` 时写明收尾时的 HEAD 与工作区状态。
+ */
+export function renderReleaseReport(body: string, release: VerifyReleaseData, gateReason: string | null): string {
+  const header = '|--------|-------|\n';
+  const rows = `| 级别 / Level | ${RELEASE_LEVEL_LABEL} |\n| 提交 / Commit | ${release.commit} |\n| 平台 / Platform | ${release.platform} |\n`;
+  const at = body.indexOf(header);
+  let md = at < 0 ? `${rows}\n${body}` : `${body.slice(0, at + header.length)}${rows}${body.slice(at + header.length)}`;
+  md = md.replace('> Generated by `openlogos verify` on', '> Generated by `openlogos verify --release` on');
+  if (gateReason === 'release_commit_changed') {
+    md += '## 提交身份已变化 / Release Commit Changed\n\n- Reason: `release_commit_changed`\n';
+    md += `- 执行前固定的提交 / commit pinned before the run：${release.commit}\n`;
+    md += `- 收尾时的 HEAD / HEAD at finish：${release.head_at_finish ?? '（无法读取 / unreadable）'}${release.commit_unchanged ? '' : '（已变化 / changed）'}\n`;
+    md += `- 收尾时工作区 / working tree at finish：${release.worktree_clean ? '干净 / clean' : '不干净 / dirty'}\n`;
+    md += '- 本次结论不对任何提交有效：在干净的工作区上重新执行发布级验收 / this run is not a valid conclusion for any commit; rerun on a clean tree\n\n';
+  }
+  return md;
+}
+
 /** 预检类原因的人读标题（报告与终端共用）。 */
 const PRECHECK_REASON_TITLES: Record<string, string> = {
   verify_requirements_invalid: 'verify.requirements 配置结构非法 / verify requirements are invalid',
@@ -1327,10 +1385,21 @@ export function collectVerifyData(
     overriddenCommandIndexes?: Set<number>;
     /** verify-flaky-rerun（code-r2 F1）：结果路径的受保护写回被拒绝时，以首跑快照代替读取 result_path。 */
     resultContent?: string;
+    /** layered-verification：分层开启的提案级验收。此时 scopeContext 是执行口径（inScope = 执行集合 E，或全量时为 null）。 */
+    layered?: VerifyLayeredContext;
+    /**
+     * layered-verification（§2.109.11）：发布级验收——严格判定集合为全部自动化 UT/ST（不依赖活跃提案与测试变更集），
+     * 不做 smoke 覆盖预检、不输出 scope 与提案相关诊断，报告路径为发布级报告。
+     */
+    release?: boolean;
   } = {},
 ): VerifyData {
   const inScope = scopeContext.inScope;
-  const config = readVerifyConfig(root);
+  // §2.109.8：data.scope 照旧输出 §2.96 自身的计算结果；集合外结果行统一计入 layers.outside_result_count
+  const outputScope = opts.release ? null : opts.layered ? opts.layered.outputScope : scopeContext.scope;
+  /** 集合外结果行计入 layers.outside_result_count（否则沿用 §2.96 的 scope 计数）。 */
+  const layeredCounting = Boolean(opts.layered) && !opts.layered!.legacyOutside;
+  const config = readVerifyConfig(root, { release: opts.release === true });
   const resultPath = config.resultPath;
 
   const fullResultPath = join(root, resultPath);
@@ -1351,7 +1420,10 @@ export function collectVerifyData(
   const outsideEligibleResultIds: string[] = [];
   // §2.96.4：属于范围外模块用例的结果行忽略——不判 unknown / outside_eligible、不计入统计，只计数。
   // 未定义 ID（不在任何测试规格中）不在此列，照旧按账本一致性判定。
-  const isOutOfScope = (id: string) => inScope !== null && fullDefinedSet.has(id) && !inScope.has(id);
+  // 分层开启的 owned checkpoint（§2.109.8、code-r1 F3）：先按本轮执行清单判越界，不先按模块范围忽略——
+  // 执行清单之外的任何已定义用例的结果行都进入 outside_eligible_result_ids。未开启分层时既有行为不变。
+  const ownedLayered = Boolean(opts.layered?.legacyOutside);
+  const isOutOfScope = (id: string) => !ownedLayered && inScope !== null && fullDefinedSet.has(id) && !inScope.has(id);
   let outOfScopeResultCount = 0;
   for (const result of allResults) {
     if (definedSet.has(result.id)) continue;
@@ -1382,10 +1454,11 @@ export function collectVerifyData(
   const coveredCount = defined.filter(id => resultIds.has(id)).length;
   // verify-self-sufficient-cases（§2.106.6）：严格判定集合取经正式读取器校验的测试变更集；
   // 切片 checkpoint 下与可计入集合（eligible = defined）求交，pending 用例没有结果仍合法
-  const strictSet = readStrictSkipSet(root);
-  const strictIds = new Set([...strictSet.ids].filter(id => definedSet.has(id)));
+  // 发布级（§2.109.11）：严格判定集合是全部自动化 UT/ST，没有「未分类跳过只警告」的情形
+  const strictSet = opts.release ? null : readStrictSkipSet(root);
+  const strictIds = strictSet ? new Set([...strictSet.ids].filter(id => definedSet.has(id))) : new Set(definedSet);
   const skipClassification = classifySkips(skipped, strictIds);
-  const changeSetInvalid = strictSet.state === 'invalid' ? strictSet.detail : null;
+  const changeSetInvalid = strictSet?.state === 'invalid' ? strictSet.detail : null;
   const tierMismatch = skipClassification.tier.length > 0;
 
   const coveragePct = defined.length > 0
@@ -1451,14 +1524,15 @@ export function collectVerifyData(
     String(coveragePct), String(passRatePct), finalGate, resultIds, manualCount,
     sliceVerification,
     preRunFailures.map(cmd => ({ stage: cmd.stage, exit_code: cmd.exit_code })),
-    scopeContext.scope ? { ...scopeContext.scope, out_of_scope_result_count: outOfScopeResultCount } : null,
+    outputScope ? { ...outputScope, out_of_scope_result_count: layeredCounting ? 0 : outOfScopeResultCount } : null,
     null,
     { classification: skipClassification, changeSetInvalid },
     // verify-flaky-rerun：偶发清单在 collectVerifyData 之后由 verify 主流程写入 data，渲染在全部门禁之后进行
     data.flaky_cases ?? [],
+    data.layers ? { layers: data.layers, gateReason: data.gate.reason } : null,
   );
 
-  const relReportPath = 'logos/resources/verify/acceptance-report.md';
+  const relReportPath = opts.release ? RELEASE_ACCEPTANCE_REPORT_PATH : 'logos/resources/verify/acceptance-report.md';
 
   const data = addCoverageDiagnostics(root, {
     contract: { version: contractVersion(false, Boolean(sliceVerification?.verify_mode)) },
@@ -1472,7 +1546,7 @@ export function collectVerifyData(
     skipped_cases: skipped.map(r => r.id),
     consistency,
     pre_run: preRun ?? buildInitialPreRunData(config),
-    smoke_precheck: checkSmokeCoverage(root, readSmokeCommandConfig(root)),
+    smoke_precheck: opts.release ? notExecutedSmokePrecheck(root) : checkSmokeCoverage(root, readSmokeCommandConfig(root)),
     sandbox: buildInitialSandboxData(config.sandbox ?? normalizeSandboxConfig({ sandbox_mode: 'auto' })),
     report_path: relReportPath,
     ...(sliceVerification?.manifest_status === 'valid' && sliceVerification.verify_mode ? {
@@ -1484,14 +1558,25 @@ export function collectVerifyData(
       checkpoint: sliceVerification.checkpoint,
       test_change_set: sliceVerification.test_change_set,
     } : {}),
-    ...(scopeContext.scope ? { scope: { ...scopeContext.scope, out_of_scope_result_count: outOfScopeResultCount } } : {}),
+    ...(outputScope ? { scope: { ...outputScope, out_of_scope_result_count: layeredCounting ? 0 : outOfScopeResultCount } } : {}),
     ...(skipClassification.platform.length > 0 ? { platform_skipped_cases: skipClassification.platform } : {}),
     ...(skipClassification.tier.length > 0 ? { tier_mismatch_cases: skipClassification.tier } : {}),
     ...(changeSetInvalid ? { change_set_diagnostic: { code: 'test_change_set_invalid' as const, detail: changeSetInvalid } } : {}),
     ...(skipClassification.unclassified.length > 0 ? { warnings: [{ code: 'unclassified_skipped_cases' as const, ids: skipClassification.unclassified }] } : {}),
   });
-  applySmokePrecheck(root, data);
+  if (opts.layered) {
+    // §2.109.8：提案集合之外的已定义用例结果只计数；计数大于 0 说明测试入口没有按清单收窄
+    data.layers = {
+      ...opts.layered.plan.layers,
+      execution: { count: defined.length, ids: [...defined] },
+      outside_result_count: layeredCounting ? outOfScopeResultCount : 0,
+    };
+    if (layeredCounting && outOfScopeResultCount > 0) data.warnings = [...(data.warnings ?? []), { code: 'layered_runner_not_narrowed', ids: [] }];
+  }
+  if (!opts.release) applySmokePrecheck(root, data);
   acceptanceReportRenderers.set(data, renderReport);
+  // 发布级不触碰提案相关的诊断与共用报告（§2.109.11）
+  if (opts.release) return data;
   // 直接调用方（未延迟）在 smoke 覆盖预检之后以最终 gate 写共用报告；verify 主流程延迟到沙箱裁决之后写（§2.104.5）
   if (!opts.deferReport) writeAcceptanceReport(root, data);
 
@@ -1511,6 +1596,71 @@ export function collectVerifyData(
     failedTests: data.failed_cases.map(item => item.id),
   });
   if (automationDiagnostic) data.automation_diagnostic = automationDiagnostic;
+  return data;
+}
+
+/**
+ * layered-verification（§2.109.10 第 1 条）：主链路小节结构错误或超过上限，在环境预检通过之后、执行任何预跑命令之前判 FAIL。
+ * 不读取结果文件；已合并提案的测试变更集无效时 gate.reason 取 test_change_set_invalid，主链路问题仍在 layers.main_path 中列出。
+ */
+export function buildMainPathBlockedData(
+  root: string,
+  preRun: VerifyPreRunData,
+  sandbox: SandboxData,
+  plan: LayeredPlan,
+  outputScope: VerifyScopeData | null,
+  sliceVerification: SliceVerificationState | null | undefined,
+  changeSetInvalid: string | null,
+): VerifyData {
+  const reason = changeSetInvalid !== null ? 'test_change_set_invalid' : plan.mainPathBlock!;
+  const layers: VerifyLayersData = { ...plan.layers, outside_result_count: 0 };
+  const data: VerifyData = {
+    contract: { version: contractVersion(false, Boolean(sliceVerification?.verify_mode)) },
+    summary: {
+      defined_count: 0, ut_count: 0, st_count: 0, manual_count: 0, executed_count: 0, passed_count: 0,
+      failed_count: 0, skipped_count: 0, uncovered_count: 0, coverage_pct: 0, pass_rate_pct: 0,
+    },
+    gate: { result: 'FAIL', reason },
+    failed_cases: [],
+    uncovered_cases: [],
+    skipped_cases: [],
+    consistency: {
+      ok: true, reasons: [], unknown_result_ids: [], manual_result_ids: [], outside_eligible_result_ids: [],
+      invalid_results: [], count_mismatches: [],
+    },
+    pre_run: preRun,
+    smoke_precheck: notExecutedSmokePrecheck(root),
+    sandbox,
+    report_path: 'logos/resources/verify/acceptance-report.md',
+    ...(sliceVerification?.manifest_status === 'valid' && sliceVerification.verify_mode ? {
+      verify_mode: sliceVerification.verify_mode,
+      attempted_slice_id: sliceVerification.attempted_slice_id,
+      eligible_test_ids: sliceVerification.eligible_test_ids,
+      pending_test_ids: sliceVerification.pending_test_ids,
+      manifest: sliceVerification.manifest,
+      checkpoint: sliceVerification.checkpoint,
+      test_change_set: sliceVerification.test_change_set,
+    } : {}),
+    ...(outputScope ? { scope: { ...outputScope } } : {}),
+    ...(changeSetInvalid !== null ? { change_set_diagnostic: { code: 'test_change_set_invalid' as const, detail: changeSetInvalid } } : {}),
+    layers,
+  };
+  NOT_EXECUTED_DATA.add(data);
+  acceptanceReportRenderers.set(data, () => {
+    const now = new Date().toISOString().slice(0, 10);
+    let md = `# Acceptance Report\n\n> Generated by \`openlogos verify\` on ${now}\n\n## Summary\n\n| Metric | Value |\n|--------|-------|\n`;
+    if (outputScope) md += `| Scope | ${scopeReportValue(outputScope).replace(/\|/g, '\\|')} |\n`;
+    md += `| 级别 / Level | ${LAYERED_LEVEL_LABEL} |\n`;
+    for (const metric of ['Defined cases', 'Executed cases', 'Passed', 'Failed', 'Skipped', 'Uncovered']) md += `| ${metric} | 未执行 / not executed |\n`;
+    md += `| **Gate 3.5** | **FAIL** |\n\n`;
+    md += `## 主链路约束 / Main Path Constraints\n\n- Reason: \`${reason}\`\n`;
+    md += '- 本次未执行任何预跑命令，也未读取结果文件 / no pre-run command was executed and no result file was read\n\n';
+    if (changeSetInvalid !== null) {
+      md += `## 测试变更集无效 / Test Change Set Invalid\n\n- \`test_change_set_invalid\`：${changeSetInvalid.replace(/\n/g, ' ')}\n\n`;
+    }
+    md += renderLayeredScopeSection(layers, plan.mainPathBlock);
+    return md;
+  });
   return data;
 }
 
@@ -1653,7 +1803,7 @@ export function writeModuleAcceptanceReports(
       // 变更集无效且无账本（评审 code-r2 F1）：运行级拒绝不可归属到模块，计入每个被覆盖模块
       const body = precheckRejection
         ? renderModulePrecheckReport(m, data.gate.reason!, data.requirements!)
-        : renderModulePrecheckReport(m, 'test_change_set_invalid', EMPTY_REQUIREMENTS, data.change_set_diagnostic?.detail);
+        : renderModulePrecheckReport(m, data.gate.reason ?? 'test_change_set_invalid', EMPTY_REQUIREMENTS, data.change_set_diagnostic?.detail);
       publishReportAtomically(join(root, rel), body);
       written.push(rel);
     }
@@ -1782,7 +1932,7 @@ function appendLoopIter(
   appendFileSync(path, row + '\n');
 }
 
-function activeSliceVerification(root: string, inScope: Set<string> | null = null): {
+function activeSliceVerification(root: string, inScope: Set<string> | null = null, layeredTotal: ReadonlySet<string> | null = null): {
   proposalDir: string;
   state: SliceVerificationState;
 } | null {
@@ -1796,7 +1946,10 @@ function activeSliceVerification(root: string, inScope: Set<string> | null = nul
     const state = deriveSliceVerificationState(root, proposalDir, {
       change: guard.activeChange,
       module: guard.module ?? 'core',
-    }, inScope ? { inScope: id => inScope.has(id) } : undefined);
+    }, inScope || layeredTotal ? {
+      ...(inScope ? { inScope: (id: string) => inScope.has(id) } : {}),
+      ...(layeredTotal ? { layeredTotal } : {}),
+    } : undefined);
     return state ? { proposalDir, state } : null;
   } catch {
     return null;
@@ -1855,23 +2008,85 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
     throw e;
   }
 
+  // layered-verification（§2.109.11）：发布级全量验收。前置条件按序检查，不满足即以错误信封拒绝（退出码 2）：
+  // 不获取运行锁、不执行任何命令、不写历史。通过后在执行任何命令之前固定完整提交号 R，报告、JSON 与历史共用。
+  const release = runOptions.release === true;
+  let releaseCommit: string | null = null;
+  if (release) {
+    // 命令组选择与下方的环境预检、执行共用（code-r1 F1）：有已登记模块时按全部模块选择命令组（等同 --all，
+    // 单模块项目同样应用 verify.modules.<id> 的覆盖）；没有已登记模块时取项目级命令。
+    const releaseConfig = readVerifyConfig(root, { release: true });
+    const releaseModules = moduleIdsOf(root);
+    const hasCommand = releaseModules.length > 0
+      ? selectVerifyCommandGroups(releaseConfig, releaseModules).length > 0
+      : Boolean(releaseConfig.preRunCommand || releaseConfig.regressionCommand || releaseConfig.incrementalCommand);
+    const pre = checkReleasePreconditions(root, hasCommand);
+    if (!pre.ok) {
+      if (format === 'json') {
+        console.error(JSON.stringify(makeErrorEnvelope('verify', pre.code, pre.message, pre.details ? { details: pre.details } : {})));
+      } else {
+        console.error(`Error: ${pre.message}`);
+        for (const path of (pre.details?.paths as string[] | undefined) ?? []) console.error(`  ${path}`);
+      }
+      process.exit(2);
+    }
+    releaseCommit = pre.commit;
+  }
+
   // §2.96.2：启用条件与范围先于切片集合与结果过滤计算；未启用时 scopeContext 为空、全部行为逐字不变。
-  const scopeContext = resolveVerifyScopeContext(root, { all: runOptions.all });
-  const sliceContext = activeSliceVerification(root, scopeContext.inScope);
+  // 发布级恒为全量：不计算模块范围，多模块项目的命令组选择等同 --all。
+  const scopeContext: VerifyScopeContext = release
+    ? (moduleIdsOf(root).length > 0 ? resolveVerifyScopeContext(root, { all: true }) : { scope: null, inScope: null })
+    : resolveVerifyScopeContext(root, { all: runOptions.all });
+  // layered-verification（§2.109.8、§2.109.9）：主链路小节、声明、提案集合 P、扩大级别与本次命令组，都在环境预检之前只读算出；
+  // 三层集合只在这里算一次，切片状态派生与 verify 共用（baseline 范围 checkpoint 的基线部分取它）。
+  // 发布级（code-r2 F5）：结果路径落在共用验收报告上时同样按保留路径处理——改写到默认路径，配置了命令时不启动命令
+  const config = readVerifyConfig(root, { release });
+  const layeredCfg = config.layered ?? normalizeLayeredConfig(undefined);
+  // 发布级不读取 verify.layered.enabled，不检查主链路约束，不进入切片模式
+  const layeredPlan: LayeredPlan | null = layeredCfg.enabled && !release
+    ? computeLayeredPlan({
+      root, config: layeredCfg, definedIds: extractDefinedIndex(root).ids,
+      scope: scopeContext.scope, scopeInScope: scopeContext.inScope,
+    })
+    : null;
+  const sliceContext = release ? null
+    // 提案集合恒传给切片派生（code-r1 F2）：扩大到全量时它就是全部自动化用例——baseline 范围的基线部分不再被
+    // §2.96 的模块范围裁掉；owned 范围不读它。
+    : activeSliceVerification(root, scopeContext.inScope, layeredPlan ? new Set(layeredPlan.total) : null);
   // 多切片提案的测试变更集不可信时保持人工边界、零副作用（S32 UT-S32-48 / ST-S32-16，EX-13.14「副作用：无」）：
   // 由切片清单暂停分支返回 human_action_required，不写、不推进 Gate、loop、checkpoint 或 VERIFY 标记。
   // 非切片路径的 test_change_set_invalid 由下方完整性收尾处理（§2.106.6 第 3 条）。
   if (sliceContext && (sliceContext.state.manifest_status !== 'valid' || !sliceContext.state.verify_mode)) {
     return stopForSliceManifestState(format, sliceContext.state);
   }
-  const sliceVerification = sliceContext?.state ?? null;
+  let sliceVerification = sliceContext?.state ?? null;
 
-  const config = readVerifyConfig(root);
   const resultPath = config.resultPath;
+  // owned 范围的 checkpoint 沿用引入前口径（§2.109.8、§2.109.9）：集合、注入与命令组都与分层未开启时相同，只多输出 layers。
+  // baseline 范围（含扩大到全量，code-r1 F2）走分层口径：命令组取分层算出的模块，全量时执行全部命令组。
+  const isCheckpoint = sliceVerification?.verify_mode === 'slice-checkpoint';
+  const legacyCheckpoint = isCheckpoint && Boolean(layeredPlan) && sliceVerification?.verify_scope === 'owned';
+  // 执行口径：命令组服务的模块取分层算出的模块；已定义集合取执行集合 E（final 时 E = P，checkpoint 时为当前 eligible）；
+  // inScope 取提案集合 P——P 之外的已定义用例结果只计数，P 之内、E 之外（pending 被提前上报）照旧判越界。扩大到全量时不过滤。
+  // scopeContext 保留 §2.96 自身的计算结果，只用于输出 data.scope。
+  const execScope: VerifyScopeContext = layeredPlan && !legacyCheckpoint ? {
+    scope: scopeContext.scope ? { ...scopeContext.scope, modules: layeredPlan.commandModules ?? scopeContext.scope.modules } : null,
+    inScope: layeredPlan.narrowed ? new Set(layeredPlan.total) : null,
+  } : scopeContext;
+  if (layeredPlan && sliceVerification?.verify_mode === 'final') {
+    sliceVerification = { ...sliceVerification, eligible_test_ids: [...layeredPlan.total] };
+  }
   const previousEligible = process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS;
   const previousSliceScope = process.env.OPENLOGOS_VERIFY_SLICE_SCOPE;
   if (sliceVerification?.eligible_test_ids) {
     process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS = JSON.stringify(sliceVerification.eligible_test_ids);
+  } else if (layeredPlan?.narrowed) {
+    // §2.109.8 收窄通道：未扩大到全量时把执行集合交给测试入口（变量格式与切片 checkpoint 相同）
+    process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS = JSON.stringify(layeredPlan.total);
+  } else if (release) {
+    // 发布级：不注入清单，并清除父进程中的同名变量（SLICE_SCOPE 由下方统一清除）
+    delete process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS;
   }
   // slice-verify-efficient-mode（spec/test-results.md「三个集合」）：只有 slice-checkpoint 注入验收范围；
   // final 与非切片 verify 不注入，且不让父进程的同名变量泄漏给预跑命令。
@@ -1896,9 +2111,11 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   }
   // 锁在任何退出路径上都释放（含进程内调用时被拦截的 process.exit 抛出）
   try {
-  const historyRun: HistoryRunContext = startHistoryRun(root, 'verify');
+  // 发布级记录不归属活跃提案：只写中央索引，不写提案完整记录
+  const historyRun: HistoryRunContext = startHistoryRun(root, 'verify', { withoutProposal: release });
+  const releaseHistory = release ? { level: 'release' as const, commit: { head: releaseCommit!, dirty: false } } : { level: 'proposal' as const };
   const historyBase = (): Pick<HistoryFinish, 'moduleScope' | 'verifyMode' | 'attemptedSliceId'> => ({
-    moduleScope: scopeContext.scope ? [...scopeContext.scope.modules] : null,
+    moduleScope: execScope.scope && !release ? [...execScope.scope.modules] : null,
     verifyMode: sliceVerification?.manifest_status === 'valid' && sliceVerification.verify_mode ? sliceVerification.verify_mode : null,
     attemptedSliceId: sliceVerification?.manifest_status === 'valid' && sliceVerification.verify_mode
       ? (sliceVerification.attempted_slice_id ?? null) : null,
@@ -1915,22 +2132,27 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   try {
     const sandboxConfig = config.sandbox ?? normalizeSandboxConfig({ sandbox_mode: 'auto' });
     // 生效集合只对实际执行的命令组服务的模块求 E(m)（§2.106.4 第 2、4 条）；未启用模块范围时为项目级
-    const servedModules = scopeContext.scope
-      ? selectVerifyCommandGroups(config, scopeContext.scope.modules).flatMap(g => g.modules)
+    // layered-verification（§2.109.8）：预检与执行使用同一组命令组——分层多带出的模块同样被预检，最终不执行的模块不参与
+    const servedModules = execScope.scope
+      ? selectVerifyCommandGroups(config, execScope.scope.modules).flatMap(g => g.modules)
       : null;
-    precheck = runVerifyPrecheck({ root, format, sandbox: sandboxConfig, rawVerify: readRawVerifyConfig(root), servedModules });
+    precheck = runVerifyPrecheck({ root, format, sandbox: sandboxConfig, rawVerify: readRawVerifyConfig(root), servedModules, skipAcceptance: release });
     if (!precheck.ok) {
       preRunResult = { preRun: buildInitialPreRunData(config), sandbox: precheck.sandbox ?? buildInitialSandboxData(sandboxConfig) };
+    } else if (layeredPlan?.mainPathBlock) {
+      // §2.109.10 第 1 条：环境预检通过之后、执行任何预跑命令之前判 FAIL——不执行命令、不读取结果文件
+      preRunResult = { preRun: buildInitialPreRunData(config), sandbox: precheck.sandbox ?? buildInitialSandboxData(sandboxConfig) };
+      rerunOutcome = { ...rerunOutcome, rerun: skippedRerun('gate_blocked', rerunCfg.maxCases) };
     } else {
       // module-scoped-phase-reports（code-r3 F3）：结果路径落在模块报告保留路径上时，runner 可能按原配置写入保留路径，
       // 而 verify 没有可交接给 runner 的结果路径——不调用任何预跑命令，按既有 pre_run_failed 失败契约收尾（不新增错误码）
       const blocked = config.reservedRedirects?.length ? blockedPreRunForReservedPaths(root, config, locale) : null;
       preRunResult = blocked
-        ?? (scopeContext.scope
-          ? runVerifyModulePreRunWithSandbox(root, config, scopeContext.scope, format, { ...runOptions, retainForRerun: rerunCfg.enabled })
+        ?? (execScope.scope
+          ? runVerifyModulePreRunWithSandbox(root, config, execScope.scope, format, { ...runOptions, retainForRerun: rerunCfg.enabled })
           : runVerifyPreRunWithSandbox(root, config, format, { ...runOptions, retainForRerun: rerunCfg.enabled }));
       // §2.108.3～§2.108.7：在首跑注入的变量仍生效时判断并执行复跑（复跑只覆盖 ELIGIBLE / RERUN，结束后恢复）
-      const rerunAllow = verifyReportAllowPaths(root, config);
+      const rerunAllow = verifyReportAllowPaths(root, config, release ? 'release' : 'proposal');
       if (config.regressionResultPath) rerunAllow.add(config.regressionResultPath);
       if (config.incrementalResultPath) rerunAllow.add(config.incrementalResultPath);
       rerunOutcome = performFailedRerun({
@@ -1941,10 +2163,11 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
         definedIds: extractDefinedIds(root).ids,
         roundIds: sliceVerification?.manifest_status === 'valid' && sliceVerification.verify_mode
           ? new Set(sliceVerification.eligible_test_ids)
-          : scopeContext.inScope,
+          : execScope.inScope,
         locale,
         format,
         allowedWritePaths: Array.from(rerunAllow).map(ensureRelativePath),
+        ignoreChangeSet: release,
       });
       for (const rerunSandbox of rerunOutcome.sandboxResults) {
         preRunResult.sandbox = mergeSandboxStatus(preRunResult.sandbox, rerunSandbox);
@@ -1966,24 +2189,26 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   }
 
   const precheckFailed = !precheck.ok;
+  /** 主链路约束在执行前判 FAIL（环境预检已通过）。 */
+  const mainPathBlocked = precheck.ok && Boolean(layeredPlan?.mainPathBlock);
   const fullResultPath = join(root, resultPath);
   // verify-flaky-rerun（code-r3 F1）：结果路径的受保护写回被拒绝时，本轮账本来源是首跑快照（ledgerOverride）——
   // 不经被拒绝的路径补写空文件，缺失账本的两处判断与历史采集都以快照为准，不再按磁盘路径是否存在早退
   const hasLedgerSnapshot = rerunOutcome.ledgerOverride !== undefined;
   const ledgerPresent = () => hasLedgerSnapshot || existsSync(fullResultPath);
-  if (!precheckFailed && !hasLedgerSnapshot) ensureResultFileWhenPreRunFailed(fullResultPath, preRun);
+  if (!precheckFailed && !mainPathBlocked && !hasLedgerSnapshot) ensureResultFileWhenPreRunFailed(fullResultPath, preRun);
   // 评审 code-r2 F1（§2.106.6、§2.106.7、§2.106.7A）：已合并提案的测试变更集已判无效而本轮没有结果账本时，
   // 不以 NO_TEST_RESULTS / NO_TEST_CASES 早退——完整性拒绝照常进入门禁：记录 test_change_set_invalid 与读取器原因，
   // 改判覆盖的 initial 模块报告、撤销旧 VERIFY_PASS，并写 result_source=none 的 completed 历史。
   // 评审 code-r3 F1：缺用例定义（NO_TEST_CASES）的早退同理——两类早退之前都先确认变更集状态，已知无效时优先交给 FAIL 收尾。
-  const abortKind: 'no-results' | 'no-cases' | null = precheckFailed
+  const abortKind: 'no-results' | 'no-cases' | null = precheckFailed || mainPathBlocked
     ? null
     : !ledgerPresent() ? 'no-results'
       : extractDefinedIds(root).ids.length === 0 ? 'no-cases' : null;
-  const strictWithoutLedger = abortKind ? readStrictSkipSet(root) : null;
+  const strictWithoutLedger = abortKind && !release ? readStrictSkipSet(root) : null;
   const changeSetInvalidWithoutLedger = strictWithoutLedger?.state === 'invalid' ? strictWithoutLedger.detail : null;
   /** 本轮未读取任何结果文件：预检失败，或变更集无效且本轮即将因缺结果账本 / 缺用例定义早退。 */
-  const noResultsRead = precheckFailed || changeSetInvalidWithoutLedger !== null;
+  const noResultsRead = precheckFailed || mainPathBlocked || changeSetInvalidWithoutLedger !== null;
   // 结果来源（§2.104.3）：本次调用执行了任一预跑 / 两阶段命令为 executed，只读取既有结果为 reused；
   // 预检类原因判 FAIL 时既未执行也未读取，为 none（verify-self-sufficient-cases）
   const resultSource: 'executed' | 'reused' | 'none' = noResultsRead
@@ -1998,6 +2223,7 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
       gate: { result: null, reason: null },
       errorCode: code,
       counts: {},
+      ...releaseHistory,
       resultSource,
       resultPath: !hasLedgerSnapshot && existsSync(fullResultPath) ? resultPath : null,
       resultCapture: hasLedgerSnapshot ? { bytes: rerunOutcome.ledgerOverride! } : captureResultBytes(root, resultPath),
@@ -2024,14 +2250,22 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   let data: VerifyData;
   let resultCapture: ReturnType<typeof captureResultBytes>;
   if (precheckFailed) {
-    data = buildPrecheckFailureData(root, config, preRun, sandbox, precheck, sliceVerification, scopeContext);
+    data = buildPrecheckFailureData(root, config, preRun, sandbox, precheck, sliceVerification, release ? { scope: null, inScope: null } : scopeContext);
     resultCapture = null;
+  } else if (mainPathBlocked) {
+    const strict = readStrictSkipSet(root);
+    data = buildMainPathBlockedData(root, preRun, sandbox, layeredPlan!, scopeContext.scope, sliceVerification,
+      strict.state === 'invalid' ? strict.detail : null);
+    resultCapture = null;
+    if (precheck.data) data.requirements = precheck.data;
   } else if (changeSetInvalidWithoutLedger !== null) {
     data = buildChangeSetInvalidWithoutResultsData(root, preRun, sandbox, changeSetInvalidWithoutLedger, scopeContext, abortKind === 'no-cases' ? 'no-cases' : 'no-results');
     resultCapture = null;
   } else {
-    data = collectVerifyData(root, preRun, sliceVerification, scopeContext, {
+    data = collectVerifyData(root, preRun, sliceVerification, execScope, {
       deferReport: true, overriddenCommandIndexes: rerunOutcome.overriddenCommandIndexes,
+      ...(layeredPlan ? { layered: { plan: layeredPlan, outputScope: scopeContext.scope, legacyOutside: legacyCheckpoint } } : {}),
+      ...(release ? { release: true } : {}),
       ...(rerunOutcome.ledgerOverride !== undefined ? { resultContent: rerunOutcome.ledgerOverride } : {}),
     });
     // 采集当时的结果字节（code-r1 F3）：历史写入不再二次读取结果文件；写回被拒绝时不经该路径读取，记录首跑快照
@@ -2056,13 +2290,57 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   if (rerunCfg.invalid.length > 0) {
     data.warnings = [...(data.warnings ?? []), { code: 'rerun_config_invalid', ids: [], fields: [...rerunCfg.invalid] }];
   }
+  // layered-verification（§2.109.14）：level 恒输出；verify.layered 有非法项时警告（不改门禁结论）
+  data.level = release ? 'release' : 'proposal';
+  if (release) {
+    // §2.109.11 收尾复核：最终门禁之前再次读取 HEAD 与工作区。HEAD 不等于 R 或工作区已不干净 → release_commit_changed，
+    // 优先于环境预检类之外的其他原因；历史记录的提交号仍是 R。
+    data.report_path = RELEASE_ACCEPTANCE_REPORT_PATH;
+    data.release = recheckRelease(root, releaseCommit!);
+    // 发布级结论必须来自本次实际执行（code-r1 F1）：没有执行任何命令、只读取了既有结果时不得 PASS
+    if (resultSource === 'reused' && data.gate.result === 'PASS') {
+      data.gate.result = 'FAIL';
+      data.gate.reason = 'pre_run_failed';
+      data.pre_run.diagnostics.push('release verification did not execute any test command; existing result files are not accepted as evidence');
+    }
+    if ((!data.release.commit_unchanged || !data.release.worktree_clean) && !PRECHECK_REASONS.has(data.gate.reason ?? '')) {
+      data.gate.result = 'FAIL';
+      data.gate.reason = 'release_commit_changed';
+    }
+  }
+  if (layeredCfg.invalid.length > 0 && !release) {
+    data.warnings = [...(data.warnings ?? []), { code: 'layered_config_invalid', ids: [], fields: [...layeredCfg.invalid] }];
+  }
+  // §2.109.10 第 2 条：主链路用例被判为偶发时不按偶发放行。原因优先级：环境预检类 → test_change_set_invalid →
+  // main_path_invalid → main_path_over_limit → main_path_flaky → 其余既有原因
+  if (data.layers && rerunOutcome.flaky.length > 0) {
+    const mainPath = new Set(data.layers.main_path.ids);
+    const flakyMain = rerunOutcome.flaky.map(c => c.id).filter(id => mainPath.has(id)).sort();
+    if (flakyMain.length > 0) {
+      data.layers.main_path.flaky_ids = flakyMain;
+      data.gate.result = 'FAIL';
+      if (data.gate.reason !== 'test_change_set_invalid') data.gate.reason = 'main_path_flaky';
+    }
+  }
   if (data.gate.result === 'PASS' && rerunOutcome.flaky.length > 0) {
     data.warnings = [...(data.warnings ?? []), { code: 'flaky_cases_present', ids: rerunOutcome.flaky.map(c => c.id) }];
   }
 
   // verification-history（§2.104.5）：全部门禁（smoke 覆盖预检、沙箱改判）裁决之后由最终数据渲染一次共用报告，
   // 同一份字节稍后用作报告快照，不从共用路径回读
-  const reportBytes = writeAcceptanceReport(root, data);
+  // 发布级（§2.109.13）：独立的发布级报告，每次覆盖；不写共用验收报告
+  let reportBytes: string | null;
+  if (release) {
+    const body = renderAcceptanceReport(data);
+    reportBytes = body === null ? null : renderReleaseReport(body, data.release!, data.gate.reason);
+    if (reportBytes !== null) {
+      const releaseReportPath = join(root, RELEASE_ACCEPTANCE_REPORT_PATH);
+      mkdirSync(dirname(releaseReportPath), { recursive: true });
+      writeFileSync(releaseReportPath, reportBytes);
+    }
+  } else {
+    reportBytes = writeAcceptanceReport(root, data);
+  }
   testPauseAfterReport();
 
   // module-scoped-phase-reports：全部门禁（含沙箱改判）裁决之后写模块验收报告（§2.99.5）
@@ -2071,7 +2349,12 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
     ...preRun,
     commands: preRun.commands.map((cmd, index) => rerunOutcome.overriddenCommandIndexes.has(index) ? { ...cmd, status: 'pass' as const } : cmd),
   };
-  writeModuleAcceptanceReports(root, data, gatePreRun, sandbox, scopeContext, sliceVerification, rerunOutcome.ledgerOverride);
+  // layered-verification：提案集合小于全量时不写、不改模块验收报告——模块报告按完整 U(m) 统计，
+  // 只验收提案集合会把集合外的用例误报为未覆盖（与 owned 范围 checkpoint 同理）；扩大到全量时照旧写。
+  // 发布级不触碰模块验收报告、checkpoint 与循环账本、提案标记（§2.109.11）
+  if (!layeredPlan?.narrowed && !release) {
+    writeModuleAcceptanceReports(root, data, gatePreRun, sandbox, execScope, sliceVerification, rerunOutcome.ledgerOverride);
+  }
 
   // M2 切片 2：loop 激活时追加迭代账本（共享路径、取最终 data.gate.result；配置类早退已在上面 process.exit、不会到此）
   if (sliceVerification?.verify_mode === 'slice-checkpoint') {
@@ -2088,11 +2371,11 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   } else if (data.checkpoint) {
     data.checkpoint.result = data.gate.result;
   }
-  appendLoopIter(root, data.gate.result === 'PASS', sliceVerification);
+  if (!release) appendLoopIter(root, data.gate.result === 'PASS', sliceVerification);
 
   // 写入提案目录标记文件（如果有活跃提案）
   const guardPath = join(root, 'logos', '.openlogos-guard');
-  if (existsSync(guardPath)) {
+  if (!release && existsSync(guardPath)) {
     try {
       const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
       const slug = guard.activeChange;
@@ -2138,6 +2421,7 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
     skippedIds: data.skipped_cases,
     uncoveredIds: data.uncovered_cases,
     flakyIds: (data.flaky_cases ?? []).map(c => c.id),
+    ...releaseHistory,
     resultSource,
     resultPath: noResultsRead ? null : resultPath,
     resultCapture,
@@ -2163,6 +2447,10 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   console.log(`📊 ${t(locale, 'verify.summary')}`);
   console.log(LINE);
   if (data.scope) console.log(`  Scope: ${scopeReportValue(data.scope)}`);
+  if (data.release) {
+    console.log(`  ${t(locale, 'verify.releaseLevel')}`);
+    console.log(`  ${t(locale, 'verify.releaseIdentity', { commit: data.release.commit, platform: data.release.platform })}`);
+  }
   console.log(`  ${t(locale, 'verify.totalDefined', { count: String(summary.defined_count), ut: String(summary.ut_count), st: String(summary.st_count) })}`);
   if (summary.manual_count > 0) {
     console.log(`  🔵 ${t(locale, 'verify.manual', { count: String(summary.manual_count) })}`);
@@ -2225,8 +2513,28 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
     for (const m of req.missing_environment) console.log(`  missing: ${describeMissing(m)}`);
     console.log('  （本次未执行任何预跑命令 / no pre-run command was executed）');
   }
+  // layered-verification（§2.109.13）：分层开启时门禁结论带级别；未开启时文本输出不变
+  if (data.layers) {
+    console.log(`\n  ${t(locale, 'verify.layeredLevel')}`);
+    const l = data.layers;
+    console.log(`  ${t(locale, 'verify.layeredScope', {
+      changed: String(l.changed.count), affected: String(l.affected.count), mainPath: String(l.main_path.count),
+      total: String(l.total.count), expansion: l.expansion.level,
+    })}`);
+    for (const r of l.expansion.reasons) console.log(`    ${r.code}: ${r.detail}`);
+  }
   if (gate.result === 'PASS') {
     console.log(`\n✅ ${t(locale, 'verify.gatePass')}`);
+    if (data.layers) console.log(`  ${t(locale, 'verify.layeredNotRelease')}`);
+  } else if (gate.reason === 'release_commit_changed') {
+    console.log('\n❌ Gate 3.5: FAIL (release_commit_changed)');
+    console.log(`  HEAD at finish: ${data.release?.head_at_finish ?? 'unreadable'}; working tree ${data.release?.worktree_clean ? 'clean' : 'dirty'}`);
+  } else if (gate.reason === 'main_path_invalid' || gate.reason === 'main_path_over_limit' || gate.reason === 'main_path_flaky') {
+    console.log(`\n❌ Gate 3.5: FAIL (${gate.reason})`);
+    const mp = data.layers?.main_path;
+    for (const p of mp?.problems ?? []) console.log(`  ${p.file}: ${p.code}${p.id ? ` (${p.id})` : ''}`);
+    if (mp && gate.reason === 'main_path_over_limit') console.log(`  limit ${mp.limit}, actual ${mp.count}`);
+    if (mp && gate.reason === 'main_path_flaky') console.log(`  ${mp.flaky_ids.join(', ')}  ${t(locale, 'verify.layeredFlakyHint')}`);
   } else if (gate.reason === 'verify_requirements_invalid' || gate.reason === 'acceptance_requirement_undeclared' || gate.reason === 'verify_env_not_ready') {
     console.log(`\n❌ Gate 3.5: FAIL (${gate.reason})`);
   } else if (gate.reason === 'case_tier_mismatch') {
@@ -2314,7 +2622,7 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
     process.exit(1);
   }
 
-  if (existsSync(guardPath)) {
+  if (!release && existsSync(guardPath)) {
     try {
       const guard = JSON.parse(readFileSync(guardPath, 'utf-8'));
       const slug = guard.activeChange;

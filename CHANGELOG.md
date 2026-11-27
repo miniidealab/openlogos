@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.27] - 2026-11-27
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- 测试用例文档的「主链路用例」小节（`## 主链路用例` / `Main Path Cases`，列表项以用例 ID 开头）：标出「坏了就等于产品不可用」的用例；用例表首格语法不变。
+- 提案脚手架新增「受影响场景」段（fenced YAML：`schema: openlogos/affected-scenarios@1`、`assessment`、`shared_change`、`scenarios`）。change-lint 新增检查：缺段警告 `affected_scenarios_missing`；未填写、结构非法、理由为空、编号重复、场景不存在报违规 `affected_scenarios_invalid`；`assessment: unknown` 通过并警告 `affected_scenarios_unknown`；主链路小节写错或超过上限警告 `main_path_invalid`、`main_path_over_limit`。
+- 配置 `verify.layered`：`{ enabled, main_path_max, shared_paths }`，缺省关闭、主链路上限 50、共享路径缺省为常见依赖清单（配置后替换缺省清单）；取值非法时按缺省值处理并警告 `layered_config_invalid`。
+- 分层开启时，提案级 `openlogos verify` 只验收「本提案用例 ∪ 受影响用例 ∪ 主链路用例」：
+  - 受影响场景取提案声明中的已识别场景与本提案 delta 触及的场景；清单经 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 交给测试入口。
+  - 只扩大不缩小：没有活跃提案、提案起点不可用、改动命中共享路径、声明涉及共享改动时扩大到全量；声明缺失、未填写、无法评估或引用了不存在的场景时扩大到按模块（按模块限定范围不可用时为全量）。
+  - 主链路小节写错或超过上限，在执行任何预跑命令之前判 FAIL（`main_path_invalid`、`main_path_over_limit`）；主链路用例靠复跑才通过判 FAIL（`main_path_flaky`）。
+  - 提案集合之外的结果行只计数并警告 `layered_runner_not_narrowed`，不判越界。
+  - 切片 checkpoint 的 `baseline` 范围随之收窄为提案集合内的基线用例；`owned` 范围不变。
+  - JSON 新增恒输出的 `level` 与分层开启时的 `layers`；验收报告新增「级别」行与「验收范围」小节，并注明提案级通过不等于可以发布。
+- `openlogos verify --release`：发布级全量验收。要求 git 仓库、工作区干净（lifecycle 路径除外）、配置了测试命令（不接受只读取既有结果）；执行前固定提交号，恒为全量，对全部自动化用例严格判定跳过（只接受带平台原因的跳过）；收尾时 HEAD 或工作区有变化判 FAIL（`release_commit_changed`）。报告写入 `logos/resources/verify/release/acceptance-report.md`；不触碰提案标记、提案级与模块验收报告。
+- `openlogos verify --release --check [--commit <sha>]`：只读查询目标提交在当前平台上是否有有效的发布级结论（`valid`、`reason`：`latest_failed` / `other_platform_only` / `other_commit_only` / `no_conclusive_run`），退出码 0 / 1。
+- 验收历史中央索引新增 `level`、`platform`；`openlogos history list` 新增 `--level proposal|release` 与 `--commit <sha>` 筛选。
+
+### Changed
+
+- 开启 `verify.layered.enabled` 的项目，提案级验收不再执行全量（缺省关闭；未开启时验收范围、门禁、报告与退出码不变，JSON 只多出 `level`）。
+- `logos/resources/verify/release/acceptance-report.md` 成为报告保留路径：结果路径配置落在其上时按既有保留路径规则改写并提示。
+
 ## [0.16.26] - 2026-11-27
 
 本机全局发布（未发布到 npm）。

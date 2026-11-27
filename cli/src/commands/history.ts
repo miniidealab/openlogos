@@ -13,11 +13,11 @@ import {
 
 const USAGE = [
   'Usage:',
-  '  openlogos history list [--kind verify|smoke] [--slug <slug>] [--result pass|fail|aborted] [--module <id>] [--limit <n>] [--format json]',
+  '  openlogos history list [--kind verify|smoke] [--slug <slug>] [--result pass|fail|aborted] [--module <id>] [--level proposal|release] [--commit <sha>] [--limit <n>] [--format json]',
   '  openlogos history show <run_id> [--format json]',
 ].join('\n');
 
-interface ListOptions { kind?: string; slug?: string; result?: string; module?: string; limit: number }
+interface ListOptions { kind?: string; slug?: string; result?: string; module?: string; level?: string; commit?: string; limit: number }
 
 function usageError(json: boolean, message: string): never {
   if (json) console.error(JSON.stringify(makeErrorEnvelope('history', 'INVALID_ARGUMENT', message)));
@@ -45,6 +45,12 @@ function parseListOptions(rest: string[], json: boolean): ListOptions {
       if (v !== 'pass' && v !== 'fail' && v !== 'aborted') usageError(json, '--result must be pass, fail or aborted');
       opts.result = v;
     } else if (flag === '--module') opts.module = need();
+    else if (flag === '--level') {
+      // layered-verification（§2.109.14）：按验收级别筛选
+      const v = need();
+      if (v !== 'proposal' && v !== 'release') usageError(json, '--level must be proposal or release');
+      opts.level = v;
+    } else if (flag === '--commit') opts.commit = need();
     else if (flag === '--limit') {
       const v = Number(need());
       if (!Number.isInteger(v) || v <= 0) usageError(json, '--limit must be a positive integer');
@@ -61,6 +67,9 @@ function matches(run: VerificationRun, o: ListOptions): boolean {
   if (o.result === 'fail' && run.gate.result !== 'FAIL') return false;
   if (o.result === 'aborted' && run.outcome !== 'aborted') return false;
   if (o.module && !(run.module_scope ?? []).includes(o.module)) return false;
+  if (o.level && run.level !== o.level) return false;
+  // --commit 按前缀匹配 commit.head
+  if (o.commit && !(run.commit.head ?? '').startsWith(o.commit)) return false;
   return true;
 }
 
