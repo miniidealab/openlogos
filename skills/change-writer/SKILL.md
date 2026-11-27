@@ -1004,7 +1004,7 @@ required 分支引用稳定 `fact_id` 和 Registry/当前 CREATE authority targe
 
   条目来自 test-writer（3c）。写下条目即意味着：merge 后的 `[code]` 实现任务必须在活跃提案内把它们写入 `logos/logos.config.json` 的 `verify.requirements`；verify 在执行任何预跑命令前对账，漏写会以 `acceptance_requirement_undeclared` 判 FAIL。规划 `[code]` 时不要漏掉这项配置写入。
 - **平台限定用例** — 只在特定平台、执行身份或平台能力下执行的用例 ID 与条件；它们在条件不成立时写平台跳过原因。条件成立却缺工具的情形不属于这里，应写成上一字段的 `check:` 条目。
-- **需要人参与的验收** — 本次需要人亲手做的验收事项与预期执行环节。冒烟阶段的人工验收能力（openlogos #3）落地前，用文字写明事项即可，不产生机器判定；不要为此给 `SMOKE-*` 写 `[manual]`。
+- **需要人参与的验收** — 本次新增或修改的人工用例 ID（`[manual]` 的 UT / ST / SMOKE），以及它们将在哪个开启人工验收（`manual_acceptance.enabled: true`）的环境的冒烟阶段执行；本次部署目标未开启人工验收、或本提案不部署时，写明「累积到下一次开启人工验收的环境」。test-writer 建议列为每次发布必跑的回归用例，一并写在这里，由用户决定是否加入登记表 `manual_acceptance.regression`（change-writer 不修改登记表）。没有人工用例写「无」。规则见功能规格 §2.107（smoke-manual-acceptance）。
 
 修改保护范围不在本段：`.gitignore`、`.git/info/exclude` 与 `logos.config.json` 的 `guard` 字段仍只能经 `openlogos ignore|exempt` 修改；「已立案可改」只适用于 `verify.requirements` 等其他配置字段。
 

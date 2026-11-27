@@ -126,7 +126,7 @@
 
 #### 3c: `[manual]` 标记规则
 
-`[manual]` 表示**需要人参与**的 UT/ST 用例（规则权威见 `spec/test-results.md`「`[manual]` 标记用例」与功能规格 §2.106.2）。`openlogos verify` 把它们排除在覆盖率计算之外：不计入 `defined_count`，不出现在 `uncovered_cases`。
+`[manual]` 表示**需要人参与**的 UT / ST / SMOKE 用例（规则权威见 `spec/test-results.md`「`[manual]` 标记用例」、功能规格 §2.106.2 与 §2.107.2）。`openlogos verify` 把 UT/ST 人工用例排除在覆盖率计算之外，`openlogos smoke` 把人工 SMOKE 排除在自动集合之外；它们在部署后的冒烟阶段按环境开关由人执行并记录（`openlogos accept`，`spec/environments.md` §15）。
 
 **判断方法（逐条用例都要过一遍）**：保留预装的机器环境，换一个待验版本（新的提交或制品），移除上一版本的结果与人工证据后，verify 命令能否自行产生适用于新版本的证据？
 
@@ -150,7 +150,13 @@
 
 **人工用例的测试代码不得进入默认 verify 入口**：如果为人工用例保留了辅助测试代码，必须放在 verify 预跑命令在调度前就排除的位置（独立文件命名、测试分组或独立入口），并在交付说明中写明排除方式。只在结果里过滤不够——测试一旦被启动，就可能卡在等待输入或系统弹窗上。
 
-本节只约束 UT/ST。SMOKE 用例的人工标记规则由后续需求（openlogos #3）交付，在此之前不要给 `SMOKE-*` 写 `[manual]`，人工冒烟事项在 proposal「验收标准」的「需要人参与的验收」中用文字列出。
+**SMOKE 人工用例**（来源变更 smoke-manual-acceptance）：判断方法与上面相同。部署后检查项中每次发布都要人亲手做的（实机安装签名包后确认首启界面、在真实账号上走一遍支付、肉眼核对生产页面），写成 `| SMOKE-<module>-<序号> [manual] | … |`，只在某平台上执行的写 `[manual/<平台>]`。人工 SMOKE：
+
+- 不写 runner、不写结果行（runner 写了会以 `manual_smoke_result_id` 判 FAIL），也不计入 3d「smoke runner 闭环」要求；
+- 描述与操作列写清人要做什么、看到什么算通过，供人在冒烟阶段逐条执行；
+- 首格必须是「裸 ID + 标记」，不要把标记写进描述列。
+
+**回归人工用例**：每次发布都必须重跑的人工用例（不论本次是否改动），由人在登记表 `manual_acceptance.regression` 中指定；该登记表写了 `manual_acceptance` 后受 guard 保护，AI 不直接修改。test-writer 只在交付说明中**建议**哪些人工用例适合列为回归，由 change-writer 写进 proposal「验收标准」，供用户决定。
 
 #### 3d: 部署后冒烟测试（需要部署时）
 
