@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.26] - 2026-11-27
+
+本机全局发布（未发布到 npm）。
+
+### Added
+
+- verify 失败用例复跑与偶发判定：预跑结果里有失败的 UT/ST、数量不超过上限时，在首跑所用的同一执行环境内只把这些用例再跑一次（注入 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 与 `OPENLOGOS_VERIFY_RERUN=1`）。复跑通过的记为偶发，JSON 新增 `flaky_cases` 与恒输出的 `rerun`（含各命令组的首跑与复跑退出码、改判后状态、未复跑原因），门禁通过且有偶发时带警告 `flaky_cases_present`。
+  - 每个失败用例只交给产生其生效记录的命令组与阶段复跑一次（两阶段共用结果路径、按模块命令组、切片 checkpoint 下同样成立），只采信该来源本次复跑的输出，不比较 timestamp。
+  - 首跑结果账本中的非法行保留到最终门禁，复跑不会抹掉它们。
+  - 首跑的一次性沙箱副本保留到复跑结束；副本已不可用时不复跑、不新建副本、不退回工作区（`sandbox_unavailable`）。
+- 配置 `verify.rerun_failed`：`{ enabled, max_cases }`，缺省开启、上限 10；取值非法时按缺省值处理并警告 `rerun_config_invalid`。
+- 验收报告「偶发用例」小节（多模块按模块各自列出），文本模式在门禁结论后输出偶发清单与提示；验收历史中央索引新增可选字段 `flaky_ids`，`history show` 透出。
+
+### Changed
+
+- 首跑失败、同一执行环境内复跑通过的 UT/ST 不再使 verify FAIL（默认开启，`verify.rerun_failed.enabled: false` 恢复 0.16.25 行为）。复跑仍失败、被跳过或没有新结果的用例照常失败。
+
 ## [0.16.25] - 2026-11-27
 
 本机全局发布（未发布到 npm）。

@@ -314,6 +314,11 @@ describe('S44 branch status 与主分支确定', () => {
         restProps.verify.properties.modules = { ...mod, additionalProperties: { ...mod.additionalProperties, properties: modProps } };
       }
     }
+    // verify-flaky-rerun：verify 节新增 rerun_failed（失败用例复跑配置），属该提案的增量，比较前剔除
+    if (restProps.verify?.properties?.rerun_failed) {
+      restProps.verify = { ...restProps.verify, properties: { ...restProps.verify.properties } };
+      delete restProps.verify.properties.rerun_failed;
+    }
     expect(restProps).toEqual(baseline.properties);
     const { properties: _p1, definitions: _d1, ...restTop } = schema;
     const { properties: _p2, definitions: _d2, ...baselineTop } = baseline;

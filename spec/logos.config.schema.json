@@ -111,6 +111,24 @@
           },
           "additionalProperties": false
         },
+        "rerun_failed": {
+          "type": "object",
+          "description": "失败用例复跑（可选，verify-flaky-rerun，功能规格 §2.108.2）。预跑命令跑出失败的规格内 UT/ST 时，verify 在首跑所用的同一执行环境内把这些用例再跑一次；复跑通过的记为偶发（flaky_cases），不并入普通通过。整个对象可省略，省略等价于缺省值；取值非法时按缺省值处理并输出警告 rerun_config_invalid，不改变门禁结论。只有项目级配置。",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "是否复跑失败用例（缺省 true）。false 时不复跑，rerun.skipped_reason 为 disabled，其余行为与 0.16.25 一致。"
+            },
+            "max_cases": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 10,
+              "description": "复跑集合的上限（缺省 10，正整数）。首跑失败用例数超过上限时不复跑，rerun.skipped_reason 为 too_many_failures。"
+            }
+          },
+          "additionalProperties": false
+        },
         "requirements": {
           "$ref": "#/definitions/VerifyRequirements",
           "description": "verify 环境要求（可选，verify-self-sufficient-cases，功能规格 §2.106.4）。verify 在执行任何预跑命令之前检查：env 中的变量存在且非空、commands 中的命令可在 PATH 上解析、checks 中的检查命令经与预跑命令同一沙箱执行器在 60 秒内以 0 退出；缺任一项判 FAIL（verify_env_not_ready），不执行预跑命令。只做声明与预检，不过滤未声明的环境变量。"

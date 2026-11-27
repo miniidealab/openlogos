@@ -1283,6 +1283,9 @@ describe('S13 — timestamp 去重全序（contract-self-description）', () => 
         incremental_command: `node -e "require('fs').mkdirSync('logos/resources/verify',{recursive:true});require('fs').writeFileSync('logos/resources/verify/test-results.incremental.jsonl','{\\"id\\":\\"UT-S13-90\\",\\"status\\":\\"pass\\",\\"timestamp\\":\\"2026-07-17T08:00:00Z\\"}\\n')"`,
         regression_result_path: 'logos/resources/verify/test-results.regression.jsonl',
         incremental_result_path: 'logos/resources/verify/test-results.incremental.jsonl',
+        // verify-flaky-rerun：本用例验证两阶段合并文件的行序与去重；失败用例复跑会把结果文件改写为合并后的有效记录（§2.108.6），
+        // 与本用例的合并语义正交，故关闭
+        rerun_failed: { enabled: false },
       };
       writeFileSync(configPath, JSON.stringify(config, null, 2));
       expect(() => verify()).toThrow('process.exit(1)'); // fail 是最新证据 → Gate FAIL（不因合并文件末行 pass 翻盘）

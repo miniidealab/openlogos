@@ -187,6 +187,8 @@ function normalizeRun(root, run) {
   if (env) { delete env.version; delete env.timestamp; }
   // verification-history（§2.104.11）：verify JSON 除新增 data.history 外与引入前一致；history 含每次不同的 run_id，比较前剔除
   if (env && env.data && typeof env.data === 'object') { env.data = { ...env.data }; delete env.data.history; }
+  // verify-flaky-rerun（§2.108.11）：0.16.26 起 data.rerun 恒输出，是引入后新增的字段，比较前剔除
+  if (env && env.data && typeof env.data === 'object') delete env.data.rerun;
   return {
     status: run.status,
     envelope: env ? JSON.parse(norm(JSON.stringify(env))) : null,
@@ -212,6 +214,12 @@ export function observeDisabledFixtures(cliEntry) {
   for (const [name, arm] of Object.entries(arms)) {
     const root = createScopeProject({ modules: arm.modules, moduleCommands: arm.moduleCommands });
     try {
+      // verify-flaky-rerun：本组基线比较的是「模块范围未启用」与引入前一致；失败用例复跑（缺省开启）与模块范围正交，
+      // 会让首跑失败的臂多调用一次 runner，故在这里关闭（旧版 CLI 忽略该字段，基线生成不受影响）
+      const cfgPath = join(root, 'logos', 'logos.config.json');
+      const cfg = JSON.parse(readFileSync(cfgPath, 'utf8'));
+      cfg.verify = { ...(cfg.verify ?? {}), rerun_failed: { enabled: false } };
+      writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
       addProposal(root, { module: arm.owner, deltas: { 'test/portal-web-S50-test-cases.md': TEST_DELTA } });
       // ST-S13-30：模拟纯规格提案合并后的落盘（只改 portal-web 前缀的测试规格）
       if (arm.merged) put(root, 'logos/resources/test/portal-web-S50-test-cases.md', `${table(['UT-S50-01', 'UT-S50-02'])}\n<!-- merged -->\n`);

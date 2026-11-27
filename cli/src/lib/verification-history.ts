@@ -56,6 +56,11 @@ export interface VerificationRun {
   failed_ids: string[];
   skipped_ids: string[];
   uncovered_ids: string[];
+  /**
+   * verify-flaky-rerun（§2.104.3）：verify 判为偶发的用例 ID（字典序）。0.16.26 起的 verify 记录恒写入（无偶发为空数组），
+   * smoke 记录不写；读取时缺失的 verify 记录按空数组补齐，存在但不是字符串数组时整条按损坏记录跳过。
+   */
+  flaky_ids?: string[];
   /** verify-self-sufficient-cases（§2.104.3 修改）：none = 环境预检类原因判 FAIL，既未执行命令也未读取结果。 */
   result_source: 'executed' | 'reused' | 'none';
   commit: { head: string | null; dirty: boolean | null };
@@ -98,6 +103,8 @@ export interface HistoryFinish {
   failedIds?: string[];
   skippedIds?: string[];
   uncoveredIds?: string[];
+  /** verify-flaky-rerun：偶发用例 ID（只对 verify 记录写入）。 */
+  flakyIds?: string[];
   resultSource: 'executed' | 'reused' | 'none';
   /** 本次实际采集的结果文件（项目根相对）；不存在或未采集时为 null。 */
   resultPath: string | null;
@@ -213,6 +220,7 @@ export function buildRunRecord(ctx: HistoryRunContext, finish: HistoryFinish, co
     failed_ids: sortedIds(finish.failedIds),
     skipped_ids: sortedIds(finish.skippedIds),
     uncovered_ids: sortedIds(finish.uncoveredIds),
+    ...(ctx.kind === 'verify' ? { flaky_ids: sortedIds(finish.flakyIds) } : {}),
     result_source: finish.resultSource === 'executed' ? 'executed' : finish.resultSource === 'none' ? 'none' : 'reused',
     commit: { head: commit.head, dirty: commit.dirty },
     cli_version: VERSION,
@@ -369,6 +377,8 @@ function validRecord(value: unknown, fileRunId: string): value is VerificationRu
   if (!isStrOrNull(v.attempted_slice_id) || !isStrOrNull(v.environment) || !isStrOrNull(v.deploy_id)) return false;
   if (!isObj(v.counts) || !['defined', 'executed', 'passed', 'failed', 'skipped', 'uncovered'].every(k => isNumOrNull((v.counts as Record<string, unknown>)[k]))) return false;
   if (!isStrArray(v.failed_ids) || !isStrArray(v.skipped_ids) || !isStrArray(v.uncovered_ids)) return false;
+  // verify-flaky-rerun：flaky_ids 可选；存在时必须是字符串数组
+  if ('flaky_ids' in v && !isStrArray(v.flaky_ids)) return false;
   if (v.result_source !== 'executed' && v.result_source !== 'reused' && v.result_source !== 'none') return false;
   if (!isObj(v.commit) || !isStrOrNull(v.commit.head) || !(v.commit.dirty === null || typeof v.commit.dirty === 'boolean')) return false;
   if (!isStr(v.cli_version)) return false;
@@ -390,7 +400,11 @@ export function readAllRuns(root: string): { runs: VerificationRun[]; warnings: 
     const rel = `${HISTORY_INDEX_DIR}/${name}`;
     try {
       const parsed = JSON.parse(readFileSync(join(dir, name), 'utf-8')) as unknown;
-      if (validRecord(parsed, name.slice(0, -'.json'.length))) runs.push(parsed);
+      if (validRecord(parsed, name.slice(0, -'.json'.length))) {
+        // verify-flaky-rerun：0.16.26 之前的 verify 记录没有 flaky_ids，读取时按空数组补齐
+        if (parsed.kind === 'verify' && parsed.flaky_ids === undefined) parsed.flaky_ids = [];
+        runs.push(parsed);
+      }
       else warnings.push({ code: 'verification_history_corrupt', path: rel, message: 'missing or invalid required fields' });
     } catch {
       warnings.push({ code: 'verification_history_corrupt', path: rel, message: 'not valid JSON' });

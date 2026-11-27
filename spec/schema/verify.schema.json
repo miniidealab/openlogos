@@ -47,6 +47,41 @@
     "checkpoint": { "$ref": "#/$defs/sliceCheckpointSummary" }
     ,"test_change_set": { "$ref": "#/$defs/testChangeSetSummary" }
     ,"scope": { "$ref": "#/$defs/verifyScope" }
+    ,"rerun": {
+      "$comment": "verify-flaky-rerun（功能规格 §2.108.9，spec/cli-json-output.md「verify 失败用例复跑与偶发」）：0.16.26 起恒输出；旧版输出没有该字段，消费方按「未复跑」处理。",
+      "type": "object", "required": ["attempted", "skipped_reason", "max_cases", "requested_ids", "commands"], "additionalProperties": true,
+      "properties": {
+        "attempted": { "type": "boolean" },
+        "skipped_reason": { "enum": [null, "precheck_failed", "disabled", "no_command", "gate_blocked", "no_failed_cases", "too_many_failures", "sandbox_unavailable"] },
+        "max_cases": { "type": "integer", "minimum": 1 },
+        "requested_ids": { "$ref": "#/$defs/stringArray" },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["stage", "modules", "ids", "first_exit_code", "rerun_exit_code", "skipped_reason", "status_after"],
+            "additionalProperties": true,
+            "properties": {
+              "stage": { "enum": ["pre_run", "regression", "incremental"] },
+              "modules": { "type": ["array", "null"], "items": { "type": "string" } },
+              "ids": { "$ref": "#/$defs/stringArray" },
+              "first_exit_code": { "type": ["integer", "null"] },
+              "rerun_exit_code": { "type": ["integer", "null"] },
+              "skipped_reason": { "enum": [null, "sandbox_unavailable"] },
+              "status_after": { "enum": ["pass", "fail"] }
+            }
+          }
+        }
+      }
+    }
+    ,"flaky_cases": {
+      "$comment": "verify-flaky-rerun：首跑失败、同一执行环境内复跑通过的用例；为空时不出现。",
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["id", "module", "first_error"], "additionalProperties": true,
+        "properties": { "id": { "type": "string" }, "module": { "type": ["string", "null"] }, "first_error": { "type": ["string", "null"] } }
+      }
+    }
   },
   "allOf": [
     {

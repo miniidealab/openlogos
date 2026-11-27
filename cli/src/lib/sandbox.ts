@@ -156,7 +156,28 @@ interface CaptureReport {
 export interface SandboxExecutionResult {
   command: SandboxCommandResult;
   sandbox: SandboxData;
+  /**
+   * verify-flaky-rerun（功能规格 §2.108.5 第 4 条）：`retain: true` 时返回首跑所用执行环境的句柄，
+   * 供同一副本内复跑；调用方必须在复跑决策结束后调用 releaseRetainedExecution。
+   */
+  retained?: RetainedExecution;
 }
+
+/**
+ * 首跑执行环境句柄（verify-flaky-rerun）：
+ * - workspace：首跑在工作区执行（sandbox_mode: off，或既有规则下降级为非隔离执行），复跑也在工作区原地执行；
+ * - one-off：一次性副本，推迟到 release 时删除；
+ * - persistent：持久副本，release 之前保持本次占用（不释放世代锁）；
+ * - unavailable：首跑未能在任何执行环境中运行（如 always 模式隔离失败），不可复跑。
+ */
+export type RetainedExecution =
+  | { kind: 'workspace'; root: string }
+  | { kind: 'one-off'; root: string; sandboxDir: string; projectRoot: string; released: boolean }
+  | {
+    kind: 'persistent'; root: string; lease: SandboxLease; projectDir: string; wsDir: string; projectRoot: string;
+    pgid: number | null; commandStartedUptime: number | null; released: boolean;
+  }
+  | { kind: 'unavailable'; reason: string };
 
 export interface RunSandboxedCommandOptions {
   root: string;
@@ -171,6 +192,8 @@ export interface RunSandboxedCommandOptions {
    * 各执行路径（含沙箱内、复用模式进程组）都继承调用期间的 process.env，故在本次调用期间临时设置、结束后还原。
    */
   extraEnv?: Record<string, string>;
+  /** verify-flaky-rerun：保留首跑执行环境供复跑（见 SandboxExecutionResult.retained）。 */
+  retain?: boolean;
 }
 
 export interface RuntimeWriteProtection {
@@ -745,6 +768,7 @@ function runSandboxedCommandInner(options: RunSandboxedCommandOptions): SandboxE
       sandbox: {
         ...buildInitialSandboxData(sandbox),
       },
+      ...(options.retain ? { retained: { kind: 'workspace' as const, root: normalizedRoot } } : {}),
     };
   }
 
@@ -783,14 +807,32 @@ function runOneOffSandbox(options: RunSandboxedCommandOptions, normalizedRoot: s
     if (sandboxDir && existsSync(sandboxDir)) {
       removeTree(sandboxDir);
     }
-    return makeUnsupportedSandboxResult(format, normalizedRoot, command, sandbox, error);
+    return retainNonIsolated(options, normalizedRoot, makeUnsupportedSandboxResult(format, normalizedRoot, command, sandbox, error));
   }
 
-  return runPreparedSandbox(options, normalizedRoot, sandboxDir, sandboxProjectRoot).result;
+  const prepared = runPreparedSandbox(options, normalizedRoot, sandboxDir, sandboxProjectRoot, undefined, options.retain === true);
+  if (!options.retain) return prepared.result;
+  if (!prepared.commandRan) return retainNonIsolated(options, normalizedRoot, prepared.result);
+  prepared.result.retained = { kind: 'one-off', root: normalizedRoot, sandboxDir, projectRoot: sandboxProjectRoot, released: false };
+  return prepared.result;
+}
+
+/**
+ * 命令没有在沙箱副本内执行时的执行环境句柄：隔离失败（status=fail，命令未执行）为 unavailable；
+ * 降级为工作区非隔离执行（auto 兼容策略）为 workspace。
+ */
+function retainNonIsolated(options: RunSandboxedCommandOptions, normalizedRoot: string, result: SandboxExecutionResult): SandboxExecutionResult {
+  if (!options.retain) return result;
+  result.retained = result.sandbox.status === 'fail'
+    ? { kind: 'unavailable', reason: result.sandbox.diagnostics[0] ?? 'sandbox isolation failed' }
+    : { kind: 'workspace', root: normalizedRoot };
+  return result;
 }
 
 interface PreparedRun {
   result: SandboxExecutionResult;
+  /** strict 模式（保留副本内复跑）下隔离前提不成立、命令未启动时的原因；此时 result 无意义。 */
+  unavailableReason?: string;
   /** 命令是否实际在沙箱内执行（未执行时无旧写入者需检查）。 */
   commandRan: boolean;
   pgid: number | null;
@@ -807,12 +849,32 @@ function runPreparedSandbox(
   sandboxDir: string,
   sandboxProjectRoot: string,
   group?: GroupExec,
+  /** verify-flaky-rerun：一次性副本命令执行完后不删除，由 releaseRetainedExecution 删除。 */
+  keepDir = false,
+  /**
+   * verify-flaky-rerun（§2.108.5 第 4 条、EX-13.27）：保留副本内复跑时禁止任何降级——隔离前提（无逃逸链接、运行期写保护）
+   * 不成立时在启动命令之前返回 unavailableReason，不删除副本、不在源工作区执行。
+   */
+  strict = false,
 ): PreparedRun {
   const { command, format, sandbox, allowedWritePaths } = options;
   const persistent = Boolean(group);
+  const strictUnavailable = (reason: string): PreparedRun => ({
+    commandRan: false, pgid: null, unavailableReason: reason,
+    result: { command: { status: 'fail', error: reason }, sandbox: buildInitialSandboxData(sandbox) },
+  });
 
   // 启动前 realpath containment 校验：逃逸链接按「无法隔离」处理，不进入依赖目录豁免
-  const escapingLinks = findEscapingSymlinks(sandboxProjectRoot);
+  let escapingLinks: string[];
+  try {
+    escapingLinks = findEscapingSymlinks(sandboxProjectRoot);
+  } catch (error) {
+    if (strict) return strictUnavailable(`sandbox copy recheck failed: ${commandErrorMessage(error) ?? 'unknown'}`);
+    throw error;
+  }
+  if (escapingLinks.length > 0 && strict) {
+    return strictUnavailable(`sandbox copy contains escaping symlinks: ${escapingLinks.slice(0, 5).join(', ')}`);
+  }
   if (escapingLinks.length > 0) {
     if (!persistent) removeTree(sandboxDir);
     const preview = escapingLinks.slice(0, 5).join(', ');
@@ -878,6 +940,7 @@ function runPreparedSandbox(
       protectionFailure = `无法启用运行期写保护：${wp.reason ?? 'unknown'}`;
     }
 
+    if (protectionFailure && strict) return strictUnavailable(protectionFailure);
     if (protectionFailure) {
       if (sandbox.mode === 'always') {
         if (!persistent) removeTree(sandboxDir);
@@ -979,7 +1042,7 @@ function runPreparedSandbox(
   }
 
   // 收尾清理失败降级为告警：测试已跑完、结论已得出，清理失败不得覆盖命令结果（架构 §五十二 52.6）。
-  if (!persistent) {
+  if (!persistent && !keepDir) {
     try {
       removeTree(sandboxDir);
     } catch (error) {
@@ -1040,7 +1103,7 @@ function runReusableSandbox(options: RunSandboxedCommandOptions, normalizedRoot:
     ensureProjectMeta(projectDir, normalizedRoot);
   } catch (error) {
     return withReuse(
-      makeUnsupportedSandboxResult(format, normalizedRoot, command, sandbox, error),
+      retainNonIsolated(options, normalizedRoot, makeUnsupportedSandboxResult(format, normalizedRoot, command, sandbox, error)),
       emptyReuseData('unsupported', true, projectDir || null),
     );
   }
@@ -1084,7 +1147,7 @@ function runReusableSandbox(options: RunSandboxedCommandOptions, normalizedRoot:
     } catch (error) {
       release({ ok: true });
       return withReuse(
-        makeUnsupportedSandboxResult(format, normalizedRoot, command, sandbox, error),
+        retainNonIsolated(options, normalizedRoot, makeUnsupportedSandboxResult(format, normalizedRoot, command, sandbox, error)),
         { ...emptyReuseData(state, true, projectDir), generation: lease.wsName },
       );
     }
@@ -1096,8 +1159,20 @@ function runReusableSandbox(options: RunSandboxedCommandOptions, normalizedRoot:
     commandRan = prepared.commandRan;
     pgid = prepared.pgid;
 
-    const liveness = commandRan ? checkOldWriters(pgid, lease.runTag, commandStartedUptime) : { ok: true };
-    release(liveness);
+    // verify-flaky-rerun（§2.108.5 第 4 条）：保留首跑副本时持久副本保持本次占用——存活检查与释放推迟到 releaseRetainedExecution
+    const keepLease = options.retain === true && commandRan;
+    let liveness: LivenessResult = { ok: true };
+    if (keepLease) {
+      released = true;
+      prepared.result.retained = {
+        kind: 'persistent', root: normalizedRoot, lease, projectDir, wsDir: lease.wsDir, projectRoot: join(lease.wsDir, 'workspace'),
+        pgid, commandStartedUptime, released: false,
+      };
+    } else {
+      liveness = commandRan ? checkOldWriters(pgid, lease.runTag, commandStartedUptime) : { ok: true };
+      release(liveness);
+      if (options.retain) retainNonIsolated(options, normalizedRoot, prepared.result);
+    }
 
     const reuse: SandboxReuseData = {
       enabled: true,
@@ -1135,5 +1210,192 @@ function runReusableSandbox(options: RunSandboxedCommandOptions, normalizedRoot:
         // 释放失败：锁保持未释放，下次按「持有者已不存在」新建世代
       }
     }
+  }
+}
+
+/**
+ * 复跑前清空一条结果路径（F1：沿用白名单回收的 no-follow 保护）：路径必须是 base 下的相对路径；父链每一段已存在时
+ * 必须是真实目录（不是链接），不存在时逐段新建真实目录；目标已存在时必须是普通文件（不是链接）。随后在同一目录内
+ * 以排他、no-follow 创建的随机名临时空文件原子替换目标——绝不跟随链接截断白名单外的文件。任何一步不满足即抛错。
+ */
+export function safeResetResultPath(base: string, rel: string): void {
+  safeWriteResultFile(base, rel, '');
+}
+
+/**
+ * 受保护的结果文件写入（code-r2 F1）：清空与合并写回共用。检查同 safeResetResultPath；内容先写入同目录内排他、no-follow
+ * 创建的随机名临时文件，再原子替换目标。路径或父链不安全时抛错且不写任何字节。
+ */
+export function safeWriteResultFile(base: string, rel: string, content: string): void {
+  const normalized = normalizeRelPath(rel);
+  if (!normalized || isAbsolute(rel) || normalized.split('/').some(seg => seg === '..' || seg === '')) {
+    throw new Error(`result path is not a safe relative path: ${rel}`);
+  }
+  const baseStat = lstatSync(base);
+  if (baseStat.isSymbolicLink() || !baseStat.isDirectory()) throw new Error(`reset base is not a real directory: ${base}`);
+  const segments = normalized.split('/');
+  let cursor = base;
+  for (const segment of segments.slice(0, -1)) {
+    cursor = join(cursor, segment);
+    let st;
+    try { st = lstatSync(cursor); } catch { st = null; }
+    if (!st) { mkdirSync(cursor); continue; }
+    if (st.isSymbolicLink() || !st.isDirectory()) throw new Error(`result path parent is not a real directory: ${normalized}`);
+  }
+  const target = join(base, normalized);
+  let targetStat;
+  try { targetStat = lstatSync(target); } catch { targetStat = null; }
+  if (targetStat && (targetStat.isSymbolicLink() || !targetStat.isFile())) throw new Error(`result path is not a regular file: ${normalized}`);
+  const flags = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | ((fsConstants as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0);
+  const tmp = join(dirname(target), `.olrr-${randomBytes(8).toString('hex')}.tmp`);
+  const fd = openSync(tmp, flags, 0o644);
+  try {
+    if (content) writeSync(fd, content);
+  } finally {
+    closeSync(fd);
+  }
+  try {
+    renameWithRetry(tmp, target);
+  } catch (error) {
+    rmSync(tmp, { force: true });
+    throw error;
+  }
+}
+
+function resetResultPaths(roots: string[], paths: string[]): void {
+  for (const base of roots) for (const rel of paths) safeResetResultPath(base, rel);
+}
+
+/** 旧写入者检查（F3）：测试替身 OPENLOGOS_TEST_RERUN_SANDBOX_TAMPER=old-writer 模拟「上一轮命令的后代仍在运行」。 */
+function heldOldWriters(handle: Extract<RetainedExecution, { kind: 'persistent' }>): LivenessResult {
+  if (process.env.OPENLOGOS_TEST_RERUN_SANDBOX_TAMPER === 'old-writer') return { ok: false, reason: 'test double: previous writer still alive' };
+  return checkOldWriters(handle.pgid, handle.lease.runTag, handle.commandStartedUptime);
+}
+
+function withEnv<T>(extra: Record<string, string> | undefined, fn: () => T): T {
+  const saved = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(extra ?? {})) {
+    saved.set(key, process.env[key]);
+    process.env[key] = value;
+  }
+  try {
+    return fn();
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+/**
+ * verify-flaky-rerun（F4）：同一次 verify 内后续的**首跑**阶段 / 命令组在已占用的持久副本内执行——按原规则先镜像同步
+ * （只保留声明的缓存路径）再执行，与逐次获取世代锁时的输入一致；只省去释放与重新获取。上一轮命令的后代仍在运行或
+ * 无法确认时返回 { ok: false }，调用方应释放句柄后走正常执行器（与原规则「旧写入者存活则新建世代」一致）。
+ */
+export function runFirstRunStageInHeld(
+  handle: RetainedExecution | undefined,
+  options: RunSandboxedCommandOptions,
+): { ok: true; result: SandboxExecutionResult } | { ok: false; reason: string } {
+  if (!handle || handle.kind !== 'persistent' || handle.released) return { ok: false, reason: 'no held persistent sandbox' };
+  const liveness = heldOldWriters(handle);
+  if (!liveness.ok) return { ok: false, reason: liveness.reason ?? 'previous writer still alive' };
+  return withEnv(options.extraEnv, () => {
+    const cache = resolveCachePaths(options.sandbox.cachePaths ?? [], options.allowedWritePaths);
+    let stats;
+    try {
+      stats = syncWorkspace(handle.root, handle.wsDir, cache.valid);
+    } catch (error) {
+      return { ok: false as const, reason: `sandbox sync failed: ${commandErrorMessage(error) ?? 'unknown'}` };
+    }
+    const group: GroupExec = { env: { ...process.env, [RUN_TAG_ENV]: handle.lease.runTag }, reportDir: handle.wsDir };
+    const prepared = runPreparedSandbox(options, handle.root, handle.wsDir, handle.projectRoot, group);
+    if (prepared.pgid !== null) handle.pgid = prepared.pgid;
+    const reuse: SandboxReuseData = {
+      enabled: true, state: 'reused', dir: handle.projectDir, generation: handle.lease.wsName,
+      copied: stats.copied, removed: stats.removed, content_compared: stats.content_compared, sync_ms: stats.sync_ms,
+      abandoned: listAbandoned(handle.projectDir, handle.lease.wsName, null),
+    };
+    prepared.result.sandbox.reuse = reuse;
+    prepared.result.sandbox.infos = Array.from(new Set([...(prepared.result.sandbox.infos ?? []), reuseSummary(reuse)]));
+    return { ok: true as const, result: prepared.result };
+  });
+}
+
+/** 首跑执行环境是否仍可继续使用（§2.108.5 第 4 条）；不可用时给出原因。 */
+export function retainedExecutionUnavailableReason(handle: RetainedExecution | undefined): string | null {
+  if (!handle) return 'no retained execution environment';
+  if (handle.kind === 'unavailable') return handle.reason;
+  if (handle.kind === 'workspace') return null;
+  if (handle.released) return 'execution environment already released';
+  // code-r2 F2：副本必须仍是可遍历的真实目录（被重置成普通文件、链接或无法读取时一律不可用）
+  let st;
+  try { st = lstatSync(handle.projectRoot); } catch { return `sandbox copy no longer exists: ${handle.projectRoot}`; }
+  if (st.isSymbolicLink() || !st.isDirectory()) return `sandbox copy is no longer a real directory: ${handle.projectRoot}`;
+  try { readdirSync(handle.projectRoot); } catch (error) { return `sandbox copy cannot be traversed (${commandErrorMessage(error) ?? 'unknown'}): ${handle.projectRoot}`; }
+  return null;
+}
+
+/**
+ * verify-flaky-rerun（功能规格 §2.108.5）：在首跑保留的同一执行环境内再执行一次命令——不新建副本、不重新准备依赖、
+ * 不退回工作区；写入白名单、写入审计、超时与输出截获规则与首跑相同。执行前清空 resetPaths（工作区与副本内）。
+ * 执行环境不可用时返回 { ok: false } 且不执行任何命令。
+ */
+export function rerunInRetainedExecution(
+  handle: RetainedExecution | undefined,
+  options: RunSandboxedCommandOptions & { resetPaths: string[] },
+): { ok: true; result: SandboxExecutionResult } | { ok: false; reason: string } {
+  const unavailable = retainedExecutionUnavailableReason(handle);
+  if (unavailable !== null || !handle || handle.kind === 'unavailable') return { ok: false, reason: unavailable ?? 'unavailable' };
+  // F3：持有世代锁只排除其他 CLI，排除不了本世代内仍在运行的上一轮后代——清空结果路径之前先做旧写入者检查
+  if (handle.kind === 'persistent') {
+    const liveness = heldOldWriters(handle);
+    if (!liveness.ok) return { ok: false, reason: `previous writer may still be running: ${liveness.reason ?? 'unknown'}` };
+  }
+  // F2：隔离复检先于任何清空——副本内出现逃逸链接时直接判不可用，工作区与副本里的结果文件都不动
+  if (handle.kind !== 'workspace') {
+    // code-r2 F2：启动命令前的复检出错（副本无法遍历等）一律转为该来源不可用，不中断验收
+    let escaping: string[];
+    try { escaping = findEscapingSymlinks(handle.projectRoot); } catch (error) {
+      return { ok: false, reason: `sandbox copy recheck failed: ${commandErrorMessage(error) ?? 'unknown'}` };
+    }
+    if (escaping.length > 0) return { ok: false, reason: `sandbox copy contains escaping symlinks: ${escaping.slice(0, 5).join(', ')}` };
+  }
+  // F1：清空走 no-follow 安全替换；任何一条路径不安全即停止该来源的复跑（不启动命令）
+  try {
+    resetResultPaths(handle.kind === 'workspace' ? [handle.root] : [handle.projectRoot, handle.root], options.resetPaths);
+  } catch (error) {
+    return { ok: false, reason: `result path reset refused: ${commandErrorMessage(error) ?? 'unknown'}` };
+  }
+  return withEnv(options.extraEnv, () => {
+    if (handle.kind === 'workspace') {
+      return { ok: true as const, result: { command: executeCommand(handle.root, options.command, options.format), sandbox: buildInitialSandboxData(options.sandbox) } };
+    }
+    // F2：保留副本内复跑走 strict 执行器——隔离前提不成立时不降级到源工作区，直接判不可用
+    const group: GroupExec | undefined = handle.kind === 'persistent'
+      ? { env: { ...process.env, [RUN_TAG_ENV]: handle.lease.runTag }, reportDir: handle.wsDir }
+      : undefined;
+    const prepared = handle.kind === 'one-off'
+      ? runPreparedSandbox(options, handle.root, handle.sandboxDir, handle.projectRoot, undefined, true, true)
+      : runPreparedSandbox(options, handle.root, handle.wsDir, handle.projectRoot, group, false, true);
+    if (prepared.unavailableReason) return { ok: false as const, reason: prepared.unavailableReason };
+    if (handle.kind === 'persistent' && prepared.pgid !== null) handle.pgid = prepared.pgid;
+    return { ok: true as const, result: prepared.result };
+  });
+}
+
+/** 复跑决策结束：删除一次性副本；持久副本做旧写入者存活检查后释放世代锁。幂等。 */
+export function releaseRetainedExecution(handle: RetainedExecution | undefined): void {
+  if (!handle || handle.kind === 'workspace' || handle.kind === 'unavailable' || handle.released) return;
+  handle.released = true;
+  if (handle.kind === 'one-off') {
+    try { removeTree(handle.sandboxDir); } catch { /* 清理失败不影响结论 */ }
+    return;
+  }
+  try {
+    const liveness = checkOldWriters(handle.pgid, handle.lease.runTag, handle.commandStartedUptime);
+    releaseGeneration(handle.lease, { pgid: handle.pgid, liveness, commandStartedUptime: handle.commandStartedUptime });
+  } catch {
+    // 释放失败：锁保持未释放，下次按「持有者已不存在」新建世代
   }
 }

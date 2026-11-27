@@ -52,6 +52,42 @@ export interface NormalizedVerifyConfig {
    * 结果路径改写到默认路径（回归 / 增量路径回落到结果路径），verify 在 pre_run.diagnostics 给出说明；不新增错误码。
    */
   reservedRedirects?: Array<{ config_key: string; path: string; fallback: string }>;
+  /**
+   * verify-flaky-rerun（功能规格 §2.108.2）：失败用例复跑配置。非法项按缺省值处理，`invalid` 列出被替换的字段路径，
+   * 由 verify 输出警告 rerun_config_invalid（不改变门禁结论）。
+   */
+  rerunFailed?: NormalizedRerunFailedConfig;
+}
+
+export interface NormalizedRerunFailedConfig {
+  enabled: boolean;
+  maxCases: number;
+  /** 取值非法、已按缺省值处理的字段路径（如 `verify.rerun_failed.max_cases`）；合法或省略时为空数组。 */
+  invalid: string[];
+}
+
+export const DEFAULT_RERUN_FAILED_ENABLED = true;
+export const DEFAULT_RERUN_FAILED_MAX_CASES = 10;
+
+/** §2.108.2：整个对象可省略；非对象、非布尔 enabled、非正整数 max_cases 均按缺省值处理并记录字段。 */
+export function normalizeRerunFailedConfig(raw: unknown): NormalizedRerunFailedConfig {
+  const out: NormalizedRerunFailedConfig = { enabled: DEFAULT_RERUN_FAILED_ENABLED, maxCases: DEFAULT_RERUN_FAILED_MAX_CASES, invalid: [] };
+  if (raw === undefined) return out;
+  const record = asRecord(raw);
+  if (!record) {
+    out.invalid.push('verify.rerun_failed');
+    return out;
+  }
+  if (record.enabled !== undefined) {
+    if (typeof record.enabled === 'boolean') out.enabled = record.enabled;
+    else out.invalid.push('verify.rerun_failed.enabled');
+  }
+  if (record.max_cases !== undefined) {
+    const value = record.max_cases;
+    if (typeof value === 'number' && Number.isInteger(value) && value > 0) out.maxCases = value;
+    else out.invalid.push('verify.rerun_failed.max_cases');
+  }
+  return out;
 }
 
 export interface VerifyPreRunBackfillResult {
@@ -140,6 +176,7 @@ export function normalizeVerifyConfig(rawVerify: unknown): NormalizedVerifyConfi
     sandbox: normalizeSandboxConfig(verify),
     moduleCommands: normalizeModuleCommands(verify.modules),
     moduleCommandIds: Object.keys(asRecord(verify.modules) ?? {}),
+    rerunFailed: normalizeRerunFailedConfig(verify.rerun_failed),
   };
 }
 

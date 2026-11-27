@@ -47,6 +47,11 @@ import {
   runVerifyPrecheck, readRawVerifyConfig, describeMissing,
   type PrecheckOutcome, type VerifyRequirementsData,
 } from '../lib/verify-requirements.js';
+import {
+  performFailedRerun, rerunConfigOf, skippedRerun,
+  type RerunSource, type VerifyFlakyCase, type VerifyRerunData,
+} from '../lib/verify-rerun.js';
+import { releaseRetainedExecution, runFirstRunStageInHeld, type RetainedExecution } from '../lib/sandbox.js';
 
 export interface TestResult {
   id: string;
@@ -167,8 +172,19 @@ export interface VerifyData {
   tier_mismatch_cases?: Array<{ id: string; reason_code?: string; detail?: string; fix_hint: string }>;
   /** §2.106.6：已有 SPEC_MERGED 但测试变更集校验失败（门禁原因 test_change_set_invalid）。 */
   change_set_diagnostic?: { code: 'test_change_set_invalid'; detail: string };
-  /** 不改门禁结论的提醒（非空时输出）：存量与无提案时的非平台跳过。 */
-  warnings?: Array<{ code: 'unclassified_skipped_cases'; ids: string[] }>;
+  /**
+   * 不改门禁结论的提醒（非空时输出）：存量与无提案时的非平台跳过；verify-flaky-rerun 新增
+   * flaky_cases_present（门禁 PASS 且有偶发用例，ids 为偶发用例）与 rerun_config_invalid（fields 为被按缺省值处理的字段）。
+   */
+  warnings?: Array<
+    | { code: 'unclassified_skipped_cases'; ids: string[] }
+    | { code: 'flaky_cases_present'; ids: string[] }
+    | { code: 'rerun_config_invalid'; ids: string[]; fields: string[] }
+  >;
+  /** verify-flaky-rerun（§2.108.9）：0.16.26 起恒输出。 */
+  rerun?: VerifyRerunData;
+  /** verify-flaky-rerun（§2.108.9）：首跑失败、同一执行环境内复跑通过的用例；为空时不出现。 */
+  flaky_cases?: VerifyFlakyCase[];
 }
 
 function safeReadFile(path: string): string {
@@ -216,6 +232,11 @@ function skippedCompatPreRunCommand(config: NormalizedVerifyConfig): VerifyPreRu
 export interface RunVerifyPreRunResult {
   preRun: VerifyPreRunData;
   sandbox: SandboxData;
+  /**
+   * verify-flaky-rerun（§2.108.5）：首跑每个结果来源（命令组的一段）的输出采集与保留的执行环境。
+   * 只在 runOptions.retainForRerun 时填写；调用方必须把它交给 performFailedRerun（或自行释放执行环境）。
+   */
+  rerunSources?: RerunSource[];
 }
 
 function ensureRelativePath(path: string): string {
@@ -240,7 +261,8 @@ function executeVerifyCommand(
   allowedWritePaths: string[],
   freshSandbox = false,
   extraEnv?: Record<string, string>,
-): { command: SandboxCommandResult; sandbox: SandboxData } {
+  retain = false,
+): ReturnType<typeof runSandboxedCommand> {
   if (format !== 'json') {
     console.log(`\n⚙️  Running verify.${stage === 'pre_run' ? 'pre_run_command' : `${stage}_command`}: ${command}`);
   }
@@ -252,7 +274,48 @@ function executeVerifyCommand(
     allowedWritePaths,
     freshSandbox,
     ...(extraEnv ? { extraEnv } : {}),
+    ...(retain ? { retain: true } : {}),
   });
+}
+
+/**
+ * verify-flaky-rerun（§2.108.5 第 4 条）：保留首跑执行环境时，持久副本在复跑决策结束前保持本次占用。
+ * 同一次 verify 内后续的首跑阶段 / 命令组因此不能再获取世代锁（会被判为占用而退回一次性副本），
+ * 改为在已占用的同一持久副本内执行——按原规则先镜像同步（只保留声明的缓存路径）再执行，命令看到的输入与逐次获取
+ * 世代锁时一致（code-r1 F4）。上一轮命令的后代仍在运行或无法确认时释放占用（记为 tainted），本段走正常执行器
+ * （与原规则「旧写入者存活则新建世代」一致）。一次性副本与工作区执行不受影响。
+ */
+interface HeldExecution { persistent?: RetainedExecution }
+
+function executeStageForRerun(
+  held: HeldExecution,
+  root: string,
+  stage: VerifyPreRunStage,
+  command: string,
+  format: OutputFormat,
+  sandboxConfig: NormalizedVerifyConfig['sandbox'],
+  allowedWritePaths: string[],
+  freshSandbox: boolean,
+  extraEnv: Record<string, string> | undefined,
+  retain: boolean,
+): ReturnType<typeof runSandboxedCommand> {
+  if (retain && held.persistent) {
+    const shared = runFirstRunStageInHeld(held.persistent, {
+      root, command, format, sandbox: sandboxConfig, allowedWritePaths,
+      ...(extraEnv ? { extraEnv } : {}),
+    });
+    if (shared.ok) {
+      if (format !== 'json') {
+        console.log(`\n⚙️  Running verify.${stage === 'pre_run' ? 'pre_run_command' : `${stage}_command`}: ${command}`);
+      }
+      return { ...shared.result, retained: held.persistent };
+    }
+    releaseRetainedExecution(held.persistent);
+    held.persistent = undefined;
+  }
+  const result = executeVerifyCommand(root, stage, command, format, sandboxConfig, allowedWritePaths, freshSandbox, extraEnv, retain);
+  if (retain && result.retained?.kind === 'persistent') held.persistent = result.retained;
+  return result;
 }
 
 function toPreRunCommandResult(
@@ -306,6 +369,8 @@ export interface VerifyRunOptions {
   freshSandbox?: boolean;
   /** module-scoped-verify（§2.96.5）：`openlogos verify --all` 手动全量。 */
   all?: boolean;
+  /** verify-flaky-rerun（§2.108.5 第 4 条）：保留首跑执行环境并返回结果来源，供失败用例复跑。 */
+  retainForRerun?: boolean;
 }
 
 /**
@@ -380,7 +445,8 @@ export function runVerifyPreRunWithSandbox(
     const resultPath = join(root, config.resultPath);
     mkdirSync(dirname(resultPath), { recursive: true });
     writeFileSync(resultPath, '');
-    const stageResult = executeVerifyCommand(root, 'pre_run', config.preRunCommand, format, sandboxConfig, allowedWritePaths, takeFresh());
+    const retain = runOptions.retainForRerun === true;
+    const stageResult = executeVerifyCommand(root, 'pre_run', config.preRunCommand, format, sandboxConfig, allowedWritePaths, takeFresh(), undefined, retain);
     const normalized = toPreRunCommandResult('pre_run', config.preRunCommand, stageResult.command, stageResult.sandbox);
     preRun.commands.push(normalized);
     sandbox = mergeSandboxStatus(sandbox, stageResult.sandbox);
@@ -389,7 +455,17 @@ export function runVerifyPreRunWithSandbox(
       console.warn(`\n⚠️  verify pre_run command exited with non-zero status${normalized.exit_code !== undefined ? ` (exit ${normalized.exit_code})` : ''}; verify gate will FAIL.`);
     }
     appendSandboxDiagnostics(preRun, sandbox);
-    return { preRun, sandbox };
+    // verify-flaky-rerun（§2.108.5 第 1、2 条）：单命令组时全部记录的来源即该命令；首跑结束时立即采集其输出
+    const rerunSources: RerunSource[] | undefined = retain ? [{
+      stage: 'pre_run',
+      command: config.preRunCommand,
+      modules: null,
+      commandIndex: preRun.commands.length - 1,
+      resultPath: config.resultPath,
+      content: safeReadFile(resultPath),
+      retained: stageResult.retained,
+    }] : undefined;
+    return { preRun, sandbox, ...(rerunSources ? { rerunSources } : {}) };
   }
 
   const compatSkipped = skippedCompatPreRunCommand(config);
@@ -399,6 +475,9 @@ export function runVerifyPreRunWithSandbox(
   }
 
   const stageContents: string[] = [];
+  const retain = runOptions.retainForRerun === true;
+  const held: HeldExecution = {};
+  const rerunSources: RerunSource[] = [];
   const runStage = (
     stage: Extract<VerifyPreRunStage, 'regression' | 'incremental'>,
     command: string | undefined,
@@ -409,7 +488,7 @@ export function runVerifyPreRunWithSandbox(
     const fullStagePath = join(root, effectiveStagePath);
     mkdirSync(dirname(fullStagePath), { recursive: true });
     writeFileSync(fullStagePath, '');
-    const stageResult = executeVerifyCommand(root, stage, command, format, sandboxConfig, allowedWritePaths, takeFresh());
+    const stageResult = executeStageForRerun(held, root, stage, command, format, sandboxConfig, allowedWritePaths, takeFresh(), undefined, retain);
     const normalized = toPreRunCommandResult(stage, command, stageResult.command, stageResult.sandbox);
     preRun.commands.push(normalized);
     sandbox = mergeSandboxStatus(sandbox, stageResult.sandbox);
@@ -419,13 +498,20 @@ export function runVerifyPreRunWithSandbox(
 
     const content = safeReadFile(fullStagePath);
     if (content.trim()) stageContents.push(content);
+    // verify-flaky-rerun（§2.108.5 第 2 条）：逐段清空、逐段采集——共用 result_path 时同样以本段采集作为该来源的输出
+    if (retain) {
+      rerunSources.push({
+        stage, command, modules: null, commandIndex: preRun.commands.length - 1,
+        resultPath: effectiveStagePath, content, retained: stageResult.retained,
+      });
+    }
   };
 
   runStage('regression', config.regressionCommand, config.regressionResultPath);
   runStage('incremental', config.incrementalCommand, config.incrementalResultPath);
   writeMergedResults(root, config.resultPath, stageContents);
   appendSandboxDiagnostics(preRun, sandbox);
-  return { preRun, sandbox };
+  return { preRun, sandbox, ...(retain ? { rerunSources } : {}) };
 }
 
 /** 模块范围下的一个命令组：三字段取值完全相同的模块合并为一组（§2.96.4）。 */
@@ -490,12 +576,16 @@ export function runVerifyModulePreRunWithSandbox(
 
   const contents: string[] = [];
   let compatNoted = false;
+  const retain = runOptions.retainForRerun === true;
+  const held: HeldExecution = {};
+  const rerunSources: RerunSource[] = [];
   const runStage = (group: VerifyCommandGroup, stage: VerifyPreRunStage, command: string, stageResultPath: string) => {
     const fullStagePath = join(root, stageResultPath);
     mkdirSync(dirname(fullStagePath), { recursive: true });
     writeFileSync(fullStagePath, '');
-    const stageResult = executeVerifyCommand(root, stage, command, format, sandboxConfig, allowedWritePaths, takeFresh(),
-      { OPENLOGOS_VERIFY_MODULES: group.modules.join(',') });
+    const stageEnv = { OPENLOGOS_VERIFY_MODULES: group.modules.join(',') };
+    const stageResult = executeStageForRerun(held, root, stage, command, format, sandboxConfig, allowedWritePaths, takeFresh(),
+      stageEnv, retain);
     const normalized = toPreRunCommandResult(stage, command, stageResult.command, stageResult.sandbox);
     preRun.commands.push({ ...normalized, modules: [...group.modules] });
     sandbox = mergeSandboxStatus(sandbox, stageResult.sandbox);
@@ -506,6 +596,13 @@ export function runVerifyModulePreRunWithSandbox(
     }
     const content = safeReadFile(fullStagePath);
     if (content.trim()) contents.push(content);
+    // verify-flaky-rerun：命令组的每一段都是一个来源；复跑时 OPENLOGOS_VERIFY_MODULES 保持首跑取值
+    if (retain) {
+      rerunSources.push({
+        stage, command, modules: [...group.modules], commandIndex: preRun.commands.length - 1,
+        resultPath: stageResultPath, content, retained: stageResult.retained, extraEnv: stageEnv,
+      });
+    }
   };
   for (const group of groups) {
     if (group.regressionCommand || group.incrementalCommand) {
@@ -521,7 +618,7 @@ export function runVerifyModulePreRunWithSandbox(
   }
   writeMergedResults(root, config.resultPath, contents);
   appendSandboxDiagnostics(preRun, sandbox);
-  return { preRun, sandbox };
+  return { preRun, sandbox, ...(retain ? { rerunSources } : {}) };
 }
 
 export function runVerifyPreRun(root: string, config: NormalizedVerifyConfig, format: OutputFormat): VerifyPreRunData {
@@ -851,6 +948,7 @@ export function generateReport(
   scope: VerifyScopeData | null = null,
   moduleReport: { moduleId: string; runLevelRejections: string[] } | null = null,
   skipInfo: { classification: SkipClassification; changeSetInvalid: string | null } | null = null,
+  flakyCases: VerifyFlakyCase[] = [],
 ): string {
   const now = new Date().toISOString().slice(0, 10);
   let md = `# Acceptance Report\n\n> Generated by \`openlogos verify\` on ${now}\n\n`;
@@ -908,6 +1006,15 @@ export function generateReport(
     md += '\n';
   }
 
+  // verify-flaky-rerun（§2.108.9）：偶发用例单独成节，只写 ID、模块与首跑错误摘要；不写命令输出（EX-9.5）。无偶发时不出现
+  if (flakyCases.length > 0) {
+    md += `## 偶发用例 / Flaky Cases\n\n`;
+    md += `> ${FLAKY_REPORT_HINT}\n\n`;
+    md += `| ID | Module | First-run error |\n|----|--------|-----------------|\n`;
+    for (const c of flakyCases) md += `| ${c.id} | ${c.module ?? '-'} | ${flakyErrorSummary(c.first_error)} |\n`;
+    md += '\n';
+  }
+
   if (uncovered.length > 0) {
     md += `## Uncovered Cases\n\n`;
     for (const id of uncovered) {
@@ -945,6 +1052,17 @@ export function generateReport(
   }
 
   return md;
+}
+
+/** 偶发用例小节与文本输出的提示语（§2.108.9）。 */
+const FLAKY_REPORT_HINT = '首跑失败、同一沙箱内复跑通过；请确认不是首次运行改变了环境 / failed on the first run and passed on a rerun in the same sandbox; make sure the first run did not change the environment';
+
+/** 首跑错误摘要：只取首行、转义表格分隔符并限长（报告进 git，不写多行断言输出）。 */
+function flakyErrorSummary(error: string | null): string {
+  if (!error) return '-';
+  const line = error.split('\n').map(l => l.trim()).find(Boolean) ?? '';
+  const capped = line.length > 200 ? `${line.slice(0, 200)}…` : line;
+  return capped.replace(/\|/g, '\\|') || '-';
 }
 
 export interface VerifyCountSummary {
@@ -1204,14 +1322,19 @@ export function collectVerifyData(
   preRun?: VerifyPreRunData,
   sliceVerification?: SliceVerificationState | null,
   scopeContext: VerifyScopeContext = { scope: null, inScope: null },
-  opts: { deferReport?: boolean } = {},
+  opts: {
+    deferReport?: boolean;
+    overriddenCommandIndexes?: Set<number>;
+    /** verify-flaky-rerun（code-r2 F1）：结果路径的受保护写回被拒绝时，以首跑快照代替读取 result_path。 */
+    resultContent?: string;
+  } = {},
 ): VerifyData {
   const inScope = scopeContext.inScope;
   const config = readVerifyConfig(root);
   const resultPath = config.resultPath;
 
   const fullResultPath = join(root, resultPath);
-  const parsedResults = parseJsonlWithDiagnostics(readFileSync(fullResultPath, 'utf-8'));
+  const parsedResults = parseJsonlWithDiagnostics(opts.resultContent ?? readFileSync(fullResultPath, 'utf-8'));
   const allResults = parsedResults.results;
   const fullIndex = extractDefinedIndex(root);
   const defined = sliceVerification?.manifest_status === 'valid' && sliceVerification.verify_mode
@@ -1302,7 +1425,9 @@ export function collectVerifyData(
   // 「规格声明的 ID 集合 ⊆ 结果 ID 集合」（uncovered）是不可替代的那一条，完整保留。
   // verify-smoke-guard-fixes-0-15-20（§2.75.1 第一项、决策 C01）：预跑命令任一段非零退出即 FAIL——
   // 结果文件可能是运行器回滚出的旧完好账本，也可能恰好完整全通过，都不能证明本次测试跑通。
-  const preRunFailures = (preRun?.commands ?? []).filter(cmd => cmd.status === 'fail');
+  // verify-flaky-rerun（§2.108.7、§2.108.8）：「预跑命令是否非零退出」取复跑改判后的命令组状态；pre_run.commands[] 保持首跑事实
+  const overridden = opts.overriddenCommandIndexes ?? new Set<number>();
+  const preRunFailures = (preRun?.commands ?? []).filter((cmd, index) => cmd.status === 'fail' && !overridden.has(index));
   const preRunFailed = preRunFailures.length > 0;
   const isPass = !preRunFailed && consistency.ok && failed.length === 0 && uncovered.length === 0
     && !changeSetInvalid && !tierMismatch;
@@ -1329,6 +1454,8 @@ export function collectVerifyData(
     scopeContext.scope ? { ...scopeContext.scope, out_of_scope_result_count: outOfScopeResultCount } : null,
     null,
     { classification: skipClassification, changeSetInvalid },
+    // verify-flaky-rerun：偶发清单在 collectVerifyData 之后由 verify 主流程写入 data，渲染在全部门禁之后进行
+    data.flaky_cases ?? [],
   );
 
   const relReportPath = 'logos/resources/verify/acceptance-report.md';
@@ -1478,6 +1605,8 @@ export function writeModuleAcceptanceReports(
   scopeContext: VerifyScopeContext,
   // 切片核验状态不参与模块报告统计：写出的模块报告恒按完整 U(m)（code-r1 F2）；它只决定 owned checkpoint 是否跳过写入
   sliceVerification: SliceVerificationState | null,
+  /** verify-flaky-rerun（code-r2 F1）：写回被拒绝时以首跑快照代替读取 result_path。 */
+  resultContent?: string,
 ): string[] {
   // slice-verify-efficient-mode（功能规格 §2.37.4）：owned 范围的 checkpoint 不写、不改模块验收报告——
   // 模块报告按完整 U(m) 统计，只验收 owned 时会把基线误报为未覆盖；baseline 范围与 final 照旧写。
@@ -1532,7 +1661,7 @@ export function writeModuleAcceptanceReports(
   }
 
   const config = readVerifyConfig(root);
-  const results = parseJsonlWithDiagnostics(readFileSync(join(root, config.resultPath), 'utf-8')).results;
+  const results = parseJsonlWithDiagnostics(resultContent ?? readFileSync(join(root, config.resultPath), 'utf-8')).results;
   const failedPreRun = preRun.commands.filter(cmd => cmd.status === 'fail');
   const unattributed: string[] = [];
   for (const cmd of failedPreRun) {
@@ -1577,6 +1706,9 @@ export function writeModuleAcceptanceReports(
       [...ownPreRun, ...failedPreRun.filter(cmd => !cmd.modules || cmd.modules.length === 0)].map(cmd => ({ stage: cmd.stage, exit_code: cmd.exit_code })),
       null,
       { moduleId: m, runLevelRejections: rejections },
+      null,
+      // §2.108.9：多模块项目的模块验收报告按用例所属模块各自列出偶发用例
+      (data.flaky_cases ?? []).filter(c => subsetSet.has(c.id)),
     ));
     written.push(rel);
   }
@@ -1772,6 +1904,11 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
       ? (sliceVerification.attempted_slice_id ?? null) : null,
   });
   let preRunResult: RunVerifyPreRunResult;
+  // verify-flaky-rerun（§2.108）：失败用例复跑；预检失败时不复跑（§2.108.3 第 1 条）
+  const rerunCfg = rerunConfigOf(config);
+  let rerunOutcome: ReturnType<typeof performFailedRerun> = {
+    rerun: skippedRerun('precheck_failed', rerunCfg.maxCases), flaky: [], overriddenCommandIndexes: new Set(), sandboxResults: [],
+  };
   // verify-self-sufficient-cases（§2.106.5）：任何预跑命令之前依次做结构校验 → 验收标准对账 → 环境预检；
   // 任一失败即不执行预跑、不截断也不读取结果文件。未声明要求且无对账条目时零变化。
   let precheck: PrecheckOutcome = { ok: true, reason: null, data: null, sandbox: null };
@@ -1790,10 +1927,32 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
       const blocked = config.reservedRedirects?.length ? blockedPreRunForReservedPaths(root, config, locale) : null;
       preRunResult = blocked
         ?? (scopeContext.scope
-          ? runVerifyModulePreRunWithSandbox(root, config, scopeContext.scope, format, runOptions)
-          : runVerifyPreRunWithSandbox(root, config, format, runOptions));
+          ? runVerifyModulePreRunWithSandbox(root, config, scopeContext.scope, format, { ...runOptions, retainForRerun: rerunCfg.enabled })
+          : runVerifyPreRunWithSandbox(root, config, format, { ...runOptions, retainForRerun: rerunCfg.enabled }));
+      // §2.108.3～§2.108.7：在首跑注入的变量仍生效时判断并执行复跑（复跑只覆盖 ELIGIBLE / RERUN，结束后恢复）
+      const rerunAllow = verifyReportAllowPaths(root, config);
+      if (config.regressionResultPath) rerunAllow.add(config.regressionResultPath);
+      if (config.incrementalResultPath) rerunAllow.add(config.incrementalResultPath);
+      rerunOutcome = performFailedRerun({
+        root,
+        config,
+        preRun: preRunResult.preRun,
+        sources: preRunResult.rerunSources ?? [],
+        definedIds: extractDefinedIds(root).ids,
+        roundIds: sliceVerification?.manifest_status === 'valid' && sliceVerification.verify_mode
+          ? new Set(sliceVerification.eligible_test_ids)
+          : scopeContext.inScope,
+        locale,
+        format,
+        allowedWritePaths: Array.from(rerunAllow).map(ensureRelativePath),
+      });
+      for (const rerunSandbox of rerunOutcome.sandboxResults) {
+        preRunResult.sandbox = mergeSandboxStatus(preRunResult.sandbox, rerunSandbox);
+      }
     }
   } finally {
+    // 异常路径兜底：首跑保留的执行环境一律释放（performFailedRerun 正常返回前已释放，此处幂等）
+    for (const source of (preRunResult! as RunVerifyPreRunResult | undefined)?.rerunSources ?? []) releaseRetainedExecution(source.retained);
     if (previousEligible === undefined) delete process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS;
     else process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS = previousEligible;
     if (previousSliceScope === undefined) delete process.env.OPENLOGOS_VERIFY_SLICE_SCOPE;
@@ -1808,14 +1967,18 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
 
   const precheckFailed = !precheck.ok;
   const fullResultPath = join(root, resultPath);
-  if (!precheckFailed) ensureResultFileWhenPreRunFailed(fullResultPath, preRun);
+  // verify-flaky-rerun（code-r3 F1）：结果路径的受保护写回被拒绝时，本轮账本来源是首跑快照（ledgerOverride）——
+  // 不经被拒绝的路径补写空文件，缺失账本的两处判断与历史采集都以快照为准，不再按磁盘路径是否存在早退
+  const hasLedgerSnapshot = rerunOutcome.ledgerOverride !== undefined;
+  const ledgerPresent = () => hasLedgerSnapshot || existsSync(fullResultPath);
+  if (!precheckFailed && !hasLedgerSnapshot) ensureResultFileWhenPreRunFailed(fullResultPath, preRun);
   // 评审 code-r2 F1（§2.106.6、§2.106.7、§2.106.7A）：已合并提案的测试变更集已判无效而本轮没有结果账本时，
   // 不以 NO_TEST_RESULTS / NO_TEST_CASES 早退——完整性拒绝照常进入门禁：记录 test_change_set_invalid 与读取器原因，
   // 改判覆盖的 initial 模块报告、撤销旧 VERIFY_PASS，并写 result_source=none 的 completed 历史。
   // 评审 code-r3 F1：缺用例定义（NO_TEST_CASES）的早退同理——两类早退之前都先确认变更集状态，已知无效时优先交给 FAIL 收尾。
   const abortKind: 'no-results' | 'no-cases' | null = precheckFailed
     ? null
-    : !existsSync(fullResultPath) ? 'no-results'
+    : !ledgerPresent() ? 'no-results'
       : extractDefinedIds(root).ids.length === 0 ? 'no-cases' : null;
   const strictWithoutLedger = abortKind ? readStrictSkipSet(root) : null;
   const changeSetInvalidWithoutLedger = strictWithoutLedger?.state === 'invalid' ? strictWithoutLedger.detail : null;
@@ -1836,8 +1999,8 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
       errorCode: code,
       counts: {},
       resultSource,
-      resultPath: existsSync(fullResultPath) ? resultPath : null,
-      resultCapture: captureResultBytes(root, resultPath),
+      resultPath: !hasLedgerSnapshot && existsSync(fullResultPath) ? resultPath : null,
+      resultCapture: hasLedgerSnapshot ? { bytes: rerunOutcome.ledgerOverride! } : captureResultBytes(root, resultPath),
       reportBytes: null,
     });
     resultLocks.release();
@@ -1850,7 +2013,7 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
     process.exit(1);
   };
 
-  if (!noResultsRead && !existsSync(fullResultPath)) {
+  if (!noResultsRead && !ledgerPresent()) {
     abortWithHistory('NO_TEST_RESULTS', `No test results found at ${resultPath}.`, t(locale, 'verify.noResults', { path: resultPath }));
   }
 
@@ -1867,9 +2030,12 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
     data = buildChangeSetInvalidWithoutResultsData(root, preRun, sandbox, changeSetInvalidWithoutLedger, scopeContext, abortKind === 'no-cases' ? 'no-cases' : 'no-results');
     resultCapture = null;
   } else {
-    data = collectVerifyData(root, preRun, sliceVerification, scopeContext, { deferReport: true });
-    // 采集当时的结果字节（code-r1 F3）：历史写入不再二次读取结果文件
-    resultCapture = captureResultBytes(root, resultPath);
+    data = collectVerifyData(root, preRun, sliceVerification, scopeContext, {
+      deferReport: true, overriddenCommandIndexes: rerunOutcome.overriddenCommandIndexes,
+      ...(rerunOutcome.ledgerOverride !== undefined ? { resultContent: rerunOutcome.ledgerOverride } : {}),
+    });
+    // 采集当时的结果字节（code-r1 F3）：历史写入不再二次读取结果文件；写回被拒绝时不经该路径读取，记录首跑快照
+    resultCapture = rerunOutcome.ledgerOverride !== undefined ? { bytes: rerunOutcome.ledgerOverride } : captureResultBytes(root, resultPath);
     data.sandbox = sandbox;
     if (sandbox.status === 'fail' && data.gate.result === 'PASS') {
       data.gate.result = 'FAIL';
@@ -1884,13 +2050,28 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
     if (precheck.data) data.requirements = precheck.data;
   }
 
+  // verify-flaky-rerun（§2.108.9）：rerun 恒输出；偶发用例非空时输出 flaky_cases；门禁 PASS 且有偶发时警告 flaky_cases_present
+  data.rerun = rerunOutcome.rerun;
+  if (rerunOutcome.flaky.length > 0) data.flaky_cases = rerunOutcome.flaky;
+  if (rerunCfg.invalid.length > 0) {
+    data.warnings = [...(data.warnings ?? []), { code: 'rerun_config_invalid', ids: [], fields: [...rerunCfg.invalid] }];
+  }
+  if (data.gate.result === 'PASS' && rerunOutcome.flaky.length > 0) {
+    data.warnings = [...(data.warnings ?? []), { code: 'flaky_cases_present', ids: rerunOutcome.flaky.map(c => c.id) }];
+  }
+
   // verification-history（§2.104.5）：全部门禁（smoke 覆盖预检、沙箱改判）裁决之后由最终数据渲染一次共用报告，
   // 同一份字节稍后用作报告快照，不从共用路径回读
   const reportBytes = writeAcceptanceReport(root, data);
   testPauseAfterReport();
 
   // module-scoped-phase-reports：全部门禁（含沙箱改判）裁决之后写模块验收报告（§2.99.5）
-  writeModuleAcceptanceReports(root, data, preRun, sandbox, scopeContext, sliceVerification);
+  // §2.108.7：模块报告的「预跑失败」同样取改判后的命令组状态（pre_run.commands[] 本身不改写）
+  const gatePreRun: VerifyPreRunData = rerunOutcome.overriddenCommandIndexes.size === 0 ? preRun : {
+    ...preRun,
+    commands: preRun.commands.map((cmd, index) => rerunOutcome.overriddenCommandIndexes.has(index) ? { ...cmd, status: 'pass' as const } : cmd),
+  };
+  writeModuleAcceptanceReports(root, data, gatePreRun, sandbox, scopeContext, sliceVerification, rerunOutcome.ledgerOverride);
 
   // M2 切片 2：loop 激活时追加迭代账本（共享路径、取最终 data.gate.result；配置类早退已在上面 process.exit、不会到此）
   if (sliceVerification?.verify_mode === 'slice-checkpoint') {
@@ -1956,6 +2137,7 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
     failedIds: data.failed_cases.map(item => item.id).filter(id => id !== 'sandbox'),
     skippedIds: data.skipped_cases,
     uncoveredIds: data.uncovered_cases,
+    flakyIds: (data.flaky_cases ?? []).map(c => c.id),
     resultSource,
     resultPath: noResultsRead ? null : resultPath,
     resultCapture,
@@ -1995,7 +2177,7 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   console.log(LINE);
 
   for (const c of data.platform_skipped_cases ?? []) console.log(`  ⏭️  platform skip: ${c.id}  ${c.detail}`);
-  for (const w of data.warnings ?? []) console.log(`  ⚠️  ${w.code}: ${w.ids.join(', ')}`);
+  for (const w of data.warnings ?? []) console.log(`  ⚠️  ${w.code}: ${('fields' in w ? w.fields : w.ids).join(', ')}`);
 
   if (failed_cases.length > 0) {
     console.log(`\n❌ ${t(locale, 'verify.failedCases')}`);
@@ -2061,6 +2243,13 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   } else {
     // §2.75.1：收敛后仅剩 incomplete_coverage 一种未列举原因
     console.log(`\n❌ ${t(locale, 'verify.gateFailCoverage')}`);
+  }
+
+  // verify-flaky-rerun（§2.108.9）：门禁结论之后输出偶发用例清单与提示
+  if (data.flaky_cases && data.flaky_cases.length > 0) {
+    console.log(`\n⚠️  ${t(locale, 'verify.flakyTitle', { count: String(data.flaky_cases.length) })}`);
+    for (const c of data.flaky_cases) console.log(`  ${c.id}  ${c.module ?? '-'}  ${flakyErrorSummary(c.first_error)}`);
+    console.log(`  ${t(locale, 'verify.flakyHint')}`);
   }
 
   console.log(`\n📄 ${t(locale, 'verify.reportPath', { path: data.report_path })}`);

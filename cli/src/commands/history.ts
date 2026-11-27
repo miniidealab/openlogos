@@ -131,6 +131,7 @@ function show(rest: string[], json: boolean, zh: boolean): void {
   const c = run.counts;
   console.log(`${zh ? '计数' : 'counts'}: defined=${c.defined ?? '-'} executed=${c.executed ?? '-'} passed=${c.passed ?? '-'} failed=${c.failed ?? '-'} skipped=${c.skipped ?? '-'} uncovered=${c.uncovered ?? '-'}`);
   if (run.failed_ids.length) console.log(`${zh ? '失败用例' : 'failed'}: ${run.failed_ids.join(', ')}`);
+  if (run.flaky_ids?.length) console.log(`${zh ? '偶发用例' : 'flaky'}: ${run.flaky_ids.join(', ')}`);
   if (run.uncovered_ids.length) console.log(`${zh ? '未覆盖' : 'uncovered'}: ${run.uncovered_ids.join(', ')}`);
   console.log(`${zh ? '提交' : 'commit'}: ${run.commit.head ?? '-'}${run.commit.dirty ? ' (dirty)' : ''}`);
   if (full) {
