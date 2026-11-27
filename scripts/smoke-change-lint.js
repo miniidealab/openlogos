@@ -130,6 +130,14 @@ function scaffoldLintFixture(root, opts = {}) {
     // 0.16.24 起 openlogos change 脚手架带「验收标准」段（verify-self-sufficient-cases，AC-VERIFY-SELF-09）；
     // 夹具代表一份按当前脚手架填好的全过提案，缺段会多出 acceptance_criteria_missing 警告
     '## 验收标准', '- 自动验收环境要求：无', '- 平台限定用例：无', '- 需要人参与的验收：无', '',
+    // 0.16.27 起 openlogos change 脚手架带「受影响场景」段（layered-verification，功能规格 §2.109.4）；
+    // 同理，缺段会多出 affected_scenarios_missing 警告。夹具已评估且不波及其他场景
+    '## 受影响场景', '', '```yaml',
+    'schema: openlogos/affected-scenarios@1',
+    'assessment: assessed',
+    'shared_change: false',
+    'scenarios: []',
+    '```', '',
     '## 变更概述', '纯文档更新，无需代码。',
   ].join('\n'));
   writeFileSync(join(root, 'logos/changes', slug, 'tasks.md'),
