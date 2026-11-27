@@ -1872,3 +1872,31 @@ public_release_commit: bca7fa49f12a69c2d3c1c3b19b1bfb7c7103bcd6
 - 本仓 sync：`openlogos sync` 完成，`logos/spec/` 下 26 份规范与根 `spec/` 同名文件逐字节一致（`cli-json-output.md` 随本次 `result_source: "none"` 更新）。AGENTS.md / CLAUDE.md 只有「保护范围配置」一条变为新口径（`logos/logos.config.json` 的 `guard` 字段决定保护范围；其他字段在已立案范围内由实现任务直接修改）。sync 改写了 `.claude/settings.json`：追加了重复的 SessionStart 分组，事后检查命令改为 `${CLAUDE_PROJECT_DIR}` 形态。按前几版做法已用 `git checkout` 还原，未提交。
 - 评审遗留：code 第 1 轮 F1 要求多切片提案变更集不可信时撤销旧 PASS，这与 S32 既有合同冲突（UT-S32-48 / ST-S32-16 要求零副作用，EX-13.14 也写「副作用：无」）。loop 修复按既有正式规格恢复了切片路径的人工边界暂停：已有旧 `VERIFY_PASS` 时原样保留，只返回 `human_action_required`。若要改为撤销，须另立提案修订 S32 规格。
 - 未执行：`openlogos smoke`、archive、`git push`（本工作单元仅部署）。提案通道 deploy 已自行写入 `DEPLOY_DONE` 并勾选 `[deploy]`，按部署方案不再另行执行 `openlogos deploy-done`，以免生成新的 deploy_id 覆盖本次部署身份。
+
+## 部署记录 2026-11-27T14:35:45.387Z → test
+
+- 目标环境: test
+- 通道 / 执行方式: proposal / script
+- deploy_id: 19a3573e-f546-4355-ae7e-e7fb78fb9f17
+- ref_requested: 76773c2830f8abd3e86f593d0cf4ab45ab565d5d（HEAD）
+- ref: 76773c2830f8abd3e86f593d0cf4ab45ab565d5d
+- 执行脚本: scripts/deploy-local.mjs（workdir: worktree）
+- 耗时: 25874 ms
+- 结果: done
+- log_path: logos/.openlogos-runtime/deploy-logs/19a3573e-f546-4355-ae7e-e7fb78fb9f17.log
+- previous_ref: aa1d9fdd8eb417bfc90f1b9b5f0820d0d6cf9b8c
+
+### 部署报告（smoke-manual-acceptance，0.16.25 本机全局发布）
+
+- 版本：候选 `0.16.25`，与规划值一致。部署前复核：`cli/package.json` 为 `0.16.25`（实现阶段由 `bump-version.mjs` 升版），`npm view @miniidealab/openlogos@0.16.25` 返回 404，registry 最高版本为 `0.16.22`；部署前全局为 `0.16.24`。
+- 部署：deploy_id `19a3573e-f546-4355-ae7e-e7fb78fb9f17`，ref `76773c2830f8abd3e86f593d0cf4ab45ab565d5d`，结果 `done`。部署前按「规格合并 → 代码 → 验收报告」补提交：规格 `d32b5b6` / `ccd9fd1` / `dcb5649`（含 code 第 2、3 轮规格增量），代码 `41de23e`，验收 `76773c2`，工作区干净。`openlogos env check` 未发现问题，`openlogos deploy --env test --dry-run` 全部检查通过。
+- 验收：verify 运行 `20261127T142901224Z-verify-70a855`，Gate PASS（定义 2874，通过 2869，失败 0，跳过 5，未覆盖 0）。该运行晚于 code 第 1～3 轮评审修复（最后一次源码修改为 06:07 PST，`VERIFY_PASS` 写于 06:33 PST）。
+- 全局复核：`openlogos --version` 为 `0.16.25`；入口 realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，等于回执 `entry_realpath`；入口 SHA-256 `a0c1509eed4ec1a81f12c5310d7956aa06d1b1633e6c57662d5b1dbe655a5373`，等于回执 `candidate_entry_sha256`。
+- 制品：候选 tarball SHA-256 `1663d78595e6239e5062899c8836912cdd47ea571e7e7f1f6ff76d4f4ef18376`、回滚制品 SHA-256 `cb512021ed86eabb0d70130f502417411d39ade266f612410f9c483344e73286`（均读回文件重算，与回执一致；回滚制品由部署前全局 0.16.24 打包）。
+- 回滚身份（三项分列）：
+  - 源码回滚常量 `LOCAL_RELEASE_ROLLBACK_VERSION` = `0.16.24`，由 `bump-version.mjs` 产生，与规划值一致。
+  - 部署脚本失败回装依据：回执 `previous_version` = `0.16.24`，`previous_entry_sha256` = `904452fafc86faecb2695c9c95205407af0032611732afb2a24f1fcb2be0c425`。
+  - 显式回退目标：部署后 `openlogos env show test --format json` 的 `data.previous_ref` = `aa1d9fdd8eb417bfc90f1b9b5f0820d0d6cf9b8c`（0.16.24），与规划值一致；`data.current_ref` = `76773c2`。
+  - 审计：部署前读到的 `data.current_ref` = `aa1d9fdd8eb417bfc90f1b9b5f0820d0d6cf9b8c`（0.16.24，deploy `aefa9a8f`），与规划值一致。
+- 本仓 sync：`openlogos sync`（v0.16.25）完成，`logos/spec/` 下受托管规范与根 `spec/` 同名文件逐字节一致（`cli-json-output.md` 随本提案更新）。AGENTS.md / CLAUDE.md 各只新增一条「等待人工验收」硬红线。sync 又向 `.claude/settings.json` 追加了重复的 SessionStart 分组，按前几版做法已用 `git checkout` 还原，未提交。
+- 未执行：`openlogos smoke`、archive、`git push`（本工作单元仅部署）。提案通道 deploy 已自行写入 `DEPLOY_DONE` 并勾选 `[deploy]`；派活文案要求「完成后运行 deploy-done」，但已合并部署方案明确规定部署成功后不再另行执行 `openlogos deploy-done`（否则会生成新的 deploy_id 覆盖本次部署身份），按方案未执行。

@@ -97,6 +97,7 @@ Step 5 分批执行提示词（可直接复用）：
 - **全自动 / 无人值守模式（`openlogos next --auto`）**：用户选择 `--auto` 即构成对该提案全链路的 standing 授权——AI driver 被授权**自动执行** verify、部署、smoke、archive、git push（以及可跳 flow 门 plan/spec/slice/deliver），无需逐步人类确认。`git push` 无需额外机制（PreToolUse guard 安全白名单本就放行）。
 - **硬红线（任何模式、含 `--auto` 都不放行）**：达迭代上限仍未过测试的未收敛代码（`gate:implement:loop-exhausted`）——全自动也照常阻塞，**绝不放行未通过测试的代码**。
 - **硬红线（任何模式、含 `--auto` 都不放行）**：目标环境要求审批而该版本未获审批，或晋级检查未通过（`DEPLOY_APPROVAL_REQUIRED` / `DEPLOY_PROMOTION_UNVERIFIED`）——部署停在「等待审批」或「晋级未满足」，由人审批后重新驱动即可继续。AI 不得自行执行 `openlogos approve`、不得加 `--force-promote` 越过晋级、不得换环境或版本、不得改用手工部署或 `deploy-done`，也不得修改已配置门禁的 `logos/environments.yaml` 来关闭门禁。
+- **硬红线（任何模式、含 `--auto` 都不放行）**：冒烟阶段「等待人工验收」且仍有未记录的人工用例（smoke `gate.result=PENDING` / `manual_acceptance_pending`，驻留态 `awaiting-manual-acceptance`）——人工验收结果只能由人记录。AI 不得执行 `openlogos accept`（任何参数形态），不得修改 `logos/environments.yaml` 的 `manual_acceptance` 来关闭人工验收，也不得为人工用例伪造 smoke 结果；人在终端或 RunLogos 界面记录后，宿主重新驱动 `openlogos smoke` 即可继续。
 
 ### 行为约束
 - **发现 bug/问题时**：只输出分析和修复方案，**禁止直接修改代码**，等待用户决定是否创建变更提案
