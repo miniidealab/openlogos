@@ -711,9 +711,9 @@ openlogos accept --env <id|alias> --deploy <deploy_id> --case <ID>[,<ID>…] --r
 
 ### 15.6 smoke 门禁接入
 
-- **自动阶段**：存在自动 SMOKE 用例时按既有规则判定。自动用例为零、存在人工用例（任意 UT / ST / SMOKE）时视为空通过，不报 `NO_SMOKE_RESULTS` / `NO_SMOKE_CASES`，配置了 `smoke.command` 时照常运行；两者都为零时报 `NO_SMOKE_CASES`。
+- **自动阶段**：存在自动 SMOKE 用例时按既有规则判定。自动用例为零、存在人工用例（任意 UT / ST / SMOKE；工作区或环境当前已确认部署的版本 R 中任一处存在即可，R 按全部人工用例判断、不只看本次增量，评审 code-r2 F5）时视为空通过，不报 `NO_SMOKE_RESULTS` / `NO_SMOKE_CASES`，配置了 `smoke.command` 时照常运行；两者都为零时报 `NO_SMOKE_CASES`。
 - **人工阶段**（E 开启，且自动阶段 PASS）：
-  1. 锁外计算 P(E, D)，并按下表预判，只用于报告。D 固定为本次 smoke 开始时解析出的部署身份，清单计算、锁内复核与证据写入都绑定 D（评审 code-r1 F1）；计算时环境当前部署已不是 D，按「P 无法确定」处理并出警告 `manual_deployment_replaced`，要求对当前部署重跑。
+  1. 锁外计算 P(E, D)，并按下表预判，只用于报告。D 固定为本次 smoke 开始时解析出的部署身份，清单计算、锁内复核与证据写入都绑定 D（评审 code-r1 F1）；计算时环境当前部署已不是 D，按「P 无法确定」处理并出警告 `manual_deployment_replaced`，要求对当前部署重跑；此时 JSON 与报告中的 `deploy_id`、`ref`、`deploy_confirmed` 整组取自 D，更替后的部署只在警告中列出（评审 code-r2 F1）。
   2. 取得账本锁后、追加 smoke 行前，先核对环境当前部署的 `deploy_id`、`ref` 与确认状态仍与 D 一致（不一致同样按「P 无法确定」处理并出 `manual_deployment_replaced`），再重读 D 的 manual 记录并按下表重新判定，以锁内结论为准。
   3. 按结论追加 smoke 行，然后按 §5.1 处理标记。
 
