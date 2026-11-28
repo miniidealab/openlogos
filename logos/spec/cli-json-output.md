@@ -2661,8 +2661,8 @@ status/next 的模块级 `plan_state.plan_package` 承载完整对象；为便�
 |---|---|
 | `SLICE_PLAN_INPUT_INVALID` | `slices.json` 非法 JSON、非数组、数组为空、缺必需字段 |
 | `SLICE_PLAN_DUPLICATE_SLICE_ID` | `slice_id` 在提案内重复 |
-| `SLICE_PLAN_UNKNOWN_TEST_ID` | `owned_test_ids` 含未在已合并测试规格中定义的 ID |
-| `SLICE_PLAN_NO_ACTIVE_CHANGE` | 无活跃提案或提案目录缺失 |
+| `SLICE_PLAN_UNKNOWN_TEST_ID` | `owned_test_ids` 含未在已合并测试规格中定义的 ID；或本提案变更用例没有被任何切片认领、被多个切片认领（validator 违规 `test-slice-test-id-unknown` / `test-slice-test-id-missing` / `test-slice-test-id-duplicate`，现行口径，行为不变）。exit 1，明细在 stderr 错误信封顶层的 `violations` |
+| `SLICE_PLAN_NO_ACTIVE_CHANGE` | 无活跃提案、提案目录缺失，或 `--slug` 指向的不是活跃提案（guard 的 `activeChange` 与之不同、没有 guard 或 guard 无法解析；功能规格 §2.110.1）。拒绝时 `tasks.md` 与切片清单保持原内容（exit 1） |
 | `SLICE_PLAN_VERIFY_SCOPE_AMBIGUOUS` | 旧 manifest 缺失或不可用，且 checkpoint 账本中当前划分在 `baseline` 与 `owned` 两个候选身份下都有 PASS 行，无法唯一恢复冻结的验收范围；错误 envelope 点名两个候选身份与命中的 `slice_id`（exit 1） |
 | `SLICE_PLAN_VERIFY_SCOPE_CONFIG_INVALID` | 需要判定验收范围时，`verify.slice_scope` 不在 `auto` / `baseline` / `owned` 内，或 `verify.slice_scope_threshold` 不是正整数；沿用与账本恢复路径不触发（exit 1） |
 
@@ -3374,7 +3374,7 @@ openlogos approve --env <id|alias> --ref <revision> [--note <文字>] --format j
 | `not_git_repository` | 项目不是 git 仓库 |
 | `base_ref_unreachable` | `baseRef` 指向的提交不存在（如历史被改写） |
 | `diff_failed` | 计算改动文件集合的 git 命令失败 |
-| `shared_config_changed` | `logos/logos.config.json` 或 `logos/logos-project.yaml` 被改动；`detail` 为文件路径 |
+| `shared_config_changed` | `logos/logos.config.json` 或 `logos/logos-project.yaml` 按字段判断为相关变化：相关字段或清单未列出的字段有变化，或任一侧原文无法严格解析（功能规格 §2.96.3.1）。只有无关字段变化时不产生本原因。`detail` 逐个文件写明：`<路径>（<字段>、<字段>…）`（字段按字典序），或 `<路径>（提案起点中的内容<原因>）` / `<路径>（工作区中的内容<原因>）`，原因为 `不存在`、`读取失败`、`无法解析`、`顶层不是对象` 之一；两个文件都命中时用 `、` 连接，`logos/logos.config.json` 在前 |
 | `unmapped_file` | 有改动文件一个模块也归不到；`detail` 为首个文件路径与总数 |
 | `module_paths_invalid` | 某模块的 `paths` 不合法；`detail` 点名模块与非法项 |
 
@@ -4053,7 +4053,7 @@ openlogos accept --env <id|alias> --deploy <deploy_id> --case <ID>[,<ID>…] --r
 |---|---|---|
 | `no_active_change` | 全量 | 没有活跃提案 |
 | `base_ref_unavailable` | 全量 | 提案起点不可用或差异计算失败；`detail` 写明具体情形 |
-| `shared_path_changed` | 全量 | 改动命中共享配置或 `verify.layered.shared_paths`；`detail` 列出文件 |
+| `shared_path_changed` | 全量 | 改动命中 `verify.layered.shared_paths`，或两个共享验收配置文件按字段判断为相关变化（功能规格 §2.96.3.1，含无法判断；只有无关字段变化时不命中）；`detail` 列出命中的文件，共享验收配置文件的写法同 `scope.fallback_reason` 的 `shared_config_changed`，被 `shared_paths` 显式列出的只写路径 |
 | `shared_change_declared` | 全量 | 声明 `shared_change: true`（只要该标志可读出即采信，不要求声明其余部分合法） |
 | `declaration_missing` | 按模块 | 提案没有「受影响场景」段 |
 | `declaration_invalid` | 按模块 | 该段未填写或结构非法 |

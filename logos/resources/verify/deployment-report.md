@@ -1957,3 +1957,32 @@ public_release_commit: bca7fa49f12a69c2d3c1c3b19b1bfb7c7103bcd6
   - 审计：部署前读到的 `data.current_ref` = `c3c7a9e3772f3ffd56f33b35fd939c17ff6dce76`（0.16.26，deploy `d664b6ec`），与规划值一致。
 - 本仓 sync：`openlogos sync`（v0.16.27）完成，`logos/spec/` 下受托管规范与根 `spec/` 同名文件逐字节一致（`cli-json-output.md` 随本提案更新；`test-results.md`、`change-management.md`、`logos.config.schema.json` 读回一致）。`logos/skills/` 下 change-writer、test-writer 的托管副本与根 `skills/` 逐字节一致。AGENTS.md / CLAUDE.md 无内容变化（本提案不改生成指令文案）。sync 又改写了 `.claude/settings.json`，按前几版做法已还原，未提交。
 - 未执行：`openlogos smoke`、archive、`git push`（本工作单元仅部署）。SMOKE-core-352～358 由新增的 `scripts/smoke-layered-verification.js` 承担，其中 353～358 的用例本体已在实现阶段用本地构建在一次性项目中跑通，352（版本与制品身份）依赖本次回执，尚未执行。提案通道 deploy 已自行写入 `DEPLOY_DONE` 并勾选 `[deploy]`；派活文案要求「完成后运行 deploy-done」，但提案通道部署成功后再执行 `openlogos deploy-done` 会生成新的 deploy_id 覆盖本次部署身份，沿用前几版做法未执行。
+
+## 部署记录 2026-11-28T03:14:04.423Z → test
+
+- 目标环境: test
+- 通道 / 执行方式: proposal / script
+- deploy_id: edb12f69-301f-4480-a70a-b41b7ba60803
+- ref_requested: 9a1e83830212b125eee6f8b5870f8d7a34300f64（HEAD）
+- ref: 9a1e83830212b125eee6f8b5870f8d7a34300f64
+- 执行脚本: scripts/deploy-local.mjs（workdir: worktree）
+- 耗时: 22941 ms
+- 结果: done
+- log_path: logos/.openlogos-runtime/deploy-logs/edb12f69-301f-4480-a70a-b41b7ba60803.log
+- previous_ref: 42f75d2c8fe5648482edb7809612b0e3a5c95218
+
+### 部署报告（verify-scope-fields-and-slice-module，0.16.28 本机全局发布）
+
+- 版本：候选 `0.16.28`，与规划值一致。部署前复核（部署方案「部署前置与版本」第 3 条）：升版前 `cli/package.json` 为 `0.16.27`，`npm view @miniidealab/openlogos@0.16.28 version` 返回 E404，registry 最高版本为 `0.16.22`；实现阶段由 `node cli/scripts/bump-version.mjs 0.16.28` 升版。部署前全局为 `0.16.27`。
+- 部署：deploy_id `edb12f69-301f-4480-a70a-b41b7ba60803`，ref `9a1e83830212b125eee6f8b5870f8d7a34300f64`，结果 `done`。部署前按「规格合并 → 代码 → 验收报告」补提交：规格 `2dbaedb`，代码 `36473ec`，验收 `9a1e838`，工作区干净。`openlogos env check` 未发现问题，`openlogos deploy --env test --dry-run` 全部检查通过。
+- 验收：final verify 运行 `20261128T030718526Z-verify-565e0e`，Gate PASS（定义 3028，通过 3023，失败 0，跳过 5，未覆盖 0），没有偶发用例。该运行晚于 code 第 1、2 轮评审修复。本提案的各次 verify（两次切片 checkpoint 与 final）都由当时全局安装的 0.16.27 执行。
+- **本仓不受范围变化影响**：本仓是单模块且未开启分层（`logos/logos.config.json` 不写 `verify.layered`，`logos-project.yaml` 不声明模块 `paths`），按模块限定范围与分层验收都不启用，本仓的提案验收保持全量；本仓提案登记在 `core`，切片规划的产物不变。
+- 全局复核：`openlogos --version` 为 `0.16.28`；入口 realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，等于回执 `entry_realpath`；入口 SHA-256 `86af56e7f10b2c185ef2edb97da99a168ff2e7db6402fe7c69715d972d0efe01`，等于回执 `candidate_entry_sha256`。本次入口文件 `dist/index.js` 自身没有变化（本提案不改命令行参数），因此与回执 `previous_entry_sha256` 相同；装上的是本次候选由版本号与候选 tarball 哈希区分。
+- 制品：候选 tarball SHA-256 `117565300de477b5c23852fd7d436b9b723bd7d1f3b22032a3667cc4d124434e`、回滚制品 SHA-256 `013eb9ed2652f6f08324e8949b361239917b11689e99e639cb4c4e8ab4eeb4d2`（均读回文件重算，与回执一致；回滚制品由部署前全局 0.16.27 打包，与上一版部署记录中的 0.16.27 候选 tarball 哈希相同）。
+- 回滚身份（三项分列）：
+  - 源码回滚常量 `LOCAL_RELEASE_ROLLBACK_VERSION` = `0.16.27`，由 `bump-version.mjs` 产生，与规划值一致。
+  - 部署脚本失败回装依据：回执 `previous_version` = `0.16.27`，`previous_entry_sha256` = `86af56e7f10b2c185ef2edb97da99a168ff2e7db6402fe7c69715d972d0efe01`。
+  - 显式回退目标：部署后 `openlogos env show test --format json` 的 `data.previous_ref` = `42f75d2c8fe5648482edb7809612b0e3a5c95218`（0.16.27），与规划值一致；`data.current_ref` = `9a1e83830212b125eee6f8b5870f8d7a34300f64`。
+  - 审计：部署前读到的 `data.current_ref` = `42f75d2c8fe5648482edb7809612b0e3a5c95218`（0.16.27，deploy `6e423aac`），与写提案时的观测值一致，期间没有其他部署。
+- 本仓 sync：`openlogos sync`（v0.16.28）完成，`logos/spec/` 下 `cli-json-output.md`、`test-results.md`、`test-slice-manifest.md` 与根 `spec/` 同名文件逐字节一致（其中受版本控制的只有 `cli-json-output.md`，随本记录提交）。本提案不改技能与生成指令文案，AGENTS.md / CLAUDE.md 无内容变化。sync 又改写了 `.claude/settings.json`，按前几版做法已还原，未提交。
+- 未执行：`openlogos smoke`、archive、`git push`（本工作单元仅部署）。SMOKE-core-359～366 由新增的 `scripts/smoke-verify-scope-fields.js` 承担，其中 360～366 的用例本体已在实现阶段用本地构建在一次性项目中跑通，359（版本与制品身份）依赖本次回执，尚未执行；359 失败时其余用例不执行、不记通过。提案通道 deploy 已自行写入 `DEPLOY_DONE` 并勾选 `[deploy]`；派活文案要求「完成后运行 deploy-done」，但提案通道部署成功后再执行 `openlogos deploy-done` 会生成新的 deploy_id 覆盖本次部署身份，沿用前几版做法未执行。
