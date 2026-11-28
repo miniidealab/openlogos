@@ -6787,3 +6787,108 @@ guard 的受限命令与已配置门禁的登记表判定在源码测试（`core
 
 - 需求：AC-VERIFY-FIELD-01～AC-VERIFY-FIELD-10；功能规格：§2.96.3.1、§2.110；决策：C02。
 - 安装态 smoke：`core-smoke-test-cases.md`「OpenLogos 0.16.28 验收范围字段判断与切片模块安装态 smoke（SMOKE-core-359～366）」。
+
+## OpenLogos 0.16.29 本机测试环境发布（fix-delta-touched-by-case-change）
+
+> 本节引用「本机测试环境脚本部署（scripts/deploy-local.mjs）」通用方案，只写本次的差异：版本号、CHANGELOG、源码回归范围、本仓 `openlogos sync` 与安装态 smoke。冻结、回滚制品、构建候选、试装、全局安装、复核与回执，一律按通用方案第三～七节执行，不在本节复写。
+>
+> **目标版本固定为 `0.16.29`**：这是本提案批准的交付版本（需求 AC-VERIFY-TIER-26）。升版命令、CHANGELOG 标题、`--version` 断言与安装态 smoke 都以它为准；部署过程中不得自行改用其他版本号。`0.16.29` 无法使用时按「部署前置与版本」第 3 条停下，不继续部署。
+>
+> **回滚身份的取值规则**：下文的 `0.16.28`、提交 `9a1e838` 是**规划值**。三个回滚动作各有自己的事实来源，互不替代：
+>
+> | 回滚身份 | 事实来源 | 规划值 | 用途 |
+> |---|---|---|---|
+> | 源码回滚常量 `LOCAL_RELEASE_ROLLBACK_VERSION` | 既有升版脚本 `cli/scripts/bump-version.mjs` 产生，等于升版前的源码版本 | `0.16.28` | 源码内的候选 / 回滚常量对；不手改 |
+> | 部署脚本失败后的回装 | 本次部署回执的 `previous_version` 与 `previous_entry_sha256`，即脚本打包的部署前全局安装态 | 以回执为准 | 脚本自动回装后复核恢复结果 |
+> | 成功落账后的显式回退 | 执行回退前读取 `openlogos env show test --format json` 的 `data.previous_ref`（`spec/environments.md` §7.1、§11.6） | 本次部署成功、期间无其他部署时，为提交 `9a1e838`（0.16.28） | `openlogos deploy --env test --rollback` 的目标 |
+>
+> 部署记录分列这三项的实际值，并写明各自与规划值是否一致。部署前读到的 `test.current_ref`（计划时为 `9a1e83830212`，0.16.28）是写提案时的观测值，单独记作审计信息，不作为回退目标的依据。
+
+### 部署目标与授权边界
+
+把本提案的修正装进本机全局安装态。行为差异如下：
+
+- 分层验收开启的项目上，`openlogos verify` 计算「提案 delta 触及的场景」时，对测试用例文档不再只看文件名：提案已合并且测试变更集有效时，逐份文档比较合并前与当前的用例定义，有新增、修改或删除才把对应场景计入受影响场景（功能规格 §2.109.5）。
+- 只改「主链路用例」小节、覆盖说明、追溯表的测试用例文档 delta 不再把整个场景的用例并入提案级验收集合；新列入主链路小节的用例照常作为主链路用例执行。
+- 场景文档的 delta、提案声明的场景、提案未合并、测试变更集无效、没有合并基线或无法逐份文档判断时，行为与 0.16.28 相同。
+- 未开启分层的项目不受影响；JSON 字段、来源取值与原因代码不变。
+
+部署参数：
+
+- **目标环境**：`test`（登记表 `proposal_default_env: test`，决策 C02）。登记表中 `test.deploy` 为 `mode: script`、`script: scripts/deploy-local.mjs`。本提案不改登记表。
+- **入口**：提案通道执行 `openlogos deploy --env test`，部署请求 HEAD。由 CLI 追加部署报告、写 `DEPLOY_DONE` 并勾选 `[deploy]`；部署成功后**不再**另行执行 `openlogos deploy-done`。
+- **授权**：部署执行、smoke、archive 与 `git push` 各自是人类确认点，须用户逐次明确授权（`openlogos next --auto` 的 standing 授权按 CLAUDE.md 两档授权语义处理）。`test` 未配置 `promote_from` / `require_approval`，未开启人工验收。
+- **版本号边界**：0.16.29 只作本机全局版本，不进入 npm registry。本方案**不含** `npm publish`、dist-tag、`git tag`、GitHub Release、官网部署或 `git push`，不改写其他仓库（包括 runlogos）。
+
+### 部署前置与版本
+
+1. 本提案 delta 已 merge，`[code]` 切片已实现并提交，`openlogos verify` PASS。`openlogos env check` 无 error，`openlogos deploy --env test --dry-run` 通过（通用方案第三节）。
+2. **请求提交已提交**：部署前确认 merge 后的规格、切片代码与验收报告都已提交、工作区干净。未提交时按「规格合并 → 代码 → 验收报告」的顺序补提交后再部署。
+   - `.claude/` 与 `logos/resources/verify/` 下的已跟踪文件，以 `git add -u -- <path>` 暂存；
+   - 本提案期间产生的验收历史，以 `git add -f -- logos/resources/verify/history/` 暂存（不改 `.gitignore`）。
+3. **版本事实复核**：读取 `cli/package.json` 当前版本（计划时为 `0.16.28`，本机全局版本，未发布到 npm）。目标版本为 `0.16.29`，执行 `npm view @miniidealab/openlogos@0.16.29 version` 应返回 E404。
+   - 若 `cli/package.json` 当前版本不是 `0.16.28`（实施前已有其他提案升版），或 registry 已存在 `0.16.29`：**停止，不升版、不部署**，也不自行改取下一 patch。
+   - 此时回到提案，由用户决定新的目标版本，并同步修订需求 AC-VERIFY-TIER-26、本节与安装态 smoke 用例中的版本号（已合并的规格经增量修正合并），重新获得批准后再继续。部署记录写明这次停顿与决定。
+4. **升版**：在实现中执行 `node cli/scripts/bump-version.mjs 0.16.29`，由脚本一次更新全部版本载体与候选 / 回滚常量，并重算 `cli/asset-manifest.json`；**禁止手改**常量与 manifest。
+5. **CHANGELOG**：在 `## [Unreleased]` 之后新增 `## [0.16.29]` 条目，注明「本机全局发布（未发布到 npm）」，不改既有条目：
+   - **Changed**：
+     - 分层验收的「提案 delta 触及的场景」：测试用例文档按用例变化判断。已合并提案的测试用例文档 delta 没有新增、修改或删除任何用例时，对应场景不再计入受影响场景；判断逐份文档进行，从一份文档删除用例或把用例移到另一份文档时原场景照常计入。
+     - 提案未合并、测试变更集无效、没有合并基线或无法逐份文档判断时，仍按文件名计入。
+
+### 源码回归范围
+
+部署前的 verify 负责源码回归，脚本不跑测试（通用方案第八节）。升版后复跑以下检查，必须全绿：
+
+- `cd cli && npm run lint`（0 error）、`npx tsc --noEmit`、`npm test`、`npm run build`。
+- 范围包括：
+  - 本提案的 UT-S13-294～UT-S13-308、ST-S13-55、ST-S13-56；
+  - S32 既有的切片门禁用例 UT-S32-48、ST-S32-16（多切片提案在测试变更集无效时的暂停出口不变）；
+  - S13 既有用例，尤其是分层验收的三层集合与受影响场景（UT-S13-221～UT-S13-224、UT-S13-235）、扩大规则、切片 checkpoint 与 final、发布级验收；
+  - S09 / S35 中「受影响场景」段的结构检查用例（change-lint 的「场景是否存在」判断不变）；
+  - S32 中分层开启时切片 checkpoint 的基线部分；
+  - verify golden，asset-manifest 自洽用例。
+- **本仓不受范围变化影响**：本仓未开启分层，本次修改的判断不会被执行到。在部署记录中写明这一点。
+- 版本相关的既有用例若断言具体版本号，随升版更新期望值。
+
+### 部署、sync 与部署后检查
+
+1. 执行 `openlogos deploy --env test`（提案通道），按通用方案第七节第 1、2 条读回回执与账本：
+   - 全局 `--version` 等于 `0.16.29`，且等于回执的 `candidate_version` 与源码候选版本（`cli/src/lib/local-release-candidate.ts`）；三者任一不是 `0.16.29` 即视为部署不符合本方案，按「失败处置与回滚」处理；
+   - 入口 realpath 等于回执 `entry_realpath`，全局 `dist/index.js` 的 SHA-256 等于 `candidate_entry_sha256`；
+   - 记录候选 tarball 与回滚制品的路径与 SHA-256，从回执读取并记录 `previous_version` 与 `previous_entry_sha256`；
+   - 部署前读取 `openlogos env show test --format json` 的 `data.current_ref`，记作审计信息；部署成功后再读一次，记录 `data.current_ref`（应为本次部署的提交）与 `data.previous_ref`（显式回退目标）。
+2. **本仓 sync**：在主工作树执行一次 `openlogos sync`。
+   - 读回 `logos/spec/` 下受托管的规范文件（本次为 `test-results.md`、`change-management.md`），与根 `spec/` 同名文件逐字节一致；
+   - 本提案修改了 change-writer 技能的「Step 4 补充：『受影响场景』段」：读回 `logos/skills/change-writer/SKILL.md` 及各宿主托管副本，与根 `skills/change-writer/SKILL.md` 一致；AGENTS.md / CLAUDE.md 的变化只来自版本戳；
+   - 受版本控制的托管文件变化随部署记录一起提交，不 push；
+   - 若 sync 改动了 `.claude/settings.json`，按前几版部署记录同样还原并记录。
+3. **补部署报告**：部署后追加人写的「部署报告」小节（版本、deploy_id、ref、制品哈希、sync 读回结果）并提交，然后再执行 smoke。
+4. 经授权执行 `openlogos smoke --env test`，覆盖两组用例：
+   - 本次行为用例：「OpenLogos 0.16.29 测试用例文档按用例变化判断触及安装态 smoke（SMOKE-core-367～374）」；
+   - 通用安装态用例：「本机测试环境脚本部署安装态 smoke（SMOKE-core-268～SMOKE-core-271）」。
+
+   本仓产生的 smoke 历史随部署记录提交时以 `git add -f` 纳入。
+
+### 失败处置与回滚
+
+处置按通用方案第五节，各动作使用上文「版本与回滚身份的取值规则」中各自的事实来源。本次差异如下：
+
+- **部署前置或 dry-run 失败**：不执行部署，修正后重试，或回流实现。
+- **脚本失败（部署未成功）**：脚本自动回装回滚制品，按本次回执复核：全局 `--version` 等于回执 `previous_version`，入口 SHA-256 等于回执 `previous_entry_sha256`。账本记 `result=failed`，流程不推进。
+- **成功部署后要回退**：
+  - 先读取 `openlogos env show test --format json` 的 `data.previous_ref`，核对它就是要回到的版本（本次部署成功、期间无其他部署时为提交 `9a1e838` 的 0.16.28；期间另有成功部署时以读到的值为准），再执行 `openlogos deploy --env test --rollback`。
+  - 视图值为 null 时，命令以 `DEPLOY_ROLLBACK_TARGET_MISSING` 拒绝，不得改用手工回装。
+  - 回退后的影响：测试用例文档的 delta 恢复「有文件即触及」，分层项目上只改主链路小节的提案验收集合恢复为含这些场景的全部用例。只是多跑，不会漏验；`SPEC_MERGED`、合并基线与验收历史的格式两个版本相同，不需要迁移。
+- **装入的版本不是 `0.16.29`**（回执、源码候选版本或全局 `--version` 任一不符）：视为部署不符合本方案，不执行 smoke 的通过判定；按「成功部署后要回退」回到部署前的版本，查明原因后重新部署。
+- **成功落账后 smoke 失败**：停止后续完成流程，保留失败证据，回流修复后以 `openlogos deploy --env test` 部署修复提交并重跑 smoke。不得手工回装旧包。
+- 本次无数据迁移：不改任何持久文件的格式。
+
+### 明确不做
+
+- 不执行 `npm publish`、dist-tag、`git tag`、`gh release`、`git push`，不部署官网。
+- 不改 `.gitignore`、不改本仓 `logos/environments.yaml`、不在本仓开启分层；不改写其他仓库（RunLogos 的提案 `expand-main-path-cases` 由该仓自行重新验收）。
+
+### 追溯
+
+- 需求：AC-VERIFY-TIER-07（修改）、AC-VERIFY-TIER-23～AC-VERIFY-TIER-26；功能规格：§2.109.5、§2.109.15；决策：C01、C02。
+- 安装态 smoke：`core-smoke-test-cases.md`「OpenLogos 0.16.29 测试用例文档按用例变化判断触及安装态 smoke（SMOKE-core-367～374）」。

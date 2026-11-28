@@ -3388,3 +3388,74 @@ SMOKE-core-21 / 23 的既有认领者是 `website/scripts/smoke-releases.mjs`（
 - **结果写入**：写入 smoke reporter，每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
 - 这组用例都不需要人参与，不带 `[manual]` 标记。
 - 完成后运行 smoke 覆盖预检，确认 SMOKE-core-359～SMOKE-core-366 均被 runner 覆盖。
+
+## OpenLogos 0.16.29 测试用例文档按用例变化判断触及安装态 smoke（SMOKE-core-367～374）
+
+> 这组用例验证本提案 fix-delta-touched-by-case-change 的修正，已在本机全局安装态中以 0.16.29 的身份生效（功能规格 §2.109.5；需求 AC-VERIFY-TIER-26）。完整行为已由仓库内 UT-S13-294～UT-S13-308、ST-S13-55、ST-S13-56 覆盖。完整行为已由仓库内用例覆盖，安装态取证：装上的是本次批准的 0.16.29；全局 CLI 在一次性项目中，同一提案里只改主链路小节的文档不并入、同时改了用例的文档照常并入；删除编号不含场景号的用例、跨文档移动用例时原场景并入；场景文档的 delta 照常并入；提案未合并、没有合并基线、某份文档的合并前内容读不回、测试变更集无效（含正式目标被改动）时按文件名并入，并走各自既有的出口——普通提案判 FAIL，多切片提案走切片清单暂停（AC-VERIFY-TIER-25 的三项都取证）。
+>
+> **夹具 `D`（分层）**：每条用例在各自的 `mktemp -d` 一次性 git 项目内执行，经全局 `openlogos init` 建立项目后写入：
+> - 单模块 `core` launched，`verify.layered.enabled: true`；
+> - 已合并测试规格：
+>   - `core-S01-test-cases.md`：UT-S01-01、UT-S01-02，没有主链路小节；
+>   - `core-S02-test-cases.md`：UT-S02-01、UT-S02-02、UT-JSON-90（编号不含场景号），没有主链路小节；
+>   - `core-S03-test-cases.md`：UT-S03-01、UT-S03-02，含「主链路用例」小节，列出 UT-S03-01；
+> - 已合并场景文档 `core-S02-demo.md`；
+> - `verify.pre_run_command` 指向夹具内的记录型脚本 `lv-runner.mjs`（同「OpenLogos 0.16.27 分层验收安装态 smoke」）：每次被执行时在项目外临时目录追加一行调用记录（收到的 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS`、实际执行的用例 ID）；收到清单时只执行、只上报清单内的用例；缺省全部 pass；
+> - 全部内容提交后，经全局 `openlogos change <slug>` 建立活跃提案，在提案 `deltas/` 下写入各用例所述 delta，按用例填写「受影响场景」段（`assessment: assessed`、`shared_change: false`），再经全局 `openlogos merge <slug>` 合并，写入 `SPEC_MERGED`（含测试变更集与合并基线）。
+>
+> 每次执行全局 CLI 前把夹具改动提交到本地 git。runner 对全局安装态**只读**，不做安装或卸载。「来源」指 `layers.affected.scenarios[].sources`。
+>
+> **版本**：本次批准的目标版本是 `0.16.29`（需求 AC-VERIFY-TIER-26）。runner 中把它写成唯一的常量 `APPROVED_VERSION = '0.16.29'`，SMOKE-core-367 同时断言它与全局 `--version`、部署回执的 `candidate_version`、源码候选版本（`cli/src/lib/local-release-candidate.ts`）四者相等。只有关系式相等而版本不是 `0.16.29`（例如四者都是 `0.16.30`）判 fail。
+>
+> **声明的写法**：用例中的 `scenarios: [S01]` 是传给夹具函数的场景编号简写。夹具函数把每个编号写成含 `id` 与非空 `reason` 的对象（沿用 `scripts/smoke-layered-verification.js` 的 `setDeclaration` 写法，如 `scenarios: [{id: S01, reason: 夹具声明 S01 受波及}]`）；`scenarios: []` 原样写入。不得把 `scenarios: [S01]` 这一字面值直接写进 `proposal.md`——它会被判为结构非法并触发扩大。SMOKE-core-368 另以 `layers.expansion.level="none"` 确认声明被正常采信。
+>
+> **合并后改动标记的用例**（SMOKE-core-373、374）：只改一次性项目中的 `SPEC_MERGED` 或正式测试用例文档，每臂在同一夹具的独立副本上进行，互不影响。SMOKE-core-374 ③ 的切片清单必须由全局 `openlogos slice plan` 写出，不得手写；`slice plan` 失败判该用例 fail。
+
+### 一、冒烟测试用例补充
+
+| ID | 描述 | 前置条件 | 操作序列 | 预期结果 | 失败处置 |
+|---|---|---|---|---|---|
+| SMOKE-core-367 | 安装态版本与制品身份 | 本机全局已安装本次候选；部署账本中有本提案在 test 的成功部署记录，本机回执与之同一 deploy_id | ① 读取 `command -v openlogos`、入口 realpath、`openlogos --version`；② 读取全局包内 `asset-manifest.json` 并以包内校验器重算 | ① `--version` 等于 `0.16.29`，并等于本次成功部署回执中的 `candidate_version` 与源码候选版本；入口无 workspace link，回执 `entry_realpath` 为非空绝对路径且等于入口 realpath；② 校验器不抛错 | 保留读取结果；回流部署，不继续后续用例的通过判定 |
+| SMOKE-core-368 | 同一提案里只改主链路小节的文档不并入，同时改了用例的文档照常并入 | 夹具 `D`；提案 delta 含两份：`core-S02-test-cases.md` 只新增「主链路用例」小节（列出 UT-S02-01）；`core-S01-test-cases.md` 既新增「主链路用例」小节（列出 UT-S01-01）又修改 UT-S01-02 的预期输出文字；声明 `scenarios: [S01]`；已合并 | 全局 `openlogos verify --format json`；读取 `SPEC_MERGED` 与调用记录 | 退出码 0，`gate.result="PASS"`；`SPEC_MERGED` 的 `changed_test_ids=["UT-S01-02"]`；`layers.affected.scenarios` 恰为 S01，来源含 `declared` 与 `delta`；没有 S02 的条目；`layers.expansion.level="none"`；入口实际执行的用例恰为 UT-S01-01、UT-S01-02、UT-S02-01、UT-S03-01；UT-S02-02、UT-JSON-90、UT-S03-02 未被执行 | 保留信封、`SPEC_MERGED` 与调用记录；回流实现 |
+| SMOKE-core-369 | 不声明时删除编号不含场景号的用例，原场景并入 | 夹具 `D`；提案 delta 只从 `core-S02-test-cases.md` 删除 UT-JSON-90；声明 `scenarios: []`；已合并 | 全局 `openlogos verify --format json`；读取 `SPEC_MERGED` 与调用记录 | `SPEC_MERGED` 的 `removed_test_ids=["UT-JSON-90"]`、`changed_test_ids=[]`；`layers.affected.scenarios` 恰为 S02，来源 `["delta"]`；入口实际执行的用例含 UT-S02-01 与 UT-S02-02，不含 S01 的用例 | 同上 |
+| SMOKE-core-370 | 不声明时跨文档移动用例，移出与移入的场景都并入 | 夹具 `D`；提案 delta 把 UT-JSON-90 这一行从 `core-S02-test-cases.md` 原样移到 `core-S01-test-cases.md`；声明 `scenarios: []`；已合并 | 全局 `openlogos verify --format json`；读取 `SPEC_MERGED` 与调用记录 | `SPEC_MERGED` 的 `changed_test_ids=["UT-JSON-90"]`、`removed_test_ids=[]`；`layers.affected.scenarios` 恰为 S01 与 S02，来源都是 `["delta"]`；入口实际执行的用例含 UT-S02-01、UT-S02-02、UT-S01-01、UT-S01-02 与 UT-JSON-90 | 同上 |
+| SMOKE-core-371 | 场景文档的 delta 照常并入 | 夹具 `D`；提案 delta 修改场景文档 `core-S02-demo.md`，并给 `core-S02-test-cases.md` 只新增「主链路用例」小节（列出 UT-S02-01）；声明 `scenarios: []`；已合并 | 全局 `openlogos verify --format json`；读取调用记录 | `layers.affected.scenarios` 恰为 S02，来源 `["delta"]`；入口实际执行的用例含 UT-S02-01、UT-S02-02 与 UT-JSON-90 | 同上 |
+| SMOKE-core-372 | 提案未合并时按文件名并入 | 夹具 `D`；提案 `deltas/test/` 下只写入 `core-S02-test-cases.md` 的 delta（只新增「主链路用例」小节，列出 UT-S02-01）；声明 `scenarios: []`；**不执行** `openlogos merge`，没有 `SPEC_MERGED` | 全局 `openlogos verify --format json`；读取调用记录 | 退出码 0；`layers.affected.scenarios` 恰为 S02，来源 `["delta"]`；`layers.changed.ids=[]`；入口实际执行的用例含 UT-S02-01、UT-S02-02 与 UT-JSON-90；输出中没有 `test_change_set_invalid` | 同上 |
+| SMOKE-core-373 | 没有合并基线、或某份文档的合并前内容读不回时，只对无法判断的文档按文件名并入 | 夹具 `D`；提案 delta 含两份只新增「主链路用例」小节的文档：`core-S01-test-cases.md`（列出 UT-S01-01）与 `core-S02-test-cases.md`（列出 UT-S02-01）；声明 `scenarios: []`；已合并。三臂：① 不改动（对照）；② 从 `SPEC_MERGED` 删除 `merge_baseline`；③ 把 `merge_baseline.targets` 中 `core-S02-test-cases.md` 条目的 `before.git_blob` 改为对象库中不存在的 id | 每臂执行全局 `openlogos verify --format json`；读取调用记录 | ① `layers.affected.scenarios=[]`；入口实际执行的用例恰为 UT-S01-01、UT-S02-01、UT-S03-01；② 受影响场景恰为 S01 与 S02，来源都是 `["delta"]`；入口执行了 UT-S01-02、UT-S02-02 与 UT-JSON-90；③ 受影响场景恰为 S02，来源 `["delta"]`，没有 S01 的条目；入口执行了 UT-S02-02 与 UT-JSON-90，没有执行 UT-S01-02；三臂都退出码 0、`gate.result="PASS"`、`layers.expansion.level="none"`，输出中没有 `test_change_set_invalid` | 同上 |
+| SMOKE-core-374 | 测试变更集无效或正式目标被改动时，普通提案走门禁 FAIL、多切片提案走切片清单暂停 | 夹具 `D`；声明 `scenarios: []`。**普通提案两臂**（不是多切片提案）：提案 delta 为 `core-S02-test-cases.md` 只新增「主链路用例」小节（列出 UT-S02-01）；已合并；① 把 `SPEC_MERGED.test_change_set` 的 `sha256` 改为不匹配的值；② 不动 `SPEC_MERGED`，在正式的 `core-S02-test-cases.md` 末尾追加一行文字并提交。**多切片臂** ③：提案 delta 除上述 S02 的清单改动外，另给 `core-S01-test-cases.md` 新增 UT-S01-03、UT-S01-04；已合并；经全局 `openlogos slice plan --file slices.json --format json` 把这两条分给两个切片，退出码 0，`TEST_SLICE_MANIFEST.json` 已写出；清空调用记录，记录提案目录下 `VERIFY_PASS`、`VERIFY_FAIL`、`SLICE_CHECKPOINTS.jsonl`、`LOOP_ITERS` 的存在性与哈希、`tasks.md` 的哈希；再把 `SPEC_MERGED.test_change_set` 的 `sha256` 改为不匹配的值 | 每臂执行全局 `openlogos verify --format json`；读取调用记录；③ 另读取所记录的文件 | ①②：退出码 1；`gate.result="FAIL"`、`gate.reason="test_change_set_invalid"`；`layers.affected.scenarios` 恰为 S02，来源 `["delta"]`；项目中没有写入 `VERIFY_PASS`。③：退出码 2；`data.reason="test-slice-manifest-invalid"`；`data.slice_verification_state.human_action_required=true`；`data` 中没有 `gate` 与 `layers`；调用记录为空（测试入口调用 0 次）；所记录文件的存在性与哈希都不变，没有新增 `VERIFY_PASS` / `VERIFY_FAIL` | 同上 |
+
+### 二、执行边界
+
+- 全部读写只在一次性项目、项目外临时目录与受控临时目录内进行，结束即删除；不配置远端、不联网。
+- **不得**触碰以下对象：本仓活跃提案；本仓 `logos/resources/`（结果账本除外）；本仓运行态目录与账本；本仓的 git 分支与工作区；本仓登记表；用户其他仓库（包括 runlogos）；本机全局 prefix。
+- 结果写入本仓 `logos/resources/verify/smoke-results.jsonl`。只有目标为 `test`（或未指定）且实际执行的结果行，才带 `target_environment="test"`；目标不是 test 的 skip 行与窗口之外的 skip 行，都不声明 `target_environment`。
+
+### 三、追溯与覆盖
+
+- 需求：AC-VERIFY-TIER-07、AC-VERIFY-TIER-23、AC-VERIFY-TIER-24、AC-VERIFY-TIER-25、AC-VERIFY-TIER-26；功能规格：§2.109.5。
+- 部署：`core-01-deployment-plan.md`「OpenLogos 0.16.29 本机测试环境发布（fix-delta-touched-by-case-change）」。
+- 仓库内对应用例：
+  - SMOKE-core-368：UT-S13-294、UT-S13-300、ST-S13-55；
+  - SMOKE-core-369：UT-S13-298、ST-S13-56；
+  - SMOKE-core-370：UT-S13-299、ST-S13-56；
+  - SMOKE-core-371：UT-S13-301；
+  - SMOKE-core-372：UT-S13-303；
+  - SMOKE-core-373：UT-S13-294、UT-S13-305；
+  - SMOKE-core-374：UT-S13-304（①②）、UT-S13-308 与既有 UT-S32-48、ST-S32-16（③）。
+- AC-VERIFY-TIER-25 的三项出口在安装态都有取证：第 1 项见 SMOKE-core-372、373；第 2 项见 SMOKE-core-374 ①②；第 3 项（多切片提案的切片清单暂停出口）见 SMOKE-core-374 ③。
+- AC-VERIFY-TIER-23 的适用条件（可以逐份判断）与 AC-VERIFY-TIER-25 的分界见 SMOKE-core-373：对照臂 ① 基线可信、不并入；② 去掉基线后并入。
+- 未在安装态重复的一项，及其理由：
+  - 扩大规则照常生效（AC-VERIFY-TIER-23 第 3 项）：由 UT-S13-307 覆盖，扩大规则本身的安装态取证见「OpenLogos 0.16.27 分层验收安装态 smoke」。
+
+### 四、自动化与证据要求
+
+- 新增 runner `scripts/smoke-delta-touched-by-case-change.js`，由既有 `scripts/run-smoke.js` 按 `smoke-*.js` 发现并执行。runner 显式分派 SMOKE-core-367～SMOKE-core-374，不得依靠通配发现后无条件 PASS。
+- **目标环境优先判断**：沿用通用安装态 runner 的入口判断。宿主已指定 `OPENLOGOS_SMOKE_ENV` 且不是 `test` 时，runner 首先为全部 owned ID 写带原因的显式 skip（原因 `env-not-test`，缺失项 `OPENLOGOS_SMOKE_ENV=test`），skip 行不声明 `target_environment`，随即以成功状态退出，不再判断提案窗口与部署回执。
+- **适用窗口**：活跃变更为 `fix-delta-touched-by-case-change`，或设置了 `OPENLOGOS_DTC_SMOKE=1`。窗口之外，为全部 owned ID 写 skip，不声明 `target_environment`。环境变量一律使用 `OPENLOGOS_DTC_` 前缀。
+- **部署前置**：先读部署账本中本提案在 test 的最后一条成功 deploy。没有记录时写显式 `skip`，并携带缺失项。有记录时，要求源码候选版本可读，且回执满足以下全部条件，任一不符判 fail：同一 deploy_id；`result=done`；`candidate_version` 等于源码候选版本，且等于 `APPROVED_VERSION`（`0.16.29`）；`entry_realpath` 为非空绝对路径。有 skip 时不得写 `SMOKE_PASS`。
+- **子进程与超时**：全局 CLI 子进程在独立进程组中运行，每次限时 120 秒；到时对整个进程组强制终止，判 fail。
+- **判定方式**：按预期退出码与输出通道判定。要求解析信封的步骤一律以 `--format json` 调用，并对 `stdout.trim()` 整体 `JSON.parse`。以下情况都判该用例 fail，不得重试后写 pass：超时、被信号终止、启动错误、非预期退出码、信封无法整体解析；夹具中的 `openlogos merge` 失败同样判该用例 fail，不得改为手写 `SPEC_MERGED`。「实际执行了哪些用例」读项目外的调用记录，不从 CLI 输出推断。
+- **既有 smoke 夹具随行为变化同步**：既有 runner 中凡是靠「`deltas/test/` 下放一份没有用例变化的测试用例文档」构造 delta 触及的，改为含用例变化；本提案实现时逐个核对 `scripts/smoke-*.js`。
+- **结果写入**：写入 smoke reporter，每条用例只有一条结果记录，字段含 `id/status/timestamp/duration_ms/environment/target_environment/evidence`；**失败不得写 pass**。
+- 这组用例都不需要人参与，不带 `[manual]` 标记。
+- 完成后运行 smoke 覆盖预检，确认 SMOKE-core-367～SMOKE-core-374 均被 runner 覆盖。

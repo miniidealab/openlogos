@@ -995,3 +995,77 @@
 - 「哪些命令组被执行」「入口收到的清单」「实际执行的用例」以项目外临时目录中的调用记录为准；「是否读取了起点文件内容」以 git 调用接缝的记录为准。
 - 「与引入前一致」类断言以同一夹具在引入前实现上生成的 golden 比对。
 - 工作区 `logos.config.json` 损坏的用例（UT-S13-285、UT-S13-286 ②）读不到任何测试命令，UT-S13-286 ③ 在模块范围未启用后没有可执行的项目级命令，UT-S13-293 ③ 同样损坏了配置，四者都必须先在缺省结果路径预置合法结果，否则 verify 以 `NO_TEST_RESULTS` 退出、拿不到待断言的输出（delta-r1 F3）。
+
+## S13 测试用例文档按用例变化判断 delta 触及测试（fix-delta-touched-by-case-change）
+
+> 覆盖场景 `core-S13-verify-results.md`「S13 测试用例文档按用例变化判断 delta 触及」（Step 1～16、EX-13.64～EX-13.69）及其修改的 EX-13.34，功能规格 §2.109.5、§2.109.15，`spec/test-results.md`「三层集合与扩大」；需求 AC-VERIFY-TIER-07（修改）、AC-VERIFY-TIER-23～25。
+>
+> **既有用例核对结果**：UT-S13-223（delta 触及的场景自动并入）使用夹具 LV，其 `deltas/test/core-S01-test-cases.md` 新增了 UT-S01-04 并经正常 merge，属于「用例有变化」，前置与预期都不需要修改。「S13 分层验收与发布级验收测试（layered-verification）」的其余用例同样不改。
+>
+> **夹具 LD**：在「S13 分层验收与发布级验收测试」的夹具 LV 基础上调整，记录型入口 `lv-runner.mjs`、`verify.layered.enabled: true` 与调用记录的读法都相同。
+> - 已合并测试规格（初始提交）：
+>   - `core-S01-test-cases.md`：UT-S01-01、UT-S01-02、UT-S01-03，没有主链路小节；
+>   - `core-S02-test-cases.md`：UT-S02-01、UT-S02-02、UT-JSON-90（编号不含场景号），没有主链路小节，另有一段「覆盖度校验」文字；
+>   - `core-S03-test-cases.md`：UT-S03-01、UT-S03-02，含主链路小节，列出 UT-S03-01；
+>   - `core-S04-test-cases.md`：UT-S04-01 `[manual]`、UT-S04-02。
+> - 初始提交之后建立活跃提案 `ld-demo`（guard 带 `baseRef`）。各用例在提案 `deltas/` 下写入所述 delta，**经正常 merge** 写入 `SPEC_MERGED`（含测试变更集与合并基线）；写明「未合并」的用例除外。
+> - `proposal.md` 的「受影响场景」段缺省为 `assessment: assessed`、`shared_change: false`、`scenarios: []`，各用例另有说明时按说明设置。
+> - **声明的写法**：本节用例中的 `scenarios: [S01]` 是传给夹具函数的场景编号简写，不是写进 `proposal.md` 的字面值。夹具函数把每个编号写成含 `id` 与非空 `reason` 的对象（如 `scenarios: [{id: S01, reason: 夹具声明 S01 受波及}]`），并在写入后用 `parseAffectedDeclaration` 读回，确认状态为 `usable` 且已识别场景与传入的编号一致；读回不符时夹具直接失败，不进入待测步骤。直接写 `scenarios: [S01]` 会被判为结构非法（`scenarios[0] 必须是含 id 与 reason 的对象`），从而走扩大路径、偏离用例要验证的条件。
+> - **多切片变体 LD-slices**：提案的 delta 另给 `core-S01-test-cases.md` 新增 UT-S01-04、UT-S01-05，合并后经真实 `slice plan` 把这两条分给两个切片，写出有效的 `TEST_SLICE_MANIFEST.json`（`tasks.md` 的 `[code]` 段有两个带测试 ID 的顶层切片）。
+>
+> **常用 delta**：
+> - **D-main(SXX, ID)**：给 `core-SXX-test-cases.md` 新增「主链路用例」小节，列出该文档已定义的 ID；不改用例表。
+> - **D-text(S02)**：只改写 `core-S02-test-cases.md` 的「覆盖度校验」文字；不改用例表。
+>
+> 断言「来源」指 `layers.affected.scenarios[].sources`。断言「场景不在受影响场景中」指 `layers.affected.scenarios` 中没有该场景的条目。「实际执行了哪些用例」读调用记录。
+
+### 单元测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| UT-S13-294 | 只改主链路小节时该场景不并入，新列入的主链路用例在集合内 | §2.109.5、EX-13.64、AC-VERIFY-TIER-23 | 夹具 LD；delta 为 D-main(S02, UT-S02-01)；已合并；全部 pass | `verify --format json`，读取调用记录 | `SPEC_MERGED` 的 `changed_test_ids` 与 `removed_test_ids` 都为空；`layers.affected.scenarios=[]`；`layers.changed.ids=[]`；主链路层含 UT-S02-01 与 UT-S03-01；`layers.total` 的 ID 恰为 UT-S02-01、UT-S03-01；入口只执行这两条，UT-S02-02、UT-JSON-90 未被执行；`layers.expansion.level="none"`；`gate.result="PASS"`；输出通过 `spec/schema/verify.schema.json` 校验，`layers.affected` 中没有新增字段 |
+| UT-S13-295 | 只改非用例文字时该场景不并入 | §2.109.5、EX-13.64、AC-VERIFY-TIER-23 | 夹具 LD；delta 为 D-text(S02)；已合并 | `verify --format json` | `layers.affected.scenarios=[]`；`layers.total` 的 ID 恰为 UT-S03-01 |
+| UT-S13-296 | 新增用例时并入，新建的文档同样并入 | §2.109.5、EX-13.34、AC-VERIFY-TIER-07 | 夹具 LD；① delta 给 `core-S02-test-cases.md` 新增 UT-S02-03；② delta 新建 `core-S05-test-cases.md`，定义 UT-S05-01；各自已合并 | 各执行 `verify --format json` | ① S02 在受影响场景中，来源 `["delta"]`；`layers.total` 含 S02 的全部自动化用例（UT-S02-01、02、03、UT-JSON-90）；② S05 在受影响场景中，来源 `["delta"]` |
+| UT-S13-297 | 修改用例时并入 | §2.109.5、EX-13.34、AC-VERIFY-TIER-07 | 夹具 LD；delta 修改 UT-S02-01 的预期输出文字；已合并 | `verify --format json` | S02 来源 `["delta"]`；`layers.changed.ids=["UT-S02-01"]`；`layers.total` 含 UT-S02-02 与 UT-JSON-90 |
+| UT-S13-298 | 删除用例时原场景并入，编号不含场景号时同样成立 | §2.109.5、EX-13.65、AC-VERIFY-TIER-24 | 夹具 LD；① delta 从 `core-S02-test-cases.md` 删除 UT-S02-02；② delta 只从 `core-S02-test-cases.md` 删除 UT-JSON-90；各自已合并 | 各执行 `verify --format json` | ① `SPEC_MERGED` 的 `removed_test_ids=["UT-S02-02"]`；S02 来源 `["delta"]`；`layers.total` 含 UT-S02-01 与 UT-JSON-90；② `removed_test_ids=["UT-JSON-90"]`、`changed_test_ids=[]`；S02 来源 `["delta"]`；`layers.total` 含 UT-S02-01 与 UT-S02-02；两臂的受影响场景中都没有其他场景 |
+| UT-S13-299 | 跨文档移动用例时移出与移入的场景都并入 | §2.109.5、EX-13.65、AC-VERIFY-TIER-24 | 夹具 LD；delta 把 UT-JSON-90 这一行从 `core-S02-test-cases.md` 原样移到 `core-S01-test-cases.md`（S02 的 delta 删除该行，S01 的 delta 新增内容相同的一行）；已合并 | `verify --format json` | `SPEC_MERGED` 的 `changed_test_ids=["UT-JSON-90"]`、`removed_test_ids=[]`；受影响场景恰为 S01 与 S02，来源都是 `["delta"]`；`layers.total` 含 UT-S02-01、UT-S02-02 与 S01 的全部自动化用例 |
+| UT-S13-300 | 同一提案中各份文档互不影响 | §2.109.5、EX-13.69、AC-VERIFY-TIER-24 | 夹具 LD；delta 含两份：D-main(S02, UT-S02-01)；`core-S01-test-cases.md` 的 delta 既新增主链路小节（UT-S01-01）又修改 UT-S01-02 的预期输出文字；声明 `scenarios: [S01]`；已合并；全部 pass | `verify --format json`，读取调用记录 | `changed_test_ids=["UT-S01-02"]`；受影响场景恰为 S01，来源含 `declared` 与 `delta`；S02 不在受影响场景中；`layers.total` 的 ID 恰为 UT-S01-01、02、03、UT-S02-01、UT-S03-01；入口执行了 UT-S02-01，没有执行 UT-S02-02 与 UT-JSON-90 |
+| UT-S13-301 | 场景文档的 delta 照常并入，与没改用例的测试用例文档并存时因场景文档并入 | §2.109.5、EX-13.34、EX-13.68 | 夹具 LD（另有已合并的场景文档 `core-S02-demo.md`）；① delta 只修改场景文档 `core-S02-demo.md`；② delta 同时含该场景文档的修改与 D-main(S02, UT-S02-01)；各自已合并 | 各执行 `verify --format json` | 两臂 S02 都在受影响场景中，来源 `["delta"]`；`layers.total` 含 S02 的全部自动化用例 |
+| UT-S13-302 | 声明的场景不受影响 | §2.109.5、EX-13.64 | 夹具 LD；delta 为 D-main(S02, UT-S02-01)；声明 `scenarios: [S02]`；已合并 | `verify --format json` | S02 在受影响场景中，来源恰为 `["declared"]`；`layers.total` 含 S02 的全部自动化用例 |
+| UT-S13-303 | 提案未合并时按文件名并入 | §2.109.5、EX-13.67、AC-VERIFY-TIER-25 | 夹具 LD；`deltas/test/` 下写入 D-main(S02, UT-S02-01)，**不合并**（没有 `SPEC_MERGED`） | `verify --format json` | S02 在受影响场景中，来源 `["delta"]`；`layers.changed.ids=[]`；不报 `test_change_set_invalid` |
+| UT-S13-304 | 普通提案：测试变更集无效时按文件名并入且门禁 FAIL | §2.109.5、EX-13.67、AC-VERIFY-TIER-25 | 夹具 LD（不是多切片提案）；delta 为 D-main(S02, UT-S02-01)；已合并；① 把 `SPEC_MERGED.test_change_set` 的 `sha256` 改为不匹配的值；② 不动 `SPEC_MERGED`，合并后在 `core-S02-test-cases.md` 末尾追加一行文字 | 各执行 `verify --format json` | 两臂 S02 都在受影响场景中，来源 `["delta"]`；`gate.result="FAIL"`、`gate.reason="test_change_set_invalid"` |
+| UT-S13-305 | 无法逐份文档判断时只对该文档按文件名并入 | §2.109.5、EX-13.66、AC-VERIFY-TIER-25 | 夹具 LD；delta 含两份只改主链路小节的文档：D-main(S01, UT-S01-01) 与 D-main(S02, UT-S02-01)；已合并，测试变更集保持有效；依次为：① 从 `SPEC_MERGED` 删除 `merge_baseline`；② 从 `merge_baseline.targets` 删除 `core-S02-test-cases.md` 的条目；③ 把该条目 `before.git_blob` 改为对象库中不存在的 id；④ 把该条目 `before.sha256` 改为不匹配的值；⑤ 把该条目 `after_sha256` 改为不匹配的值 | 各执行 `verify --format json`；③ 另比较执行前后 git 对象库的对象数 | ① S01 与 S02 都在受影响场景中，来源 `["delta"]`；②～⑤ 受影响场景恰为 S02，来源 `["delta"]`，S01 不在其中；各臂都不报错、没有新增原因代码，`layers.expansion.level="none"`，`gate.reason` 不是 `test_change_set_invalid`；③ 对象数不变 |
+| UT-S13-306 | change-lint 的「场景是否存在」判断不变 | §2.109.4、§2.109.5 | 夹具 LD；delta 为 D-main(S02, UT-S02-01) 与新建的 `core-S06-test-cases.md`（只含导言与空的用例表，没有定义任何用例）；声明 `scenarios: [S06]`，理由非空；未合并与已合并各一次 | 各执行 `change-lint --format json` | 两次都不报 `affected_scenarios_invalid`，不把 S06 判为不存在的场景 |
+| UT-S13-307 | 场景没有 delta 来源时扩大规则照常生效 | §2.109.5、§2.109.7、EX-13.64、EX-13.32、AC-VERIFY-TIER-23 | 夹具 LD；delta 为 D-main(S02, UT-S02-01)；已合并；全部 pass；① 声明 `shared_change: true`、`scenarios: []`；② 删除「受影响场景」段 | 各执行 `verify --format json`，读取调用记录 | ① `layers.affected.scenarios` 中没有 S02 的条目（S02 没有 `delta` 来源）；`layers.expansion.level="full"`，原因含 `shared_change_declared`；入口执行了全部自动化用例，含 UT-S02-02 与 UT-JSON-90；`gate.result="PASS"`；② 同样没有 S02 的条目；原因含 `declaration_missing` 与 `module_scope_unavailable`，`level="full"`；入口执行了 UT-S02-02 与 UT-JSON-90 |
+| UT-S13-308 | 多切片提案：测试变更集无效时沿用切片清单暂停出口 | §2.109.5、EX-13.67、AC-VERIFY-TIER-25；既有 UT-S32-48、ST-S32-16 | 夹具 LD-slices，delta 另含 D-main(S02, UT-S02-01)；清单有效；记录提案目录下 `VERIFY_PASS` / `VERIFY_FAIL`、`SLICE_CHECKPOINTS.jsonl`、`LOOP_ITERS` 与 `tasks.md` 的存在性和哈希；① 把 `SPEC_MERGED.test_change_set` 的 `sha256` 改为不匹配的值；② 不动 `SPEC_MERGED`，合并后在 `core-S02-test-cases.md` 末尾追加一行文字 | 各执行 `verify --format json`，读取调用记录 | 两臂：退出码 2；`data.reason="test-slice-manifest-invalid"`；`data.slice_verification_state.human_action_required=true`，违规项含 `test-slice-change-set-` 前缀的代码；`data` 中没有 `gate` 与 `layers`；入口没有被调用；所记录的文件存在性与哈希不变，没有新增验收标记 |
+
+### 场景测试
+
+| ID | 描述 | 来源 | 前置条件 | 输入/操作 | 预期输出 |
+|----|------|------|---------|------|---------|
+| ST-S13-55 | 一次调整多份主链路小节的提案只验收该验收的部分 | Step 1～16、EX-13.64、EX-13.69、AC-VERIFY-TIER-23、24 | 真实 CLI（构建后的 `dist/index.js`）；夹具 LD；提案经真实 `change`、`merge` 建立，声明经夹具函数写为含 `id` 与 `reason` 的对象；delta 含三份：D-main(S02, UT-S02-01)、D-main(S04, UT-S04-02)，以及 `core-S01-test-cases.md` 的 delta（新增主链路小节 UT-S01-01 并修改 UT-S01-02 的预期输出文字）；声明 `scenarios: [S01]`；全部 pass | ① `verify --format json`；② 读取调用记录与 `acceptance-report.md` | ① 退出码 0，`gate.result="PASS"`，`layers.expansion.level="none"`；受影响场景恰为 S01，来源含 `declared` 与 `delta`；② 入口执行的用例恰为 UT-S01-01、02、03、UT-S02-01、UT-S03-01、UT-S04-02；UT-S02-02、UT-JSON-90、UT-S03-02 未被执行；报告「验收范围」小节列出的受影响场景只有 S01；`VERIFY_PASS` 已写入 |
+| ST-S13-56 | 删除与移动用例时原场景仍被回归 | Step 1～16、EX-13.65、AC-VERIFY-TIER-24 | 真实 CLI；夹具 LD，P 之外本应不执行的 UT-S02-01 实际会失败；声明 `scenarios: []`；提案经真实 `merge`；① delta 只从 `core-S02-test-cases.md` 删除 UT-JSON-90；② 另一个项目中 delta 把 UT-JSON-90 从 `core-S02-test-cases.md` 原样移到 `core-S01-test-cases.md` | 各执行 `verify --format json`，读取调用记录 | ① S02 来源 `["delta"]`；UT-S02-01 被执行并失败，退出码 1，`gate.reason="failed_cases"`；② 受影响场景为 S01 与 S02；UT-S02-01 被执行并失败，退出码 1 |
+
+### 覆盖度校验
+
+- 没有改动用例时不并入：UT-S13-294、UT-S13-295、ST-S13-55。三者的夹具都经真实合并、不改动 `SPEC_MERGED` 与正式文档，即合并基线可信、可以逐份判断。
+- 同一份只改清单的 delta，可以逐份判断与无法判断的分界：UT-S13-294（可信，S02 没有 `delta` 来源）对 UT-S13-305 ①（去掉合并基线，S02 来源 `delta`）；UT-S13-305 ②～⑤ 在同一提案内同时给出两种结果（S01 可信不并入，S02 无法判断按文件名并入）。
+- 没有 delta 来源不等于其余用例不执行（扩大规则照常）：UT-S13-307。
+- 新增、修改、删除用例时并入：UT-S13-296～UT-S13-298、ST-S13-56。
+- 逐份文档判断（不含场景号的编号、跨文档移动、文档互不影响）：UT-S13-298 ②、UT-S13-299、UT-S13-300、ST-S13-55、ST-S13-56。
+- 场景文档、声明、主链路层不受影响：UT-S13-301、UT-S13-302、UT-S13-294、UT-S13-300。
+- 按文件名判断的情形：UT-S13-303（未合并）、UT-S13-304（普通提案的变更集无效，含合并后文件被改动）、UT-S13-305（无法逐份判断）。
+- 变更集无效时两种出口互不混淆：UT-S13-304（普通提案，`gate.reason="test_change_set_invalid"`，输出含 `layers`）、UT-S13-308（多切片提案，切片清单暂停出口，不输出 `gate` 与 `layers`）。
+- change-lint 的口径不变：UT-S13-306。
+- 异常 EX-13.64～EX-13.69 各至少一条：64（294、295、302、307）、65（298、299）、66（305）、67（303、304、308）、68（301）、69（300）；EX-13.34（296、297、301，以及既有 UT-S13-223）。
+- 需求 AC-VERIFY-TIER-23～25 均有对应用例；AC-VERIFY-TIER-26 由安装态 smoke 覆盖。
+- 未单列的情形：「用例行比较报错」（EX-13.66 的最后一项）无法经正常 merge 构造——含重复 ID 或列数无法判定的文档在合并时就被拒绝；该分支由 UT-S13-305 的同一条兜底路径覆盖，实现时以比较函数抛错的接缝补一条断言，并入 UT-S13-305。
+
+### 自动化与证据要求
+
+- 全部用例由 `cli/test` 下的自动化测试实现，结果经 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。
+- 不需要人参与；不需要额外的环境要求（夹具自建一次性 git 仓库，本仓测试已依赖 git）；无平台限定用例。
+- 夹具的 `SPEC_MERGED` 必须由真实合并路径写出（含测试变更集与合并基线），不得手写；UT-S13-304、UT-S13-305、UT-S13-308 在合并之后再按用例说明改动标记或文件。
+- 凡是前置中有非空声明的用例（UT-S13-300、UT-S13-302、ST-S13-55），都经夹具函数写出合法声明并读回确认 `usable`（见本节开头「声明的写法」）。
+- 「实际执行了哪些用例」以项目外临时目录中的调用记录为准，不从 CLI 输出推断。
+- 既有夹具随行为变化同步：实现时逐个核对 `cli/test` 中凡是靠「`deltas/test/` 下放一份没有用例变化的测试用例文档」来构造 delta 触及的夹具（含手写 `SPEC_MERGED` 的夹具）。手写标记没有合并基线时按文件名并入，行为不变；经真实合并且没有用例变化的，前置改为含用例变化，预期不变。
