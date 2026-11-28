@@ -1,0 +1,69 @@
+{
+  "slices": [
+    {
+      "slice_id": "slice-01-scope-git-local-only",
+      "task_text": "切片1：验收范围计算的 git 调用只读本地（功能规格 §2.111.1～§2.111.4、§2.111.6、§2.96.6；需求 AC-VERIFY-LOCAL-01、02、04～07；场景 EX-13.70、71、73～78 及修改后的 EX-10.5、EX-13.33）。【切片决策】六维评分 9 分（影响范围 1、行为复杂度 2、契约变化 1、测试规模 2、风险 1、不确定性 2），按能力线垂直拆为两片。删后续自检：只做本片时，提案级验收的范围计算已经端到端不联网、有时限，本片名下的用例都只经过范围计算，不依赖切片2 的发布级与历史改动，可独立通过 checkpoint；切片2 是另一条能力线（发布级验收、发布查询与验收历史），依赖本片建立的执行入口，排在后面，没有前向依赖。升版与安装态 smoke runner 没有单独成片：名下只有 SMOKE 用例，checkpoint 不执行 SMOKE，单独成片属于按工种拆，已并入最后一片。① 在 cli/src/lib 下新增只读 git 执行模块，三项约束只在这一处实现：为子进程把 GIT_ALLOW_PROTOCOL 设为空串并设置 GIT_NO_LAZY_FETCH=1；GIT_TERMINAL_PROMPT=0；每次调用单独计时，缺省 60 秒，调用方可传入自己的时限。超过时限时终止子进程并返回可区分的超时结果——调用返回时该子进程必须已经退出，不遗留等待中的 git 进程。提供两个仅供测试的接缝：让指定参数的调用直接返回超时结果（分支注入）；覆盖时限以便用约 1 秒驱动真实超时。时限没有用户配置项。另提供「不设置 GIT_NO_LAZY_FETCH、只保留置空的协议白名单」的测试接缝，用于模拟不识别该开关的 Git。② cli/src/lib/verify-scope.ts：缺省执行器改用该模块。失败按调用归类，原因代码不变：检查提案起点提交失败（本地不存在或超时）为 base_ref_unreachable，且不再执行差异计算；收集改动文件（差异计算、列出未跟踪文件）失败为 diff_failed；读取提案起点中的共享验收配置内容失败或超时按整文件变化处理（shared_config_changed / 分层 shared_path_changed）。detail 在既有文字之后补充：因本地缺少对象而失败时写明「本地缺少对象，验收不从远端取回」，超时写明超时与时限秒数。分层验收沿用 base_ref_unavailable，其 detail 保留底层原因代码。③ cli/src/lib/affected-scenarios.ts：读取合并前内容与枚举本地对象改用该模块，不再自行设置环境变量；行为不变（含不识别该开关的 Git 上按本地对象清单逐个判断，既有 UT-S13-305 不改预期）。读取某份文档的合并前内容超时只让那一份文档按文件名记为触及。cli/src/lib/merge-baseline.ts 与 cli/src/lib/test-change-set.ts 不修改；必须修改它们才能做到时停下来说明。④ 门禁不改：回落或扩大只改变验收集合，按最终集合与既有规则、既有原因优先级判定。⑤ 测试：在 cli/test 下实现本片用例，结果经 OpenLogos reporter 写入 logos/resources/verify/test-results.jsonl。夹具按已合并测试规格：远端是本机裸仓库，只配置 URL 与取回过滤器并显式配置 protocol.file.allow=always；远端接入记录、对象库快照、git 调用记录三种观测都不从 CLI 输出推断；凡断言远端接入记录为空的用例先执行对照步骤证明记录有区分力。先验证规格假设的「经 remote.<name>.uploadpack 指向记录型包装脚本」对本机文件远端是否生效；不生效时换用等价的记录方式并在交付说明中写明，不得改预期。UT-S13-321 用短时限与等待型 git 替身断言超时子进程的 PID 已退出。UT-S13-313 如实标注为模拟。逐个核对 cli/test 中直接断言 git 调用参数或环境变量的既有用例，只调整观测方式、不改预期行为。本片不升版、不改 CHANGELOG、不动发布级验收与验收历史。完成前在 cli 目录运行 npm run lint、npx tsc --noEmit、npm run build，并运行本片用例与受影响的既有 S13 测试文件。（覆盖 UT-S13-309、UT-S13-310、UT-S13-311、UT-S13-313、UT-S13-314、UT-S13-315、UT-S13-316、UT-S13-318、UT-S13-321、UT-S13-322、ST-S13-57、ST-S13-58）",
+      "owned_test_ids": [
+        "UT-S13-309",
+        "UT-S13-310",
+        "UT-S13-311",
+        "UT-S13-313",
+        "UT-S13-314",
+        "UT-S13-315",
+        "UT-S13-316",
+        "UT-S13-318",
+        "UT-S13-321",
+        "UT-S13-322",
+        "ST-S13-57",
+        "ST-S13-58"
+      ],
+      "runner_selectors": [
+        "UT-S13-309",
+        "UT-S13-310",
+        "UT-S13-311",
+        "UT-S13-313",
+        "UT-S13-314",
+        "UT-S13-315",
+        "UT-S13-316",
+        "UT-S13-318",
+        "UT-S13-321",
+        "UT-S13-322",
+        "ST-S13-57",
+        "ST-S13-58"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S13-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-release-history-and-install",
+      "task_text": "切片2：发布级验收、发布查询与验收历史的 git 调用只读本地，及 0.16.30 安装态验收（功能规格 §2.111.1、§2.111.2、§2.111.4、§2.111.5；需求 AC-VERIFY-LOCAL-03、08、09；场景 EX-13.72、79、80）。删后续自检：本片是最后一片；做完后发布查询与发布级验收不联网、提案级历史使用受约束读取的快照，是一条端到端可观察的能力线，不是给别的片铺管道。① cli/src/commands/verify-release.ts：git 调用改经切片1 的只读执行模块，保留既有 60 秒时限。发布查询 --commit 指定的提交本地解析不出（含本地不存在该提交对象、调用超时）时照旧以 RELEASE_CHECK_COMMIT_INVALID 拒绝，退出码 2，不回落、不执行用例、不写文件。发布级验收的前置检查与收尾复核经该模块执行；历史记录继续使用运行开始时固定的提交，写历史时不重新读取；收尾复核 HEAD 与工作区，任一有变化仍按既有门禁判 release_commit_changed。② 提案级验收写历史记录：先经只读执行模块读出提交号与工作区状态（时限保留 10 秒、30 秒），再把快照传给历史记录。cli/src/lib/verification-history.ts 的提交读取函数及其时限不改；cli/src/commands/smoke.ts 不改——smoke 写历史时的调用、环境变量、时限与结果和 0.16.29 相同。③ 测试：在 cli/test 下实现本片的 UT 用例，结果经 OpenLogos reporter 写入 logos/resources/verify/test-results.jsonl。UT-S13-317 断言由 verify 进程直接启动的每一条 git 调用都带三项约束、测试入口内部的 git 调用不继承、各调用的时限符合规格；UT-S13-320 与既有 UT-S13-259 是同一反例，另含「改写已跟踪文件而不提交」一臂。④ 升版与发布内容：目标版本固定为 0.16.30。升版之前检查 cli/package.json 为 0.16.29 且 npm registry 中不存在 0.16.30；任一不符即停止，不升版、不自行改取其他版本，交回用户决定。检查通过后执行 node cli/scripts/bump-version.mjs 0.16.30（禁止手改版本常量与 cli/asset-manifest.json）；CHANGELOG.md 在 [Unreleased] 之后新增 [0.16.30] 条目，注明本机全局发布（未发布到 npm），内容按已合并部署方案；断言具体版本号的既有用例随升版更新期望值。⑤ 安装态 smoke：新增 runner scripts/smoke-verify-git-local-only.js，由既有 scripts/run-smoke.js 按 smoke-*.js 发现并执行，显式分派 SMOKE-core-375～379，不得通配后无条件 PASS；结果写入 logos/resources/verify/smoke-results.jsonl（smoke reporter，每条用例一条记录，失败不得写 pass）。按已合并 smoke 规格实现：目标环境优先判断（OPENLOGOS_SMOKE_ENV 不是 test 时写带原因的显式 skip）、适用窗口（活跃变更为本提案或 OPENLOGOS_VGL_SMOKE=1）、部署前置检查、子进程独立进程组与 120 秒超时；常量 APPROVED_VERSION = '0.16.30' 同时与全局 --version、部署回执 candidate_version、源码候选版本比对；每条行为用例先执行对照步骤证明远端接入记录有区分力；SMOKE-core-377 断言 detail 含 base_ref_unreachable、不含 diff_failed，并从 git 调用记录确认没有以该起点为参数的差异计算；用例失败时在清理夹具之前把完整命令输出（含失败的 init）、远端接入记录、git 调用记录、对象库快照与逐次调用记录写入失败证据。完成后运行 smoke 覆盖预检，确认 SMOKE-core-375～379 均被 runner 覆盖。本片不执行部署、smoke、npm publish、git tag 与 git push，不改 logos/environments.yaml、.gitignore 与 logos.config.json 的 guard 字段，不触碰用户级 git 配置。完成前在 cli 目录运行 npm run lint、npx tsc --noEmit、npm run build，并运行本片用例与受影响的既有测试文件。（覆盖 UT-S13-312、UT-S13-317、UT-S13-319、UT-S13-320、SMOKE-core-375、SMOKE-core-376、SMOKE-core-377、SMOKE-core-378、SMOKE-core-379）",
+      "owned_test_ids": [
+        "UT-S13-312",
+        "UT-S13-317",
+        "UT-S13-319",
+        "UT-S13-320",
+        "SMOKE-core-375",
+        "SMOKE-core-376",
+        "SMOKE-core-377",
+        "SMOKE-core-378",
+        "SMOKE-core-379"
+      ],
+      "runner_selectors": [
+        "UT-S13-312",
+        "UT-S13-317",
+        "UT-S13-319",
+        "UT-S13-320",
+        "SMOKE-core-375",
+        "SMOKE-core-376",
+        "SMOKE-core-377",
+        "SMOKE-core-378",
+        "SMOKE-core-379"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S13-test-cases.md",
+        "logos/resources/test/smoke/core-smoke-test-cases.md"
+      ]
+    }
+  ]
+}
