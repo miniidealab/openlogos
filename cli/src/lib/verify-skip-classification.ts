@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readTestChangeSet } from './test-change-set.js';
 import { SPEC_MERGED_MARKER } from './proposal-markers.js';
+import { moduleFromGuard } from './merge-direct.js';
 
 export const PLATFORM_SKIP_REASON = 'platform-unavailable';
 export const TIER_MISMATCH_FIX_HINT = '准备好环境并声明到 verify.requirements，或改标 `[manual]`';
@@ -27,15 +28,15 @@ export type StrictSkipSet =
  */
 export function readStrictSkipSet(root: string): StrictSkipSet {
   let slug: string | null = null;
-  let module = 'core';
   try {
-    const guard = JSON.parse(readFileSync(join(root, 'logos', '.openlogos-guard'), 'utf8')) as { activeChange?: unknown; module?: unknown };
+    const guard = JSON.parse(readFileSync(join(root, 'logos', '.openlogos-guard'), 'utf8')) as { activeChange?: unknown };
     if (typeof guard.activeChange === 'string' && guard.activeChange) slug = guard.activeChange;
-    if (typeof guard.module === 'string' && guard.module) module = guard.module;
   } catch { /* 无活跃提案 */ }
   if (!slug) return { state: 'unmerged', ids: new Set() };
   const proposalDir = join(root, 'logos', 'changes', slug);
   if (!existsSync(join(proposalDir, SPEC_MERGED_MARKER))) return { state: 'unmerged', ids: new Set() };
+  // 模块期望值与合并侧、slice plan 同一取值规则（§2.110.2）：否则 guard.module 带首尾空白时清单通过而门禁判 test_change_set_invalid
+  const module = moduleFromGuard(root, slug);
   let read: ReturnType<typeof readTestChangeSet>;
   try {
     read = readTestChangeSet(root, proposalDir, { change: slug, module });

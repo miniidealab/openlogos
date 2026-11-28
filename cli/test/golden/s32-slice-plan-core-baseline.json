@@ -1,0 +1,55 @@
+{
+  "status": 0,
+  "data": {
+    "slug": "lv-demo",
+    "slice_count": 2,
+    "slice_ids": [
+      "slice-a",
+      "slice-b"
+    ],
+    "task_fingerprint": "sha256:20244fc141a812232d20640e20c33a5ddea6852ecdc2e6d1354afbdaa940d310",
+    "spec_fingerprint": "sha256:6359d2706b63c97bce8e32a054014f72cc32afa9cb38cc818a56165f6145fabc",
+    "manifest_path": "logos/changes/lv-demo/TEST_SLICE_MANIFEST.json",
+    "verify_scope": "baseline",
+    "verify_scope_source": "decided"
+  },
+  "tasks": "# 实现任务\n\n## [delta] 规格变更\n- [x] 已合并\n\n## [code] 代码实现\n\n- [ ] 切片1：能力 a（覆盖 UT-S90-01、UT-S90-02）\n- [ ] 切片2：能力 b（覆盖 UT-S90-03）",
+  "manifest": {
+    "schema": "openlogos/test-slice-manifest@1",
+    "change": "lv-demo",
+    "module": "core",
+    "task_fingerprint": "sha256:20244fc141a812232d20640e20c33a5ddea6852ecdc2e6d1354afbdaa940d310",
+    "spec_fingerprint": "sha256:6359d2706b63c97bce8e32a054014f72cc32afa9cb38cc818a56165f6145fabc",
+    "slices": [
+      {
+        "slice_id": "slice-a",
+        "task_text": "切片1：能力 a（覆盖 UT-S90-01、UT-S90-02）",
+        "owned_test_ids": [
+          "UT-S90-01",
+          "UT-S90-02"
+        ],
+        "runner_selectors": [
+          "UT-S90-01",
+          "UT-S90-02"
+        ],
+        "spec_targets": [
+          "logos/resources/test/core-S90-test-cases.md"
+        ]
+      },
+      {
+        "slice_id": "slice-b",
+        "task_text": "切片2：能力 b（覆盖 UT-S90-03）",
+        "owned_test_ids": [
+          "UT-S90-03"
+        ],
+        "runner_selectors": [
+          "UT-S90-03"
+        ],
+        "spec_targets": [
+          "logos/resources/test/core-S90-test-cases.md"
+        ]
+      }
+    ],
+    "verify_scope": "baseline"
+  }
+}

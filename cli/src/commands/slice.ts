@@ -17,6 +17,7 @@ import type { OutputFormat } from '../lib/json-output.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import { extractCodeSectionRaw, replaceCodeSectionBody } from '../lib/proposal-lifecycle.js';
 import { readSliceScopeConfig } from '../lib/verify-config.js';
+import { moduleFromGuard } from '../lib/merge-direct.js';
 import {
   TEST_SLICE_MANIFEST,
   TEST_SLICE_SCHEMA,
@@ -276,14 +277,27 @@ function resolveVerifyScope(
   return { scope: decideVerifyScope(root), source: 'decided' };
 }
 
-function resolveActiveProposal(root: string, explicitSlug?: string): { slug: string; proposalDir: string } {
-  let slug = explicitSlug;
-  if (!slug) {
-    try {
-      const guard = JSON.parse(readFileSync(join(root, 'logos', '.openlogos-guard'), 'utf8')) as Record<string, unknown>;
-      slug = typeof guard.activeChange === 'string' ? guard.activeChange : undefined;
-    } catch { /* 下方统一报错 */ }
+/**
+ * 确定目标提案并解析其模块（功能规格 §2.110；spec/test-slice-manifest.md「写入前置条件：目标提案与模块」）。
+ *
+ * 目标必须是活跃提案：`--slug X` 与 guard 的 `activeChange` 不一致、没有 guard 或 guard 无法解析时拒绝——
+ * 清单随后要被 verify 以活跃 guard 比对，为非活跃提案写出的清单不会被采信，也无从得知它的模块。
+ * 本函数在读取输入、暂存任何产物之前调用，拒绝时两产物零改写。
+ *
+ * 模块按合并侧写入测试变更集的同一规则取值（`moduleFromGuard`），解析一次，供读取变更集、校验、写出三处共用。
+ */
+function resolveActiveProposal(root: string, explicitSlug?: string): { slug: string; proposalDir: string; module: string } {
+  let active: string | undefined;
+  try {
+    const guard = JSON.parse(readFileSync(join(root, 'logos', '.openlogos-guard'), 'utf8')) as Record<string, unknown>;
+    active = typeof guard.activeChange === 'string' && guard.activeChange ? guard.activeChange : undefined;
+  } catch { /* 没有 guard 或无法解析：按没有活跃提案处理 */ }
+  if (explicitSlug !== undefined && explicitSlug !== active) {
+    throw new SlicePlanError('SLICE_PLAN_NO_ACTIVE_CHANGE', active
+      ? `${explicitSlug} 不是活跃变更提案（当前活跃提案：${active}）；slice plan 只为活跃提案规划切片`
+      : `${explicitSlug} 不是活跃变更提案（当前没有活跃提案）；slice plan 只为活跃提案规划切片`);
   }
+  const slug = active;
   if (!slug) throw new SlicePlanError('SLICE_PLAN_NO_ACTIVE_CHANGE', '未找到活跃变更提案');
   const proposalDir = join(root, 'logos', 'changes', slug);
   if (!existsSync(proposalDir)) {
@@ -292,7 +306,7 @@ function resolveActiveProposal(root: string, explicitSlug?: string): { slug: str
   if (!existsSync(join(proposalDir, 'tasks.md'))) {
     throw new SlicePlanError('SLICE_PLAN_NO_ACTIVE_CHANGE', `提案缺少 tasks.md：${slug}`);
   }
-  return { slug, proposalDir };
+  return { slug, proposalDir, module: moduleFromGuard(root, slug) };
 }
 
 /**
@@ -306,6 +320,7 @@ function validateStagedArtifacts(
   root: string,
   proposalDir: string,
   slug: string,
+  module: string,
   tasksTemp: string,
   manifestTemp: string,
 ): TestSliceViolation[] {
@@ -322,12 +337,12 @@ function validateStagedArtifacts(
   }
   let changedTestIds: string[] | null = null;
   if (shouldUseSliceVerificationForTasks(tasksContent)) {
-    const changeSet = readTestChangeSet(root, proposalDir, { change: slug, module: 'core' });
+    const changeSet = readTestChangeSet(root, proposalDir, { change: slug, module });
     if (changeSet.valid) changedTestIds = changeSet.value.changed_test_ids;
   }
   return collectSliceManifestViolations({
     root, manifestRaw, tasksContent,
-    expected: { change: slug, module: 'core' },
+    expected: { change: slug, module },
     changedTestIds,
   }).violations;
 }
@@ -337,7 +352,7 @@ function validateStagedArtifacts(
  * 均未被触碰（零副作用）。重复执行幂等：同一输入得到同一 [code] 与同一 manifest。
  */
 export function planSlices(root: string, slicesFile: string, explicitSlug?: string): SlicePlanResult {
-  const { slug, proposalDir } = resolveActiveProposal(root, explicitSlug);
+  const { slug, proposalDir, module } = resolveActiveProposal(root, explicitSlug);
   const inputPath = isAbsolute(slicesFile) ? slicesFile : resolve(root, slicesFile);
   if (!existsSync(inputPath)) {
     throw new SlicePlanError('SLICE_PLAN_INPUT_INVALID', `slices 文件不存在：${slicesFile}`);
@@ -366,7 +381,7 @@ export function planSlices(root: string, slicesFile: string, explicitSlug?: stri
   const manifest: TestSliceManifestV1 = {
     schema: TEST_SLICE_SCHEMA,
     change: slug,
-    module: 'core',
+    module,
     task_fingerprint: computeTaskFingerprint(nextTasks),
     spec_fingerprint: specFingerprint,
     generated_at: new Date().toISOString(),
@@ -386,7 +401,7 @@ export function planSlices(root: string, slicesFile: string, explicitSlug?: stri
   let manifestTemp: string | null = null;
   try {
     manifestTemp = stageFileAtomic(manifestPath, serializeTestSliceManifest(manifest));
-    const violations = validateStagedArtifacts(root, proposalDir, slug, tasksTemp, manifestTemp);
+    const violations = validateStagedArtifacts(root, proposalDir, slug, module, tasksTemp, manifestTemp);
     if (violations.length > 0) {
       throw new SlicePlanError(slicePlanCodeFor(violations),
         `切片产物未通过校验，两产物均未落盘（${violations.length} 条违规）`, violations);

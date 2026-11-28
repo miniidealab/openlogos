@@ -46,8 +46,7 @@ function ls(sliceScope: 'baseline' | 'owned', opts: Record<string, any> = {}): L
     buildTestChangeSet,
     change: { target, added: [...a, ...b] },
     tasks: sliceTasks(a, b),
-    // `slice plan` 以 core 为提案模块写清单；多模块夹具的提案也登记在 core 名下（代码仍只改动 backend/**）
-    ...(mod ? { owner: 'core' } : {}),
+    // 多模块夹具的提案登记在 backend（夹具缺省）；`slice plan` 按提案的模块写清单（§2.110）
     ...opts,
     verify: { slice_scope: sliceScope, ...(opts.verify ?? {}) },
   });

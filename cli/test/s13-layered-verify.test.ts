@@ -205,10 +205,11 @@ describe('S13 分层验收 — 扩大规则', () => {
     const arms: Array<[string, Record<string, unknown>, ((f: Lv) => void) | null]> = [
       ['package.json', { changes: { 'package.json': '{}\n' } }, null],
       ['tools/package-lock.json', { changes: { 'tools/package-lock.json': '{}\n' } }, null],
+      // 第三组改与验收相关的字段（verify；分层仍开启）。只改 description 时保持收窄见 UT-S13-288
       ['logos/logos.config.json', {}, f => {
         const path = join(f.root, 'logos/logos.config.json');
         const cfg = JSON.parse(readFileSync(path, 'utf8'));
-        cfg.description = 'changed after baseRef';
+        cfg.verify.layered = { ...cfg.verify.layered, main_path_max: 40 };
         writeFileSync(path, JSON.stringify(cfg, null, 2));
       }],
     ];
@@ -218,7 +219,7 @@ describe('S13 分层验收 — 扩大规则', () => {
       const run = verify(f);
       expect(run.data.layers.expansion.level, file).toBe('full');
       const reason = run.data.layers.expansion.reasons.find((r: any) => r.code === 'shared_path_changed');
-      expect(reason?.detail, file).toContain(file);
+      expect(reason?.detail, file).toBe(file === 'logos/logos.config.json' ? 'logos/logos.config.json（verify）' : file);
       expect(executedOf(run), file).toEqual(ALL_DEFAULT);
       expect(run.calls[0].eligible, file).toBeNull();
       expect(run.data.summary.defined_count, file).toBe(9);
@@ -241,11 +242,17 @@ describe('S13 分层验收 — 扩大规则', () => {
     expect(a.data.layers.expansion.reasons[0].detail).toContain('shared/util.ts');
     const b = verify(lv({ layered: custom, changes: { 'package.json': '{}\n' } }));
     expect(b.data.layers.expansion).toEqual({ level: 'none', reasons: [] });
+    // ③ shared_paths 为空时，共享验收配置的字段判断照常生效（不依赖 shared_paths）：改 modules → 扩大
+    const yamlPath = (x: Lv) => join(x.root, 'logos/logos-project.yaml');
     const f = lv({ layered: { enabled: true, shared_paths: [] } });
-    writeFileSync(join(f.root, 'logos/logos-project.yaml'), `${readFileSync(join(f.root, 'logos/logos-project.yaml'), 'utf8')}# touched\n`);
+    writeFileSync(yamlPath(f), readFileSync(yamlPath(f), 'utf8').replace('name: core', 'name: Core'));
     const c = verify(f);
     expect(c.data.layers.expansion.level).toBe('full');
-    expect(c.data.layers.expansion.reasons[0].detail).toContain('logos/logos-project.yaml');
+    expect(c.data.layers.expansion.reasons[0]).toEqual({ code: 'shared_path_changed', detail: 'logos/logos-project.yaml（modules）' });
+    // ④ 只在末尾追加注释：解析后的取值没有变化 → 不扩大
+    const g = lv({ layered: { enabled: true, shared_paths: [] } });
+    writeFileSync(yamlPath(g), `${readFileSync(yamlPath(g), 'utf8')}# touched\n`);
+    expect(verify(g).data.layers.expansion).toEqual({ level: 'none', reasons: [] });
   });
 
   it('UT-S13-228: 声明缺失退回按模块', () => {

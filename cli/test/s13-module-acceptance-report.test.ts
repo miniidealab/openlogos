@@ -130,6 +130,12 @@ const reportOf = (root: string, m: string) => {
 const rows = (root: string, m: string) => readSummaryRows(reportOf(root, m) ?? '');
 const gateOf = (root: string, m: string) => rows(root, m).get('Gate 3.5');
 
+/** 改动共享验收配置的相关字段（sourceRoots，verify 不读取它，对执行无影响）以触发回落全量（功能规格 §2.96.3.1）。 */
+function touchSharedConfig(root: string): void {
+  const path = join(root, 'logos/logos.config.json');
+  put(root, 'logos/logos.config.json', JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), sourceRoots: { src: ['src'] } }, null, 2));
+}
+
 describe('S13 多模块项目模块验收报告（module-scoped-phase-reports）', () => {
   it('UT-S13-122: 模块用例子集 U(m) 与 M={m} 同判据', () => {
     const root = project();
@@ -198,10 +204,10 @@ describe('S13 多模块项目模块验收报告（module-scoped-phase-reports）
     const r2 = project();
     expect(runVerify(r2, ['--all']).data.scope.mode).toBe('all');
     expect(written(r2)).toEqual(['team', 'portal']);
-    // ③ fallback-full：提案改动共享配置
+    // ③ fallback-full：提案改动共享验收配置的相关字段（0.16.28 起按字段判断，只改 description 不再回落）
     const r3 = project();
     addProposal(r3, 'core');
-    put(r3, 'logos/logos.config.json', readFileSync(join(r3, 'logos/logos.config.json'), 'utf8').replace('"description": ""', '"description": "x"'));
+    touchSharedConfig(r3);
     expect(runVerify(r3).data.scope.mode).toBe('fallback-full');
     expect(written(r3)).toEqual(['team', 'portal']);
     // ④ module：M={core, team}，portal 旧报告不动
@@ -403,7 +409,7 @@ describe('S13 多模块项目模块验收报告端到端（module-scoped-phase-r
     put(root, 'logos/resources/prd/3-technical-plan/2-scenario-implementation/portal-S70-x.md', 'x');
     git(root, ['add', '-A']); git(root, ['commit', '-qm', 'artifacts']);
     addProposal(root, 'core');
-    put(root, 'logos/logos.config.json', readFileSync(join(root, 'logos/logos.config.json'), 'utf8').replace('"description": ""', '"description": "x"'));
+    touchSharedConfig(root);
     // ① 两组命令都退出 0，portal 的 UT-S70-01 失败
     const r1 = runVerify(root, [], { REC_FAIL: 'UT-S70-01' });
     expect(r1.data.scope.mode).toBe('fallback-full');

@@ -3,6 +3,7 @@ import { join, dirname } from 'node:path';
 import { loadFlow, findActivatedLoop, inferLifecycle, FlowError } from '../lib/flow.js';
 import { loopLedgerPath, readLoopIters, deriveSliceState } from '../lib/flow-loop-derive.js';
 import { readProjectYaml } from '../lib/project-yaml.js';
+import { moduleFromGuard } from '../lib/merge-direct.js';
 import { readLocale, t } from '../i18n.js';
 import { makeEnvelope, makeErrorEnvelope } from '../lib/json-output.js';
 import type { OutputFormat } from '../lib/json-output.js';
@@ -1945,7 +1946,8 @@ function activeSliceVerification(root: string, inScope: Set<string> | null = nul
     if (!existsSync(proposalDir)) return null;
     const state = deriveSliceVerificationState(root, proposalDir, {
       change: guard.activeChange,
-      module: guard.module ?? 'core',
+      // 与写入侧（slice plan）、合并侧同一取值规则：去掉首尾空白，缺失或空白为 core（§2.110.2）
+      module: moduleFromGuard(root, guard.activeChange),
     }, inScope || layeredTotal ? {
       ...(inScope ? { inScope: (id: string) => inScope.has(id) } : {}),
       ...(layeredTotal ? { layeredTotal } : {}),

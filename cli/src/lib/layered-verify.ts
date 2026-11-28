@@ -12,7 +12,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { NormalizedLayeredConfig } from './verify-config.js';
 import {
-  SHARED_VERIFY_CONFIG_PATHS, globToRegExp, moduleIdsOf, resolveProposalChangedFiles, testFileModule,
+  SHARED_VERIFY_CONFIG_PATHS, compareSharedVerifyConfig, globToRegExp, sharedConfigOrder, moduleIdsOf, resolveProposalChangedFiles, testFileModule,
   type GitRunner, type VerifyScopeData,
 } from './verify-scope.js';
 import { classifyRootRelativePath } from './impact-classify.js';
@@ -130,9 +130,24 @@ export function computeLayeredPlan(input: LayeredPlanInput): LayeredPlan {
   else if (!base.ok) reasons.push({ code: 'base_ref_unavailable', detail: `${base.code}：${base.detail}` });
   else {
     const sharedRes = config.sharedPaths.map(globToRegExp);
-    const hits = base.files.filter(file => classifyRootRelativePath(file) !== 'lifecycle'
-      && (SHARED_VERIFY_CONFIG_PATHS.includes(file) || sharedRes.some(re => re.test(file))));
-    if (hits.length > 0) reasons.push({ code: 'shared_path_changed', detail: hits.join('、') });
+    // 共享路径命中按路径点名；两个共享验收配置文件按字段判断（§2.96.3.1，与模块范围同一判断），
+    // 被 shared_paths 显式列出时改按路径命中。配置文件未命中只是 detail 中没有它，不影响其他文件的原因。
+    const hits: Array<{ file: string; detail: string }> = [];
+    for (const file of base.files) {
+      if (classifyRootRelativePath(file) === 'lifecycle') continue;
+      if (sharedRes.some(re => re.test(file))) { hits.push({ file, detail: file }); continue; }
+      if (!SHARED_VERIFY_CONFIG_PATHS.includes(file)) continue;
+      const verdict = compareSharedVerifyConfig(root, base.baseRef, file, input.git);
+      if (verdict.kind === 'related') hits.push({ file, detail: verdict.detail });
+    }
+    if (hits.length > 0) {
+      // 先按规定顺序列出命中的两份共享验收配置（logos.config.json 在前），再按路径顺序列出其余共享文件。
+      // 两条规则不能混在同一个比较函数里：夹在两份配置的路径之间的文件（如 logos/logos-shared/…）会让先后关系不一致。
+      const isConfig = (file: string) => SHARED_VERIFY_CONFIG_PATHS.includes(file);
+      const configs = hits.filter(h => isConfig(h.file)).sort((a, b) => sharedConfigOrder(a.file) - sharedConfigOrder(b.file));
+      const others = hits.filter(h => !isConfig(h.file)).sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+      reasons.push({ code: 'shared_path_changed', detail: [...configs, ...others].map(h => h.detail).join('、') });
+    }
   }
 
   // —— 声明、受影响场景 AS、本提案用例 C

@@ -154,23 +154,33 @@ describe('S13 按模块限定 verify 范围 — 命令选择（module-scoped-ver
 });
 
 describe('S13 按模块限定 verify 范围 — 回落时的命令执行（module-scoped-verify 切片3）', () => {
-  it('UT-S13-109: 共享验收配置被改即回落全量（review F2 负向 ③）', () => {
-    for (const file of ['logos/logos.config.json', 'logos/logos-project.yaml']) {
+  it('UT-S13-109: 共享验收配置的相关字段被改即回落全量（review F2 负向 ③；按字段判断）', () => {
+    // verify-scope-fields-and-slice-module 起按顶层字段判断（§2.96.3.1）：两臂分别只改 verify（项目级测试命令的一个参数）
+    // 与 modules（某模块的 name，不改 paths 本身）。只改无关字段不回落见 UT-S13-275、UT-S13-276。
+    const arms: Array<[string, string, (text: string) => string, string[]]> = [
+      ['logos/logos.config.json', 'verify', text => {
+        const cfg = JSON.parse(text);
+        cfg.verify.pre_run_command = 'node tools/rec.cjs project@touched';
+        return JSON.stringify(cfg, null, 2);
+      }, ['core', 'portal-web']],
+      ['logos/logos-project.yaml', 'modules', text => text.replace('name: core', 'name: Core'), ['core', 'portal-web']],
+    ];
+    for (const [file, field, change, expectLabels] of arms) {
       const root = project();
       addProposal(root, {});
       put(root, 'portal-web/app.ts', 'export const app = 2;\n');
       const path = join(root, file);
-      writeFileSync(path, file.endsWith('.json')
-        ? JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), description: 'touched' }, null, 2)
-        : `${readFileSync(path, 'utf8')}# touched\n`);
+      const before = readFileSync(path, 'utf8');
+      writeFileSync(path, change(before));
+      expect(readFileSync(path, 'utf8'), file).not.toBe(before);
       const run = verifyJson(root);
       expect(run.data.scope.mode, file).toBe('fallback-full');
       expect(run.data.scope.modules).toEqual(['core', 'portal-web']);
       expect(run.data.scope.reasons).toEqual([]);
       expect(run.data.scope.fallback_reason.code).toBe('shared_config_changed');
-      expect(run.data.scope.fallback_reason.detail).toContain(file);
+      expect(run.data.scope.fallback_reason.detail).toBe(`${file}（${field}）`);
       expect(run.data.summary.defined_count).toBe(5);
-      expect(labels(run)).toEqual(['core', 'portal-web']);
+      expect(labels(run)).toEqual(expectLabels);
     }
   });
 

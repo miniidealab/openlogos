@@ -10,11 +10,13 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { isMap, parseDocument } from 'yaml';
 import { readProjectYaml, type ProjectYamlModule } from './project-yaml.js';
 import { resolveProposalModuleContext } from './change-lint.js';
 import { classifyRootRelativePath } from './impact-classify.js';
 import { readTestChangeSet } from './test-change-set.js';
 import { SPEC_MERGED_MARKER } from './proposal-markers.js';
+import { moduleFromGuard } from './merge-direct.js';
 
 export type VerifyScopeMode = 'module' | 'all' | 'fallback-full';
 export type VerifyScopeSource = 'proposal' | 'delta' | 'spec' | 'path';
@@ -43,8 +45,29 @@ export interface VerifyScopeData {
   out_of_scope_result_count: number;
 }
 
-/** 共享验收配置：被改动即回落全量（review F2）。 */
+/**
+ * 共享验收配置（review F2）。自 verify-scope-fields-and-slice-module 起按顶层字段判断（功能规格 §2.96.3.1），
+ * 不再「被改动即回落全量」。数组顺序同时是 `detail` 中两个文件的先后顺序。
+ */
 export const SHARED_VERIFY_CONFIG_PATHS = Object.freeze(['logos/logos.config.json', 'logos/logos-project.yaml']);
+
+/**
+ * 共享验收配置的顶层字段清单（§2.96.3.1；由 CLI 固定，项目不可配置）。
+ * `related` 变化即回落；`unrelated` 变化不回落；两者都没有列出的顶层键按 related 处理——清单漏更新时多跑，不会少跑。
+ */
+export const SHARED_VERIFY_CONFIG_FIELDS: Readonly<Record<string, { related: readonly string[]; unrelated: readonly string[] }>> = Object.freeze({
+  'logos/logos.config.json': {
+    related: ['verify', 'smoke', 'sourceRoots', 'guard'],
+    unrelated: ['name', 'description', 'locale', 'aiTool', 'agents', 'driver', 'branch_sync', 'maxOpenTabs', 'modules', 'fileModules'],
+  },
+  'logos/logos-project.yaml': {
+    related: ['modules'],
+    unrelated: [
+      'project', 'tech_stack', 'scenario_counter', 'feature_counter', 'decision_counter', 'features', 'scenarios',
+      'release_workflows', 'deployment_gates', 'resource_index', 'conventions', 'baseline_index',
+    ],
+  },
+});
 
 const TEST_CASES_DIR = 'logos/resources/test';
 
@@ -194,6 +217,141 @@ export function resolveProposalChangedFiles(root: string, git: GitRunner = defau
   return { ok: true, guard, slug, proposalDir, baseRef, files: changed.files };
 }
 
+/** 一侧原文无法用于字段比较的原因（`detail` 中的原文）。 */
+type SharedConfigSideProblem = '不存在' | '读取失败' | '无法解析' | '顶层不是对象';
+type SharedConfigSide = { ok: true; value: Record<string, unknown> } | { ok: false; problem: SharedConfigSideProblem };
+
+/** 共享验收配置文件的字段比较结论：只有无关字段变化（或没有变化）→ unrelated；否则 related 并带 `detail`。 */
+export type SharedConfigVerdict =
+  | { file: string; kind: 'unrelated' }
+  | { file: string; kind: 'related'; detail: string };
+
+/**
+ * 严格解析：JSON / YAML 没有任何语法错误才算通过（YAML 重复键同样算错误）。
+ * 不使用 `readProjectYaml` 的恢复解析结果——那只用于判断模块范围是否启用（§2.96.3.1）。
+ */
+function parseSharedConfigStrict(file: string, text: string): SharedConfigSide {
+  let value: unknown;
+  try {
+    if (file.endsWith('.json')) {
+      value = JSON.parse(text);
+    } else {
+      const doc = parseDocument(text, { uniqueKeys: true });
+      if (doc.errors.length > 0) return { ok: false, problem: '无法解析' };
+      // 顶层按 YAML 映射节点判定：`!!timestamp` 等标量解析后也是 object（Date），不能靠 typeof 区分
+      if (!isMap(doc.contents)) return { ok: false, problem: '顶层不是对象' };
+      value = doc.toJS();
+    }
+  } catch {
+    return { ok: false, problem: '无法解析' };
+  }
+  if (!isPlainRecord(value)) return { ok: false, problem: '顶层不是对象' };
+  return { ok: true, value };
+}
+
+/** 提案起点（baseRef）中该文件的原文；路径按项目根相对（`./`），项目根在仓库子目录时不会读到仓库根下的同名文件。 */
+function readSharedConfigAtBase(root: string, baseRef: string, file: string, git: GitRunner): SharedConfigSide {
+  const listed = git(root, ['ls-tree', '-z', '--name-only', baseRef, '--', file]);
+  if (listed.error || listed.status !== 0) return { ok: false, problem: '读取失败' };
+  if (listed.stdout.split('\0').filter(Boolean).length === 0) return { ok: false, problem: '不存在' };
+  const shown = git(root, ['show', `${baseRef}:./${file}`]);
+  if (shown.error || shown.status !== 0) return { ok: false, problem: '读取失败' };
+  return parseSharedConfigStrict(file, shown.stdout);
+}
+
+function readSharedConfigInWorktree(root: string, file: string): SharedConfigSide {
+  const path = join(root, file);
+  if (!existsSync(path)) return { ok: false, problem: '不存在' };
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    return { ok: false, problem: '读取失败' };
+  }
+  return parseSharedConfigStrict(file, text);
+}
+
+/** 映射解析出的普通对象（JSON 对象 / YAML 映射）；Date、二进制等标量的宿主对象不算。 */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * 解析后取值的深度比较：映射不看键顺序，数组看元素顺序，标量按解析后的值、按类型比较（§2.96.3.1）。
+ *
+ * 标量不能当作「没有可枚举键的对象」比较：YAML 的 `!!timestamp` 解析为 Date、`!!binary` 解析为字节数组，
+ * 两个不同的 Date 可枚举键都为空，按映射比较会被判相同而漏掉真实变化；`.nan` 解析为 NaN，NaN !== NaN，
+ * 按 === 比较会把只改注释判成变化。类型无法识别的宿主对象一律按不同处理（多跑，不少跑）。
+ *
+ * YAML 的锚点与别名可以构成循环引用（`a: &x { self: *x }`），严格解析会保留回指；两侧各自解析得到两份独立的对象图，
+ * 引用相等不会成立。`seen` 记录正在比较或已比较过的左右对象对：再次遇到同一对时结束该分支（这一对的结论由首次
+ * 进入时的比较给出，任何差异都会在那里被检出），继续检查其余键和值——否则只改注释也会递归到耗尽调用栈。
+ */
+export function sameParsedValue(a: unknown, b: unknown, seen: WeakMap<object, WeakSet<object>> = new WeakMap()): boolean {
+  if (Object.is(a, b)) return true;
+  // +0 与 -0 在 JSON / YAML 的取值语义下相同
+  if (typeof a === 'number' && typeof b === 'number') return a === b;
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;
+  if (a instanceof Date || b instanceof Date) {
+    return a instanceof Date && b instanceof Date && Object.is(a.getTime(), b.getTime());
+  }
+  if (ArrayBuffer.isView(a) || ArrayBuffer.isView(b)) {
+    if (!(a instanceof Uint8Array) || !(b instanceof Uint8Array)) return false;
+    return a.length === b.length && a.every((byte, index) => byte === b[index]);
+  }
+  const isArrayPair = Array.isArray(a) && Array.isArray(b);
+  if (!isArrayPair && (Array.isArray(a) || Array.isArray(b))) return false;
+  if (!isArrayPair && (!isPlainRecord(a) || !isPlainRecord(b))) return false;
+  // 容器（数组 / 映射）：同一对左右对象只展开一次
+  let partners = seen.get(a);
+  if (partners?.has(b)) return true;
+  if (!partners) { partners = new WeakSet(); seen.set(a, partners); }
+  partners.add(b);
+  if (isArrayPair) {
+    const left = a as unknown[];
+    const right = b as unknown[];
+    return left.length === right.length && left.every((item, index) => sameParsedValue(item, right[index], seen));
+  }
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  return keys.every(key => Object.prototype.hasOwnProperty.call(right, key) && sameParsedValue(left[key], right[key], seen));
+}
+
+/**
+ * 对改动文件集合中的一个共享验收配置文件做字段比较（§2.96.3.1）。
+ *
+ * 调用前提由调用方保证：该范围机制已取得改动文件集合，且集合包含 `file`。本函数只贡献这一个文件的结论，
+ * 不读取、不改写其他原因。任一侧原文不存在、读取失败、不能严格解析或顶层不是对象 → 按整文件变化处理。
+ */
+export function compareSharedVerifyConfig(root: string, baseRef: string, file: string, git: GitRunner = defaultGitRunner): SharedConfigVerdict {
+  const fields = SHARED_VERIFY_CONFIG_FIELDS[file];
+  const base = readSharedConfigAtBase(root, baseRef, file, git);
+  if (!base.ok) return { file, kind: 'related', detail: `${file}（提案起点中的内容${base.problem}）` };
+  const work = readSharedConfigInWorktree(root, file);
+  if (!work.ok) return { file, kind: 'related', detail: `${file}（工作区中的内容${work.problem}）` };
+  const unrelated = new Set(fields?.unrelated ?? []);
+  const changed = Array.from(new Set([...Object.keys(base.value), ...Object.keys(work.value)]))
+    .filter(key => {
+      const inBase = Object.prototype.hasOwnProperty.call(base.value, key);
+      const inWork = Object.prototype.hasOwnProperty.call(work.value, key);
+      return inBase !== inWork || !sameParsedValue(base.value[key], work.value[key]);
+    })
+    // 只列相关字段与未列出的字段；同时变化的无关字段不列
+    .filter(key => !unrelated.has(key))
+    .sort();
+  if (changed.length === 0) return { file, kind: 'unrelated' };
+  return { file, kind: 'related', detail: `${file}（${changed.join('、')}）` };
+}
+
+/** 两个共享验收配置文件在 `detail` 中的先后：`logos/logos.config.json` 在前。 */
+export function sharedConfigOrder(file: string): number {
+  return SHARED_VERIFY_CONFIG_PATHS.indexOf(file);
+}
+
 function fallback(modules: string[], code: VerifyScopeFallbackCode, detail: string): VerifyScopeData {
   return { mode: 'fallback-full', modules, reasons: [], fallback_reason: { code, detail }, out_of_scope_result_count: 0 };
 }
@@ -235,11 +393,16 @@ export function resolveVerifyScope(root: string, opts: ResolveVerifyScopeOptions
   }
 
   const matchers = modules.map(m => ({ id: m.id, res: (m.paths ?? []).filter(isValidModulePath).map(globToRegExp) }));
-  const sharedChanged: string[] = [];
+  const sharedChanged: SharedConfigVerdict[] = [];
   const unmapped: string[] = [];
   for (const file of changed.files) {
     if (classifyRootRelativePath(file) === 'lifecycle') continue;
-    if (SHARED_VERIFY_CONFIG_PATHS.includes(file)) { sharedChanged.push(file); continue; }
+    if (SHARED_VERIFY_CONFIG_PATHS.includes(file)) {
+      // 按字段判断（§2.96.3.1）：相关变化或无法判断 → 回落；只有无关变化 → 该文件不参与后续分类
+      const verdict = compareSharedVerifyConfig(root, changed.baseRef, file, git);
+      if (verdict.kind === 'related') sharedChanged.push(verdict);
+      continue;
+    }
     if (file.startsWith('logos/resources/')) {
       const mod = prefixModule(basename(file), allIds);
       if (mod) { addReason(mod, 'spec', file); continue; }
@@ -248,7 +411,12 @@ export function resolveVerifyScope(root: string, opts: ResolveVerifyScopeOptions
     if (hits.length === 0) { unmapped.push(file); continue; }
     for (const id of hits) addReason(id, 'path', file);
   }
-  if (sharedChanged.length > 0) return fallback(allIds, 'shared_config_changed', sharedChanged.join('、'));
+  if (sharedChanged.length > 0) {
+    const details = sharedChanged
+      .sort((a, b) => sharedConfigOrder(a.file) - sharedConfigOrder(b.file))
+      .map(v => (v.kind === 'related' ? v.detail : v.file));
+    return fallback(allIds, 'shared_config_changed', details.join('、'));
+  }
   if (unmapped.length > 0) {
     return fallback(allIds, 'unmapped_file', `${unmapped[0]} 等 ${unmapped.length} 个文件`);
   }
@@ -274,7 +442,8 @@ export function readChangedTestIdsForScope(root: string): string[] {
   if (!existsSync(join(proposalDir, SPEC_MERGED_MARKER))) return [];
   try {
     const set = readTestChangeSet(root, proposalDir, {
-      change: slug, module: typeof guard?.module === 'string' ? guard.module : 'core',
+      // 模块期望值与合并侧、slice plan 同一取值规则（§2.110.2），不直接用 guard 的原始字符串
+      change: slug, module: moduleFromGuard(root, slug),
     });
     return set.valid ? set.value.changed_test_ids : [];
   } catch {

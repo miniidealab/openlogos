@@ -1,0 +1,192 @@
+{
+  "no-config": {
+    "status": 1,
+    "error_code": "PROJECT_NOT_INITIALIZED",
+    "envelope": null
+  },
+  "lv-corrupt": {
+    "status": 0,
+    "error_code": null,
+    "envelope": {
+      "command": "verify",
+      "data": {
+        "contract": {
+          "version": "1.0.0"
+        },
+        "summary": {
+          "defined_count": 9,
+          "ut_count": 9,
+          "st_count": 0,
+          "manual_count": 1,
+          "executed_count": 9,
+          "passed_count": 9,
+          "failed_count": 0,
+          "skipped_count": 0,
+          "uncovered_count": 0,
+          "coverage_pct": 100,
+          "pass_rate_pct": 100
+        },
+        "gate": {
+          "result": "PASS",
+          "reason": null
+        },
+        "failed_cases": [],
+        "uncovered_cases": [],
+        "skipped_cases": [],
+        "consistency": {
+          "ok": true,
+          "reasons": [],
+          "unknown_result_ids": [],
+          "manual_result_ids": [],
+          "outside_eligible_result_ids": [],
+          "invalid_results": [],
+          "count_mismatches": [],
+          "count_mismatch_details": []
+        },
+        "pre_run": {
+          "mode": "none",
+          "commands": [],
+          "result_paths": {
+            "final": "logos/resources/verify/test-results.jsonl",
+            "regression": null,
+            "incremental": null
+          },
+          "merge_strategy": null,
+          "diagnostics": [],
+          "suggestions": []
+        },
+        "smoke_precheck": {
+          "result": "PASS",
+          "changed_case_ids": [],
+          "executed_case_ids": [],
+          "uncovered_case_ids": [],
+          "diagnostics": [],
+          "runners": [],
+          "command": null,
+          "result_path": "logos/resources/verify/smoke-results.jsonl"
+        },
+        "sandbox": {
+          "mode": "off",
+          "root": "<SANDBOX_ROOT>",
+          "isolated": false,
+          "workspace_write_denied": true,
+          "status": "skipped",
+          "diagnostics": [],
+          "suggestions": []
+        },
+        "report_path": "logos/resources/verify/acceptance-report.md",
+        "rerun": {
+          "attempted": false,
+          "skipped_reason": "no_command",
+          "max_cases": 10,
+          "requested_ids": [],
+          "commands": []
+        },
+        "level": "proposal"
+      }
+    },
+    "calls": 0
+  },
+  "no-yaml": {
+    "status": 0,
+    "error_code": null,
+    "envelope": {
+      "command": "verify",
+      "data": {
+        "contract": {
+          "version": "1.0.0"
+        },
+        "summary": {
+          "defined_count": 5,
+          "ut_count": 5,
+          "st_count": 0,
+          "manual_count": 0,
+          "executed_count": 5,
+          "passed_count": 5,
+          "failed_count": 0,
+          "skipped_count": 0,
+          "uncovered_count": 0,
+          "coverage_pct": 100,
+          "pass_rate_pct": 100
+        },
+        "gate": {
+          "result": "PASS",
+          "reason": null
+        },
+        "failed_cases": [],
+        "uncovered_cases": [],
+        "skipped_cases": [],
+        "consistency": {
+          "ok": true,
+          "reasons": [],
+          "unknown_result_ids": [],
+          "manual_result_ids": [],
+          "outside_eligible_result_ids": [],
+          "invalid_results": [],
+          "count_mismatches": [],
+          "count_mismatch_details": []
+        },
+        "pre_run": {
+          "mode": "pre_run_command",
+          "commands": [
+            {
+              "stage": "pre_run",
+              "command": "node tools/rec.cjs project",
+              "status": "pass",
+              "exit_code": 0,
+              "duration_ms": "<N>",
+              "stdout_tail": "",
+              "stderr_tail": "",
+              "sandbox": {
+                "mode": "off",
+                "root": "<SANDBOX_ROOT>",
+                "isolated": false,
+                "workspace_write_denied": true,
+                "status": "skipped",
+                "diagnostics": [],
+                "suggestions": []
+              }
+            }
+          ],
+          "result_paths": {
+            "final": "logos/resources/verify/test-results.jsonl",
+            "regression": null,
+            "incremental": null
+          },
+          "merge_strategy": null,
+          "diagnostics": [],
+          "suggestions": []
+        },
+        "smoke_precheck": {
+          "result": "PASS",
+          "changed_case_ids": [],
+          "executed_case_ids": [],
+          "uncovered_case_ids": [],
+          "diagnostics": [],
+          "runners": [],
+          "command": null,
+          "result_path": "logos/resources/verify/smoke-results.jsonl"
+        },
+        "sandbox": {
+          "mode": "off",
+          "root": "<SANDBOX_ROOT>",
+          "isolated": false,
+          "workspace_write_denied": true,
+          "status": "skipped",
+          "diagnostics": [],
+          "suggestions": []
+        },
+        "report_path": "logos/resources/verify/acceptance-report.md",
+        "rerun": {
+          "attempted": false,
+          "skipped_reason": "no_failed_cases",
+          "max_cases": 10,
+          "requested_ids": [],
+          "commands": []
+        },
+        "level": "proposal"
+      }
+    },
+    "calls": 1
+  }
+}

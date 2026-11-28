@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.28] - 2026-11-28
+
+本机全局发布（未发布到 npm）。
+
+### Changed
+
+- verify 的验收范围：`logos/logos.config.json` 与 `logos/logos-project.yaml` 不再「有任何差异就回落（按模块限定范围）或扩大（分层验收）到全量」，改为比较提案起点与工作区两份内容的顶层字段。
+  - 变化即全量的字段：`logos-project.yaml` 的 `modules`；`logos.config.json` 的 `verify`、`smoke`、`sourceRoots`、`guard`。
+  - 变化不影响范围的字段：`logos-project.yaml` 的 `project`、`tech_stack`、`scenario_counter`、`feature_counter`、`decision_counter`、`features`、`scenarios`、`release_workflows`、`deployment_gates`、`resource_index`、`conventions`、`baseline_index`；`logos.config.json` 的 `name`、`description`、`locale`、`aiTool`、`agents`、`driver`、`branch_sync`、`maxOpenTabs`、`modules`、`fileModules`。
+  - 两类都没有列出的顶层字段按「变化即全量」处理。键顺序、空白、注释、引号写法不算变化；数组元素顺序算变化。
+  - 范围机制已取得改动文件集合且集合包含该文件时才比较；任一侧内容不存在、读取失败、有语法错误（含 YAML 重复键）或顶层不是对象时按整文件变化处理。
+  - 原因代码不变（`shared_config_changed`、`shared_path_changed`），`detail` 写明文件与字段，如 `logos/logos.config.json（smoke、verify）`；无法判断时写明是提案起点还是工作区一侧及原因。
+  - 分层验收中被 `verify.layered.shared_paths` 显式列出的这两个文件仍按路径命中（任何差异都扩大）。
+- `openlogos slice plan --slug <slug>` 指向的不是活跃提案（含没有 guard 或 guard 无法解析）时，以 `SLICE_PLAN_NO_ACTIVE_CHANGE` 拒绝，不改任何文件。此前这种调用会写出不被 verify 采信的清单。
+
+### Fixed
+
+- `openlogos slice plan` 把切片清单与测试变更集的模块写死为 `core`，导致提案登记在其他模块时 verify 判 `test-slice-manifest-invalid`。现在按 guard 中该提案的模块取值（与合并时写入测试变更集同一规则：去掉首尾空白，缺失或空白时为 `core`），读取变更集、校验、写出清单三处共用；verify 读取切片清单与测试变更集的三处也改用同一规则。提案登记在 `core` 时产物不变。
+
 ## [0.16.27] - 2026-11-27
 
 本机全局发布（未发布到 npm）。
