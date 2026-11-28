@@ -1,0 +1,49 @@
+{
+  "schema": "openlogos/verification-run@1",
+  "run_id": "20261128T135231219Z-verify-c43910",
+  "kind": "verify",
+  "started_at": "2026-11-28T13:52:31.219Z",
+  "finished_at": "2026-11-28T13:57:52.307Z",
+  "outcome": "completed",
+  "gate": {
+    "result": "PASS",
+    "reason": null
+  },
+  "error_code": null,
+  "proposal": {
+    "slug": "verify-git-local-only",
+    "run_dir": "verify-runs/20261128T135231219Z-verify-c43910"
+  },
+  "module_scope": null,
+  "verify_mode": "final",
+  "attempted_slice_id": null,
+  "environment": null,
+  "deploy_id": null,
+  "counts": {
+    "defined": 3061,
+    "executed": 3061,
+    "passed": 3056,
+    "failed": 0,
+    "skipped": 5,
+    "uncovered": 0
+  },
+  "failed_ids": [],
+  "skipped_ids": [
+    "ST-S08-45",
+    "ST-S09-219",
+    "ST-S19-35",
+    "ST-S19-36",
+    "ST-S19-37"
+  ],
+  "uncovered_ids": [],
+  "flaky_ids": [],
+  "level": "proposal",
+  "platform": "darwin-arm64",
+  "result_source": "executed",
+  "commit": {
+    "head": "2c3c96ecaa064ab65187d8a5a5c729093ac435ff",
+    "dirty": true
+  },
+  "cli_version": "0.16.29",
+  "raw_location": "proposal"
+}
