@@ -3372,8 +3372,8 @@ openlogos approve --env <id|alias> --ref <revision> [--note <文字>] --format j
 | `no_active_change` | 没有活跃提案，无法确定提案归属与改动 |
 | `base_ref_missing` | guard 没有 `baseRef`（引入前创建的提案） |
 | `not_git_repository` | 项目不是 git 仓库 |
-| `base_ref_unreachable` | `baseRef` 指向的提交不存在（如历史被改写） |
-| `diff_failed` | 计算改动文件集合的 git 命令失败 |
+| `base_ref_unreachable` | `baseRef` 指向的提交在本地不存在（如历史被改写，或部分克隆中本地没有该提交对象——verify 不从远端取回），或检查该提交的调用超过时限；`detail` 写明具体情形 |
+| `diff_failed` | 计算改动文件集合的 git 命令失败，包括本地读不到所需的文件内容（verify 不从远端取回）与调用超过时限；`detail` 写明具体情形 |
 | `shared_config_changed` | `logos/logos.config.json` 或 `logos/logos-project.yaml` 按字段判断为相关变化：相关字段或清单未列出的字段有变化，或任一侧原文无法严格解析（功能规格 §2.96.3.1）。只有无关字段变化时不产生本原因。`detail` 逐个文件写明：`<路径>（<字段>、<字段>…）`（字段按字典序），或 `<路径>（提案起点中的内容<原因>）` / `<路径>（工作区中的内容<原因>）`，原因为 `不存在`、`读取失败`、`无法解析`、`顶层不是对象` 之一；两个文件都命中时用 `、` 连接，`logos/logos.config.json` 在前 |
 | `unmapped_file` | 有改动文件一个模块也归不到；`detail` 为首个文件路径与总数 |
 | `module_paths_invalid` | 某模块的 `paths` 不合法；`detail` 点名模块与非法项 |
