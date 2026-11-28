@@ -1,0 +1,111 @@
+{
+  "slices": [
+    {
+      "slice_id": "slice-01-slice-plan-target-and-module",
+      "task_text": "切片1：切片规划的目标提案与模块（openlogos #7，功能规格 §2.110、spec/test-slice-manifest.md「写入前置条件：目标提案与模块」）。① cli/src/commands/slice.ts：在读取切片输入、暂存 tasks.md 与清单之前确认目标提案就是活跃提案——不传 --slug 时行为不变；传 --slug X 而 guard 的 activeChange 不是 X、没有 guard 或 guard 无法解析时，以既有错误码 SLICE_PLAN_NO_ACTIVE_CHANGE 拒绝（exit 1，message 写明 X 不是活跃提案并给出当前活跃提案，没有时写明没有），目标提案的 tasks.md 与 TEST_SLICE_MANIFEST.json 逐字节不变、不留临时文件。② 目标确认后按合并侧已有的取值规则（cli/src/lib/merge-direct.ts 的 moduleFromGuard：guard 的 module 去掉首尾空白后非空则取该值，缺该字段或为空白时为 core）解析一次模块，读取测试变更集、校验暂存清单、写出清单的 module 字段三处共用这一个值，不再使用字面量 'core'。提案登记在 core 时写出的 tasks.md 与清单（generated_at 除外）及 stdout 的 data 与修复前一致（golden）。③ 读取侧使用同一取值规则：openlogos verify 一次运行中凡以活跃提案的模块为期望值读取切片清单或测试变更集的位置，都经 moduleFromGuard 取值，不得直接用 guard 的原始字符串——至少包括 cli/src/commands/verify.ts 的切片状态派生、cli/src/lib/verify-scope.ts 的 readChangedTestIdsForScope、cli/src/lib/verify-skip-classification.ts 的 readStrictSkipSet；实现时全仓检索 readTestChangeSet、deriveSliceVerificationState 的调用点逐个核对（change-lint、status、next 以 proposal.md 头或 logos-project.yaml 模块 id 为期望值的调用点不在此列）。guard 的 module 不带空白时读取侧行为不变。④ slice plan 的拒绝响应不改行为：归属类违规仍映射为 SLICE_PLAN_UNKNOWN_TEST_ID、exit 1，明细在 stderr 错误信封根的 violations（§2.78.3 已按现行实现改正）。⑤ 测试：新建多模块夹具 SM（core 与 backend 均声明 paths 且各有命令组；提案 sm-demo 登记在 backend，经正常 merge 写入 SPEC_MERGED，变更用例 UT-S05-03、04、05；slices.json 中 slice-a 拥有 UT-S05-03、slice-b 拥有 UT-S05-04、05），不得把提案改登记到 core 来绕开模块比对；把 layered-verification 多模块夹具（cli/test/golden/s13-layered-fixture.mjs 及其调用处）中为绕开本缺陷而把提案登记到 core 的写法改回，并确认 UT-S32-125 等既有用例仍通过。同步 UT + OpenLogos reporter + 必要 golden。删后续自检：(a) 只做本片即可过本片 checkpoint——owned 用例只依赖 slice.ts 的写入侧与三处读取侧的模块取值，不依赖切片 2 的字段比较（夹具 SM 在提案期间不改两个配置文件的相关字段；即使按旧规则回落全量，UT-S32-127、134 断言的 checkpoint PASS 仍成立）；(b) 端到端可观察——非 core 模块提案执行 slice plan 后 verify 进入首个切片 checkpoint 并 PASS，--slug 指向非活跃提案被拒绝且文件不变。覆盖 UT-S32-126、UT-S32-127、UT-S32-128、UT-S32-129、UT-S32-130、UT-S32-131、UT-S32-132、UT-S32-133、UT-S32-134",
+      "owned_test_ids": [
+        "UT-S32-126",
+        "UT-S32-127",
+        "UT-S32-128",
+        "UT-S32-129",
+        "UT-S32-130",
+        "UT-S32-131",
+        "UT-S32-132",
+        "UT-S32-133",
+        "UT-S32-134"
+      ],
+      "runner_selectors": [
+        "UT-S32-126",
+        "UT-S32-127",
+        "UT-S32-128",
+        "UT-S32-129",
+        "UT-S32-130",
+        "UT-S32-131",
+        "UT-S32-132",
+        "UT-S32-133",
+        "UT-S32-134"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S32-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-shared-config-fields-and-release",
+      "task_text": "切片2：共享验收配置按字段判断，及 0.16.28 安装态验收（openlogos #4，功能规格 §2.96.3、§2.96.3.1、§2.109.2、§2.109.7）。① cli/src/lib/verify-scope.ts 新增共享验收配置的字段比较，供 resolveVerifyScope 与 cli/src/lib/layered-verify.ts 的 computeLayeredPlan 共用同一判断：取提案起点（guard baseRef，按项目根相对路径读取，项目根在 git 仓库子目录时不得读到仓库根下的同名文件）与工作区两侧原文，各自严格解析（JSON / YAML 无任何语法错误，YAML 重复键算错误；不使用 readProjectYaml 的恢复解析结果，恢复解析继续只用于判断模块范围是否启用），顶层都是对象时取顶层键并集逐个深度比较（对象不看键顺序、数组看元素顺序、标量按解析后的值）。字段清单由 CLI 固定：logos-project.yaml 相关字段 modules，无关字段 project、tech_stack、scenario_counter、feature_counter、decision_counter、features、scenarios、release_workflows、deployment_gates、resource_index、conventions、baseline_index；logos.config.json 相关字段 verify、smoke、sourceRoots、guard，无关字段 name、description、locale、aiTool、agents、driver、branch_sync、maxOpenTabs、modules、fileModules；两列都没有列出的顶层键按相关处理。② 触发条件唯一：该机制已按既有规则取得改动文件集合，且集合包含该文件，才对它做字段比较，它只贡献自己的原因或明细。先于改动集合的既有回落原因（module_paths_invalid、no_active_change、not_git_repository、base_ref_missing、base_ref_unreachable、diff_failed；分层的 no_active_change、base_ref_unavailable）原样保留且不读取文件内容；文件不在集合内时不比较；改动集合中其他文件的原因（命中 shared_paths 的依赖锁文件、声明的共享标志、unmapped_file 等）照常给出。任一侧原文不存在、读取失败、不能严格解析或顶层不是对象 → 按整文件变化处理。只有无关字段变化时该文件不参与后续分类（不进入规格前缀与 paths 归属，不判 unmapped_file）。两个机制各自判断是否启用，入口行为不变：工作区缺 logos.config.json 仍为 PROJECT_NOT_INITIALIZED；该文件无法解析时分层按未开启；logos-project.yaml 缺失或解析不出模块时模块范围未启用。③ 原因代码不变（模块范围 shared_config_changed，分层 shared_path_changed），detail 逐个文件写明：<路径>（<字段>、…）字段按字典序且只列相关与未列出的字段；无法判断时写 <路径>（提案起点中的内容<原因>）或 <路径>（工作区中的内容<原因>），原因为 不存在 / 读取失败 / 无法解析 / 顶层不是对象；两个文件都命中时用「、」连接、logos/logos.config.json 在前。分层验收中被 verify.layered.shared_paths 显式列出的这两个文件按路径命中处理（任何差异都扩大，detail 只写路径）；模块范围不读取 shared_paths。JSON 字段与 schema 枚举不变。④ 测试：新增 UT-S13-275～293、ST-S13-52～54（夹具 MS、LV、LV-mod；detail 一律精确字符串比较；「是否读取了起点文件内容」经 git 调用接缝断言；工作区 logos.config.json 损坏或模块范围未启用后没有可执行命令的用例先在缺省结果路径预置合法结果），并按新规则修改既有 UT-S13-109、UT-S13-225、UT-S13-227 的测试代码；逐个核对其余靠「改动两个配置文件即回落」构造前置的既有测试与 scripts/smoke-*.js 夹具，改为修改相关字段。「与引入前一致」类断言以引入前实现生成的 golden 比对。⑤ 升版与安装态验收：按部署方案第 3 条复核候选版本，执行 node cli/scripts/bump-version.mjs <候选版本>（规划值 0.16.28），CHANGELOG.md 新增条目；新增安装态 smoke runner scripts/smoke-verify-scope-fields.js，显式分派 SMOKE-core-359～SMOKE-core-366，目标环境非 test 先写 env-not-test skip，适用窗口为活跃变更 verify-scope-fields-and-slice-module 或 OPENLOGOS_VSF_SMOKE=1（环境变量一律用 OPENLOGOS_VSF_ 前缀），部署前置先读账本、回执 entry_realpath 须为非空绝对路径，stdout（错误信封在 stderr）整体解析，命令组调用与实际执行的用例读项目外调用记录，由 scripts/run-smoke.js 发现执行、写 smoke-results.jsonl（试运行时用 OPENLOGOS_SMOKE_RESULT_PATH 指向临时文件，不写本仓结果文件），完成后跑 smoke 覆盖预检。本仓不开启分层、不声明模块 paths。同步 UT/ST + OpenLogos reporter + golden。删后续自检：本片为最后一片，前序切片 1 已落地；(a) owned 的 UT/ST 只依赖本片的字段比较，SMOKE-core-365、366 用到切片 1 的行为，切片 1 在前、无前向依赖，SMOKE 用例需部署后执行、不计入 checkpoint 的自动化判定；(b) 端到端可观察——多模块项目只改 resource_index、driver 时验收范围不回落，改了 verify 等相关字段时回落并点名字段。升版、CHANGELOG 与 smoke runner 不单独成片（发布工种不是能力线）。覆盖 UT-S13-109、UT-S13-225、UT-S13-227、UT-S13-275、UT-S13-276、UT-S13-277、UT-S13-278、UT-S13-279、UT-S13-280、UT-S13-281、UT-S13-282、UT-S13-283、UT-S13-284、UT-S13-285、UT-S13-286、UT-S13-287、UT-S13-288、UT-S13-289、UT-S13-290、UT-S13-291、UT-S13-292、UT-S13-293、ST-S13-52、ST-S13-53、ST-S13-54、SMOKE-core-359、SMOKE-core-360、SMOKE-core-361、SMOKE-core-362、SMOKE-core-363、SMOKE-core-364、SMOKE-core-365、SMOKE-core-366",
+      "owned_test_ids": [
+        "UT-S13-109",
+        "UT-S13-225",
+        "UT-S13-227",
+        "UT-S13-275",
+        "UT-S13-276",
+        "UT-S13-277",
+        "UT-S13-278",
+        "UT-S13-279",
+        "UT-S13-280",
+        "UT-S13-281",
+        "UT-S13-282",
+        "UT-S13-283",
+        "UT-S13-284",
+        "UT-S13-285",
+        "UT-S13-286",
+        "UT-S13-287",
+        "UT-S13-288",
+        "UT-S13-289",
+        "UT-S13-290",
+        "UT-S13-291",
+        "UT-S13-292",
+        "UT-S13-293",
+        "ST-S13-52",
+        "ST-S13-53",
+        "ST-S13-54",
+        "SMOKE-core-359",
+        "SMOKE-core-360",
+        "SMOKE-core-361",
+        "SMOKE-core-362",
+        "SMOKE-core-363",
+        "SMOKE-core-364",
+        "SMOKE-core-365",
+        "SMOKE-core-366"
+      ],
+      "runner_selectors": [
+        "UT-S13-109",
+        "UT-S13-225",
+        "UT-S13-227",
+        "UT-S13-275",
+        "UT-S13-276",
+        "UT-S13-277",
+        "UT-S13-278",
+        "UT-S13-279",
+        "UT-S13-280",
+        "UT-S13-281",
+        "UT-S13-282",
+        "UT-S13-283",
+        "UT-S13-284",
+        "UT-S13-285",
+        "UT-S13-286",
+        "UT-S13-287",
+        "UT-S13-288",
+        "UT-S13-289",
+        "UT-S13-290",
+        "UT-S13-291",
+        "UT-S13-292",
+        "UT-S13-293",
+        "ST-S13-52",
+        "ST-S13-53",
+        "ST-S13-54",
+        "SMOKE-core-359",
+        "SMOKE-core-360",
+        "SMOKE-core-361",
+        "SMOKE-core-362",
+        "SMOKE-core-363",
+        "SMOKE-core-364",
+        "SMOKE-core-365",
+        "SMOKE-core-366"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S13-test-cases.md",
+        "logos/resources/test/smoke/core-smoke-test-cases.md"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "slices": [
+    {
+      "slice_id": "slice-01-single-command-rerun",
+      "task_text": "切片1：单命令组下的失败用例复跑与偶发判定闭环。① 配置：spec/logos.config.schema.json 与 cli/src/lib/verify-config.ts 新增 verify.rerun_failed（enabled 缺省 true、max_cases 缺省 10），非法项按缺省值处理并出 rerun_config_invalid 警告（§2.108.2）。② 触发：预跑与结果归一化之后、门禁之前按 §2.108.3 顺序判定 precheck_failed / disabled / no_command / gate_blocked / no_failed_cases / too_many_failures / sandbox_unavailable；复跑集合 R = 失败 ∩ 规格内 UT/ST ∩ 本轮应执行集合，ID 字典序（§2.108.4）。③ 执行（§2.108.5）：快照保存每个 ID 的生效记录及其来源（命令组与阶段）和首跑应计的一致性诊断（非法行）；在 cli/src/commands/verify.ts 的 pre_run_command 路径按来源分派，同一执行环境内复跑一次，复跑前清空结果路径、结束后立即采集，注入 OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS 与 OPENLOGOS_VERIFY_RERUN=1 并在结束后恢复；cli/src/lib/sandbox.ts 让一次性副本（sandbox_reuse:false、busy-fallback、unsupported）保留到复跑决策结束、持久副本保持占用，副本不可用时不复跑、不新建副本、不退回工作区，标 sandbox_unavailable。④ 合并与判定（§2.108.6～§2.108.8）：R 外取快照，R 内只采信其来源本次采集（不比较 timestamp），pass 记偶发、fail/skip/无记录维持失败；首跑与复跑非法行保留到最终门禁，写回 result_path 时按原文保留；命令组改判按 §2.108.7（未复跑取首跑状态）；门禁以合并结果与改判状态走既有优先级；JSON 输出 rerun 对象（含 commands[].skipped_reason / status_after）、flaky_cases、flaky_cases_present 警告与未收窄诊断，i18n 中英文案。同步 UT/ST + OpenLogos reporter。删后续自检：(a) 只做本片时，单命令组项目的复跑、偶发判定与门禁在 JSON 中端到端可观察，本片 owned 用例只依赖 pre_run_command 路径与沙箱，不依赖切片 2 的两阶段 / 模块命令组接入和切片 3 的报告 / 历史；两阶段与模块命令组配置在本片阶段沿用首跑结果（基线回归不含首跑失败，不触发复跑），不影响既有用例；(b) 本片即用户可见的核心能力，非铺管道。一次性副本保留与不可用分支与「同一执行环境复跑」咬死，合并在本片。（覆盖 UT-S13-180、UT-S13-181、UT-S13-182、UT-S13-183、UT-S13-184、UT-S13-185、UT-S13-186、UT-S13-187、UT-S13-188、UT-S13-189、UT-S13-190、UT-S13-191、UT-S13-192、UT-S13-193、UT-S13-194、UT-S13-195、UT-S13-196、UT-S13-197、UT-S13-198、UT-S13-199、UT-S13-200、UT-S13-201、UT-S13-210、UT-S13-211、UT-S13-212、UT-S13-213、UT-S13-215、UT-S13-216、ST-S13-46、ST-S13-47）",
+      "owned_test_ids": [
+        "UT-S13-180",
+        "UT-S13-181",
+        "UT-S13-182",
+        "UT-S13-183",
+        "UT-S13-184",
+        "UT-S13-185",
+        "UT-S13-186",
+        "UT-S13-187",
+        "UT-S13-188",
+        "UT-S13-189",
+        "UT-S13-190",
+        "UT-S13-191",
+        "UT-S13-192",
+        "UT-S13-193",
+        "UT-S13-194",
+        "UT-S13-195",
+        "UT-S13-196",
+        "UT-S13-197",
+        "UT-S13-198",
+        "UT-S13-199",
+        "UT-S13-200",
+        "UT-S13-201",
+        "UT-S13-210",
+        "UT-S13-211",
+        "UT-S13-212",
+        "UT-S13-213",
+        "UT-S13-215",
+        "UT-S13-216",
+        "ST-S13-46",
+        "ST-S13-47"
+      ],
+      "runner_selectors": [
+        "UT-S13-180",
+        "UT-S13-181",
+        "UT-S13-182",
+        "UT-S13-183",
+        "UT-S13-184",
+        "UT-S13-185",
+        "UT-S13-186",
+        "UT-S13-187",
+        "UT-S13-188",
+        "UT-S13-189",
+        "UT-S13-190",
+        "UT-S13-191",
+        "UT-S13-192",
+        "UT-S13-193",
+        "UT-S13-194",
+        "UT-S13-195",
+        "UT-S13-196",
+        "UT-S13-197",
+        "UT-S13-198",
+        "UT-S13-199",
+        "UT-S13-200",
+        "UT-S13-201",
+        "UT-S13-210",
+        "UT-S13-211",
+        "UT-S13-212",
+        "UT-S13-213",
+        "UT-S13-215",
+        "UT-S13-216",
+        "ST-S13-46",
+        "ST-S13-47"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S13-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-02-multi-source-rerun",
+      "task_text": "切片2：两阶段命令、模块命令组与切片 checkpoint 下的复跑。把切片 1 的来源分派与采集接入 cli/src/commands/verify.ts 的两阶段执行（regression / incremental，含共用 result_path 时逐段清空、逐段采集的来源记录）与按模块命令组执行：R 内每个用例只分派给其生效记录所在的命令组与阶段、只复跑一次、只采信该来源的复跑采集（§2.108.5 第 2 条、EX-13.23）；复跑时 OPENLOGOS_VERIFY_MODULES、OPENLOGOS_VERIFY_SLICE_SCOPE 保持首跑取值；slice-checkpoint 与模块范围下 R 先与本轮 eligible / 范围内用例求交，偶发用例按通过计入 checkpoint 与模块验收（EX-13.22）；rerun.commands[] 填 stage 与 modules，flaky_cases[].module 按用例归属。同步 UT + OpenLogos reporter。删后续自检：(a) 只依赖切片 1 已落地的快照、来源、合并与判定逻辑，不依赖切片 3；本片 owned 用例只断言 JSON、调用记录与 checkpoint 结果，做完即可过 checkpoint；(b) 落地后两阶段、多模块与切片验收项目端到端获得复跑能力，是独立可观察的能力线。（覆盖 UT-S13-202、UT-S13-203、UT-S13-204、UT-S13-214）",
+      "owned_test_ids": [
+        "UT-S13-202",
+        "UT-S13-203",
+        "UT-S13-204",
+        "UT-S13-214"
+      ],
+      "runner_selectors": [
+        "UT-S13-202",
+        "UT-S13-203",
+        "UT-S13-204",
+        "UT-S13-214"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S13-test-cases.md"
+      ]
+    },
+    {
+      "slice_id": "slice-03-flaky-record-and-release",
+      "task_text": "切片3：偶发清单的报告、文本输出与验收历史，及 0.16.26 安装态验收。① 验收报告 acceptance-report.md 在有偶发时新增「偶发用例」小节（ID、模块、首跑错误摘要与提示语，不写命令输出），多模块报告按模块各自列出；文本模式在门禁结论后输出偶发清单与提示（zh / en）；VERIFY_PASS 照常写入（§2.108.9、§2.108.8）。② 验收历史：中央索引新增可选字段 flaky_ids（0.16.26 起 verify 记录恒写，smoke 不写），偶发计入 counts.passed、不进 failed_ids；读取方缺字段按空数组、非字符串数组按损坏记录跳过并警告；history list / show 透出（§2.104.3）。③ 升版：按部署方案第 3 条复核候选版本，node cli/scripts/bump-version.mjs <候选版本>（规划值 0.16.26），CHANGELOG 新增条目；新增安装态 smoke runner scripts/smoke-verify-flaky-rerun.js，显式分派 SMOKE-core-347～SMOKE-core-351，目标非 test 先写 env-not-test skip，窗口为活跃变更 verify-flaky-rerun 或 OPENLOGOS_RR_SMOKE=1，部署前置先读账本、回执 entry_realpath 须为非空绝对路径，stdout 整体解析信封、调用次数读项目外调用记录，由 scripts/run-smoke.js 发现执行、写 smoke-results.jsonl，完成后跑 smoke 覆盖预检。同步 UT/ST + OpenLogos reporter。删后续自检：本片为最后一片，前序切片 1、2 已落地；ST-S13-44 / 45 需要报告小节与历史记录，只能放在本片；落地后偶发清单在报告、文本与历史中端到端可观察，且全局安装态可取证；SMOKE-core-347～351 需部署后执行，checkpoint 阶段由 runner 窗口与部署前置写显式 skip。（覆盖 UT-S13-205、UT-S13-206、UT-S13-207、UT-S13-208、UT-S13-209、ST-S13-44、ST-S13-45、SMOKE-core-347、SMOKE-core-348、SMOKE-core-349、SMOKE-core-350、SMOKE-core-351）",
+      "owned_test_ids": [
+        "UT-S13-205",
+        "UT-S13-206",
+        "UT-S13-207",
+        "UT-S13-208",
+        "UT-S13-209",
+        "ST-S13-44",
+        "ST-S13-45",
+        "SMOKE-core-347",
+        "SMOKE-core-348",
+        "SMOKE-core-349",
+        "SMOKE-core-350",
+        "SMOKE-core-351"
+      ],
+      "runner_selectors": [
+        "UT-S13-205",
+        "UT-S13-206",
+        "UT-S13-207",
+        "UT-S13-208",
+        "UT-S13-209",
+        "ST-S13-44",
+        "ST-S13-45",
+        "SMOKE-core-347",
+        "SMOKE-core-348",
+        "SMOKE-core-349",
+        "SMOKE-core-350",
+        "SMOKE-core-351"
+      ],
+      "spec_targets": [
+        "logos/resources/test/core-S13-test-cases.md",
+        "logos/resources/test/smoke/core-smoke-test-cases.md"
+      ]
+    }
+  ]
+}

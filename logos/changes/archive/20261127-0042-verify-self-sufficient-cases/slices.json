@@ -1,0 +1,32 @@
+{
+  "slices": [
+    {
+      "slice_id": "slice-01-acceptance-criteria-section",
+      "task_text": "切片1：proposal「验收标准」段的生成与检查。openlogos change 的 proposal 脚手架（zh / en）在「决策澄清」与「变更概述」之间生成「验收标准 / Acceptance Criteria」段与三个字段占位；新增单一的验收标准段解析函数（定位段、读三个字段、解析 env:/command:/check: 条目），供 change-lint 与后续 verify 对账共用；change-lint 缺段出警告 acceptance_criteria_missing（进 warnings、不计违规、不改退出码），段在场时字段缺失 / 空值 / 占位 / 条目格式非法报 acceptance_criteria_invalid 并带 fix_hint；不进 PLAN_SECTION_REGISTRY，不改 plan_ready 判据。同步 UT + OpenLogos reporter。删后续自检：只做本片时，新建提案即带该段、change-lint 即按规则警告或报违规，端到端可观察；owned 用例不依赖切片 2～4。六维评分（全提案）10：影响 2、复杂度 2、契约 2、测试 2、风险 1、不确定性 1，达大任务，按「验收标准段 / 生成指令口径 / verify 环境预检 / verify 跳过分类与安装态验收」四条能力线垂直拆分；UT-S35-230（解析与 verify 对账同源）依赖切片 3 的对账实现，向后归入切片 3。（覆盖 UT-S09-490、UT-S09-491、UT-S09-492、UT-S35-225、UT-S35-226、UT-S35-227、UT-S35-228、UT-S35-229）",
+      "owned_test_ids": ["UT-S09-490", "UT-S09-491", "UT-S09-492", "UT-S35-225", "UT-S35-226", "UT-S35-227", "UT-S35-228", "UT-S35-229"],
+      "runner_selectors": ["UT-S09-490", "UT-S09-491", "UT-S09-492", "UT-S35-225", "UT-S35-226", "UT-S35-227", "UT-S35-228", "UT-S35-229"],
+      "spec_targets": ["logos/resources/test/core-S09-test-cases.md", "logos/resources/test/core-S35-test-cases.md"]
+    },
+    {
+      "slice_id": "slice-02-protection-scope-instructions",
+      "task_text": "切片2：生成指令的保护范围条款与 guard 同口径。cli/src/commands/init.ts 中 AGENTS.md / CLAUDE.md 托管段「保护范围配置」中英模板按 spec/agents-md.md 新口径修改（.gitignore、.git/info/exclude 与 logos.config.json 的 guard 字段不得直接修改、走 openlogos ignore|exempt；其他字段限已立案且属于当前提案范围时由实现任务直接修改）；混合生命周期视图同口径；同步更新断言旧文案的既有测试（s08-gitignore-sync 生成指令测试）与 s09-module-instructions 基准（只允许该条款变化）。同步 UT + OpenLogos reporter。删后续自检：只做本片时，init / sync 生成的指令即为新口径，端到端可观察；不依赖其他切片。（覆盖 UT-S08-90、UT-S08-91、UT-S08-92）",
+      "owned_test_ids": ["UT-S08-90", "UT-S08-91", "UT-S08-92"],
+      "runner_selectors": ["UT-S08-90", "UT-S08-91", "UT-S08-92"],
+      "spec_targets": ["logos/resources/test/core-S08-test-cases.md"]
+    },
+    {
+      "slice_id": "slice-03-verify-environment-precheck",
+      "task_text": "切片3：verify 环境要求声明、验收标准对账与预检。spec/logos.config.schema.json 新增 verify.requirements 与 verify.modules.<id>.requirements；verify 在任何预跑命令前依次做结构校验（verify_requirements_invalid）、验收标准对账（复用切片 1 的解析函数，acceptance_requirement_undeclared）、环境预检（verify_env_not_ready，env 只写变量名，check 只写退出码或超时）；生效集合先用既有 selectVerifyCommandGroups 选出实际执行的命令组、再按模块求 E(m) 并合并（同名同命令合并、同名异命令分别执行带归属模块），无预跑命令时项目级要求仍预检；checks 经 runSandboxedCommand 在与预跑相同的沙箱、工作目录与模块上下文中执行，写回白名单为空，无隔离时如实标注 isolation；任一失败不执行预跑、不截断不读取结果文件；data.requirements JSON、共用报告「未执行」、验收历史 result_source none（§2.104.3 修改，读写两侧兼容，快照落点沿用既有留存策略，cli-json-output 同步）。同步 UT/ST + OpenLogos reporter。删后续自检：只做到本片时，声明了要求的项目在环境缺失时即被挡在预跑之前、对账漏写配置即报错、历史如实记录，端到端可观察；owned 用例不涉及跳过分类与模块报告改判（归切片 4）。（覆盖 UT-S13-157、UT-S13-158、UT-S13-159、UT-S13-160、UT-S13-161、UT-S13-162、UT-S13-163、UT-S13-164、UT-S13-169、UT-S13-175、UT-S13-176、UT-S13-177、UT-S13-178、ST-S13-40、UT-S35-230）",
+      "owned_test_ids": ["UT-S13-157", "UT-S13-158", "UT-S13-159", "UT-S13-160", "UT-S13-161", "UT-S13-162", "UT-S13-163", "UT-S13-164", "UT-S13-169", "UT-S13-175", "UT-S13-176", "UT-S13-177", "UT-S13-178", "ST-S13-40", "UT-S35-230"],
+      "runner_selectors": ["UT-S13-157", "UT-S13-158", "UT-S13-159", "UT-S13-160", "UT-S13-161", "UT-S13-162", "UT-S13-163", "UT-S13-164", "UT-S13-169", "UT-S13-175", "UT-S13-176", "UT-S13-177", "UT-S13-178", "ST-S13-40", "UT-S35-230"],
+      "spec_targets": ["logos/resources/test/core-S13-test-cases.md", "logos/resources/test/core-S35-test-cases.md"]
+    },
+    {
+      "slice_id": "slice-04-verify-skip-classification-and-release",
+      "task_text": "切片4：verify 跳过分类、模块报告改判与 0.16.24 安装态验收。① UT/ST 结果读取 reason_code / detail；严格判定集合取经 readTestChangeSet 校验的 SPEC_MERGED.test_change_set（未 merge 为空集只警告、已合并但无效报 test_change_set_invalid 且不得 PASS、checkpoint 与 eligible 求交）；严格集合内平台跳过入 platform_skipped_cases，其余 skip 报 case_tier_mismatch；存量与无提案的非平台 skip 出 unclassified_skipped_cases 警告；门禁原因优先级按 §2.106.7；JSON 与验收报告展示。② 模块验收报告按 §2.106.7A：预检类原因与 test_change_set_invalid 计入每个被覆盖 initial 模块并在预检失败时整份改写为 FAIL，case_tier_mismatch 按用例归属。③ cli/test/openlogos-reporter.ts 提供平台跳过原因登记入口；本仓 ST-S08-45、ST-S09-219、ST-S19-35～37 在非 Windows 写平台跳过；ST-S13-26 适用条件抽成单一判定（Linux、非 root、detectLivenessCapability），用例跳过条件与检查命令共用；在活跃提案内向本仓 logos/logos.config.json 写入 verify.requirements.checks 的 linux-nondump-cc（node 跨平台、只读）；人工用例不被默认测试入口启动的哨兵验证。④ 升版：node cli/scripts/bump-version.mjs 0.16.24（候选按部署方案第 4 条复核）、CHANGELOG 新增 0.16.24 条目；新增安装态 smoke runner scripts/smoke-verify-self-sufficient.js（显式分派 SMOKE-core-338～341，目标非 test 先写 env-not-test skip，窗口为活跃变更或 OPENLOGOS_VS_SMOKE=1，部署前置先读账本、回执 entry_realpath 必须为非空绝对路径，stdout 整体解析信封，夹具经正常 merge 建立真实变更集并在 verify 前断言），由 scripts/run-smoke.js 发现执行、写 smoke-results.jsonl，完成后跑 smoke 覆盖预检。同步 UT/ST + OpenLogos reporter。删后续自检：本片为最后一片，前序切片 1～3 均已落地；本片落地后跳过分类、模块报告改判与安装态验收端到端可观察，UT-S13-168 / 170 / 174 同时涉及预检与跳过分类，只能放在本片；SMOKE-core-338～341 需部署后执行，checkpoint 阶段由 runner 窗口与部署前置写显式 skip。（覆盖 UT-S13-165、UT-S13-166、UT-S13-167、UT-S13-168、UT-S13-170、UT-S13-171、UT-S13-172、UT-S13-173、UT-S13-174、UT-S13-179、ST-S13-41、ST-S13-42、ST-S13-43、SMOKE-core-338、SMOKE-core-339、SMOKE-core-340、SMOKE-core-341）",
+      "owned_test_ids": ["UT-S13-165", "UT-S13-166", "UT-S13-167", "UT-S13-168", "UT-S13-170", "UT-S13-171", "UT-S13-172", "UT-S13-173", "UT-S13-174", "UT-S13-179", "ST-S13-41", "ST-S13-42", "ST-S13-43", "SMOKE-core-338", "SMOKE-core-339", "SMOKE-core-340", "SMOKE-core-341"],
+      "runner_selectors": ["UT-S13-165", "UT-S13-166", "UT-S13-167", "UT-S13-168", "UT-S13-170", "UT-S13-171", "UT-S13-172", "UT-S13-173", "UT-S13-174", "UT-S13-179", "ST-S13-41", "ST-S13-42", "ST-S13-43", "SMOKE-core-338", "SMOKE-core-339", "SMOKE-core-340", "SMOKE-core-341"],
+      "spec_targets": ["logos/resources/test/core-S13-test-cases.md", "logos/resources/test/smoke/core-smoke-test-cases.md"]
+    }
+  ]
+}

@@ -1,0 +1,104 @@
+# 实现任务
+
+## [delta] 规格变更
+- [x] 产出 `deltas/prd/1-product-requirements/core-01-requirements.md` — 新增「verify 分层验收需求（layered-verification）」，内容包括：
+  - 用户价值与两条红线（不合并未通过提案级验收的代码；不发布未通过发布级全量验收的代码）；
+  - 概念定义：本提案用例、受影响用例、主链路用例、全量用例；
+  - 主链路用例是规格的一部分、有规模上限、不得偶发；
+  - 提案中的受影响场景声明，以及「只扩大不缩小」的三条扩大规则；
+  - 提案级验收跑三层合集；发布级验收跑全量、结果与提交号绑定、提交变了即作废；
+  - 两级报告分开并标明级别；
+  - 分层是开关，未开启时提案验收照旧跑全量；
+  - 验收条件 AC-VERIFY-TIER-01 起；
+  - 非目标：全量的调度与执行机、每晚触发、自动生成缺陷、发布门与多平台聚合（Team / RunLogos）；代码到场景的机器映射；SMOKE 分层；openlogos #4。
+- [x] 产出 `deltas/prd/2-product-design/1-feature-specs/core-01-feature-specs.md` — 新增 §2.109「分层验收：主链路、受影响场景、提案级与发布级」，并修改 §2.104.3。内容包括：
+  - 配置 `verify.layered`（`enabled`、`main_path_max`、`shared_paths`）、缺省值与非法取值的处理；
+  - 主链路小节的语法（标题、列表项、可列的用例范围）、主链路集合的计算、结构错误的判定；
+  - 提案「受影响场景」段的结构（`openlogos/affected-scenarios@1`：`assessment`、`shared_change`、`scenarios`）与读取规则；
+  - 受影响场景集合 = 声明 ∪ delta 触及的场景；场景到用例的对应（按测试用例文档文件名）；
+  - 提案级验收集合的三层构成、与 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 的衔接；
+  - 扩大规则的判定顺序、每一级扩大到什么范围、原因取值；与 §2.96 按模块收窄的衔接；
+  - 没有活跃提案时的行为；
+  - 切片 checkpoint：owned 不变，baseline 的基线部分改为「受影响 ∪ 主链路」；与 §2.101 的衔接；
+  - 主链路约束进入门禁：`main_path_over_limit`、`main_path_invalid`（执行预跑命令之前判定）、`main_path_flaky`（与 §2.108 偶发判定的衔接）；原因优先级；
+  - 发布级验收 `openlogos verify --release`：前置条件与错误码（工作区不干净、不是 git 仓库、未配置可执行的全量入口）、执行范围、不触碰的标记与文件、沿用的既有能力；
+  - 发布级提交身份在执行前固定，执行副本、报告与历史共用；收尾复核 HEAD 与工作区，变化时 `release_commit_changed`；
+  - 「有结论的发布级运行」的定义（`result_source=executed`；环境预检中止与前置拒绝不是结论）；`openlogos verify --release --check [--commit <sha>]` 取最近一次有结论的运行判定，及其退出码与原因；
+  - 测试入口收窄是开启分层的前置依赖；集合外结果的统计 `outside_result_count` 与警告 `layered_runner_not_narrowed`；
+  - 发布级报告路径 `logos/resources/verify/release/acceptance-report.md` 及其纳入保留路径与冲突检查；
+  - 两级报告：提案级报告新增的行、发布级报告的路径与内容、文本输出的提示语；
+  - JSON 字段 `level`、`layers` 与新增 `gate.reason`；
+  - §2.104.3 中央索引新增可选字段 `level`、`platform` 与读取兼容；
+  - 兼容性（未开启时输出与报告不变）、已知限制、实现映射与追溯。
+- [x] 产出 `deltas/prd/3-technical-plan/1-architecture/core-01-architecture-overview.md` — 新增「六十、分层验收：验收集合的三层构成与两级证据」，内容包括：
+  - 组件关系：主链路读取、受影响场景声明读取、三层集合计算、既有模块范围（上一级兜底）、切片清单、verify、验收历史；
+  - 数据流：提案声明与 delta → 受影响场景 → 用例集合 → 收窄通道 → 门禁；
+  - 两级证据的写入者与读取者（共用报告、发布级报告、验收历史）；
+  - 单一事实源：三层集合只在一处计算，verify 与切片两侧共用。
+- [x] 产出 `deltas/prd/3-technical-plan/2-scenario-implementation/core-S13-verify-results.md` — 新增两节：
+  - 「S13 分层验收：提案级三层集合」：参与者、前置条件、Mermaid 时序（读取配置 → 主链路检查 → 读取声明与 delta → 计算三层集合或扩大 → 收窄执行 → 门禁 → 报告与历史）、步骤说明、异常与边界（未开启、无活跃提案、声明缺失 / 非法 / 无法评估、声明了不存在的场景、涉及共享改动、提案起点不可用、主链路超限、主链路小节结构错误、主链路用例偶发、与模块范围和切片 checkpoint 并存）、追溯；
+  - 「S13 发布级全量验收」：参与者、前置条件、Mermaid 时序（检查工作区 → 全量执行 → 门禁 → 发布级报告 → 历史记录 level / commit / platform）、`--check` 查询的时序、步骤说明、异常与边界（工作区不干净、不是 git 仓库、存在活跃提案时不触碰其标记、提交变化后旧结果作废、只有其他平台的结果、环境预检未通过）、追溯。
+- [x] 产出 `deltas/prd/3-technical-plan/2-scenario-implementation/core-S09-change-management.md` — 新增「S09 提案脚手架的『受影响场景』段」：`openlogos change` 在「验收标准」之后生成该段（zh / en）与占位内容；该段不进 canonical 必填章节；旧提案没有该段时的处理；异常与边界；追溯。
+- [x] 产出 `deltas/prd/3-technical-plan/2-scenario-implementation/core-S35-change-lint.md` — 新增「S35 受影响场景声明与主链路小节的结构检查」：
+  - 受影响场景段：缺段只警告；在场时 YAML 结构、`assessment` 取值、`scenarios` 每项的 `id` 与非空 `reason`、场景编号必须存在（已合并场景或本提案新建的场景），不满足时报违规并带修复提示；仍为占位内容时报违规；
+  - 主链路小节：列了未定义、人工或 SMOKE 的 ID，或主链路总数超过上限时的警告（分层未开启时不进门禁，只在 change-lint 提示）；
+  - 输出字段；异常与边界；追溯。
+- [x] 产出 `deltas/prd/3-technical-plan/2-scenario-implementation/core-S32-slice-planning.md` — 新增「S32 分层开启时切片 checkpoint 的基线部分」：baseline 范围的基线回归由全量改为「受影响 ∪ 主链路」，owned 范围不变；集合由同一处计算；扩大时 checkpoint 随之扩大；`OPENLOGOS_VERIFY_SLICE_SCOPE` 取值不变；异常与边界；追溯。
+- [x] 产出 `deltas/spec/test-results.md` — 新增一节、修改一节：
+  - ADDED「分层验收（layered-verification）」：主链路小节的写法与示例、三层集合、扩大规则、两级验收与各自的报告路径、主链路用例不得依赖复跑；测试入口的义务：变量格式不变，但收到 `OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS` 时须一律按清单选择要执行的文件（不以 `OPENLOGOS_VERIFY_SLICE_SCOPE` 为条件），否则门禁正确但不省时；发布级必须实际执行、不接受只读取既有结果；
+  - MODIFIED「验收历史留存（verification-history） > 三层数据与字段边界」：中央索引字段清单新增 `level`、`platform`。
+- [x] 产出 `deltas/spec/cli-json-output.md` — 修改与新增以下内容：
+  - verify `data` 新增 `level`、`layers`（字段、取值、出现条件，含 `outside_result_count`）；`warnings` 新增 `layered_runner_not_narrowed`；`gate.reason` 新增 `main_path_over_limit`、`main_path_invalid`、`main_path_flaky` 及其在优先级中的位置；
+  - 新增「`openlogos verify --release`」：前置错误码、`data` 与提案级的差异、`gate.reason` 新增 `release_commit_changed`；
+  - 新增「`openlogos verify --release --check`」：输出字段与退出码；
+  - MODIFIED「共用对象：run」：新增 `level`、`platform` 与读取兼容；`history list` 新增 `--level`、`--commit`。
+- [x] 产出 `deltas/spec/change-management.md` — 提案包新增可选段「受影响场景」：位置、结构、由谁填写、在批准方案时审视、verify 的读取与扩大规则摘要、实现阶段影响面扩大时须更新声明。
+- [x] 产出 `deltas/skills/change-writer/SKILL.md` — 新增「Step 4 补充：『受影响场景』段」：
+  - 评估方法（从变更范围与要改的代码出发，逐个场景判断是否受波及，写明理由）；
+  - `shared_change` 何时写 true（共享代码、配置、依赖）；
+  - 无法判断时写 `assessment: unknown`，不猜测；
+  - delta 触及的场景会自动并入，不必重复声明但不得据此少评估；
+  - 提案改动核心流程时，一并提出主链路是否需要调整；
+  - 实现阶段发现影响面扩大时更新声明。
+- [x] 产出 `deltas/skills/test-writer/SKILL.md` — 新增主链路小节的写法：入选判据（坏了等于产品不可用、少、快、绝对稳定）、不得列人工用例与 SMOKE、不得列依赖复跑才能通过的用例、规模上限、由产品负责人与研发共同确认（AI 只提建议）。
+- [x] 产出 `deltas/test/core-S13-test-cases.md` — 新增 UT-S13-217 起、ST-S13-48 起，覆盖以下内容：
+  - 配置缺省、非法取值与警告；未开启时输出、报告与范围和引入前一致；
+  - 主链路小节读取：有 / 无小节、列表项带说明、未定义 ID、人工用例、SMOKE、重复 ID；
+  - 三层集合：只有本提案用例、加受影响场景、加主链路、三层有重叠时去重；
+  - 受影响场景：声明的场景、delta 触及的场景自动并入、两者并集；
+  - 扩大规则：共享配置或 `shared_paths` 命中、`shared_change: true`、声明缺失 / 非法 / `unknown`、声明了不存在的场景、提案起点不可用；每种情形的范围与原因；扩大不改变门禁结论；
+  - 与模块范围并存；无活跃提案时按全量；
+  - 主链路约束：超过上限与结构错误在执行预跑命令之前 FAIL（runner 未被调用）；主链路用例首跑失败复跑通过判 `main_path_flaky`；非主链路用例的偶发判定不受影响；分层未开启时三项都不进门禁；
+  - 原因优先级；
+  - 发布级验收：工作区不干净、非 git 仓库、未配置命令（磁盘上已有全绿旧账本）被拒绝且不执行命令，随后的查询不给出有效通过；提交身份在执行前固定——在提交 A 启动、收尾时已切到提交 B，记录归 A、门禁 `release_commit_changed`，查询 B 不命中；恒执行全量（分层开启、模块范围启用、存在活跃提案三种情形下）；不触碰提案标记与共用报告；写发布级报告；历史记录 `level`、`commit`、`platform`；
+  - `--release --check`：同一提交同一平台 PASS → FAIL 判无效（退出码 1）、FAIL → PASS 判有效（退出码 0）；环境预检中止不推翻此前结论也不算通过；从未有结论、只有其他提交或其他平台的结论（提交变了即作废）、`--commit` 指定提交；
+  - 测试入口收窄的可见性：收窄的夹具入口未启动集合外用例（读调用记录）；不收窄的夹具入口执行全量时门禁仍只采信三层合集、`outside_result_count` 大于 0 并警告 `layered_runner_not_narrowed`、不判账本不自洽；
+  - 发布级报告路径：含名为 `release` 的模块的多模块项目交替执行模块验收与发布级验收，两份报告各自保留，模块完成判定不受影响；结果路径配置落在发布级报告路径上时按保留路径处理；
+  - 两级报告的内容与文本输出的提示语（zh / en）；JSON 字段；历史读取兼容与 `history list --level / --commit`；
+  - 真实 CLI 端到端：分层开启的提案级验收只执行三层合集；同一提交先提案级后发布级，两份报告并存。
+
+  要求 OpenLogos reporter。
+- [x] 产出 `deltas/test/core-S09-test-cases.md` — 新增 UT-S09-504 起：`openlogos change` 的脚手架（zh / en）在「验收标准」之后生成「受影响场景」段与占位内容；既有段的顺序与内容不变。要求 OpenLogos reporter。
+- [x] 产出 `deltas/test/core-S35-test-cases.md` — 新增 UT-S35-231 起：受影响场景段缺失只警告；结构非法、占位残留、`assessment` 非法、`reason` 为空、场景编号不存在各报违规并带修复提示；引用本提案新建的场景合法；主链路小节结构错误与超限的警告；不进 canonical 必填章节、不改 `plan_ready` 判据。要求 OpenLogos reporter。
+- [x] 产出 `deltas/test/core-S32-test-cases.md` — 新增 UT-S32-118 起：分层开启时 baseline 范围 checkpoint 的 eligible = 受影响 ∪ 主链路 ∪ 已确认切片 ∪ 本片；owned 范围不变；扩大时 checkpoint 随之扩大；未开启时与引入前一致。要求 OpenLogos reporter。
+- [x] 产出 `deltas/prd/3-technical-plan/3-deployment/core-01-deployment-plan.md` — 新增「OpenLogos 0.16.27 本机测试环境发布（layered-verification）」：引用「本机测试环境脚本部署（scripts/deploy-local.mjs）」通用方案，只写本次差异：
+  - 版本 0.16.27；
+  - 回滚目标（test 当前 current_ref c3c7a9e，即 0.16.26）；
+  - CHANGELOG；
+  - 源码回归范围；
+  - 本仓 `openlogos sync`（提案脚手架与两个技能有变化）；
+  - 本仓不开启分层（保持全量），在部署记录中写明。
+- [x] 产出 `deltas/test/smoke/core-smoke-test-cases.md` — 新增「OpenLogos 0.16.27 分层验收安装态 smoke（SMOKE-core-352 起）」，覆盖以下内容：
+  - 安装态版本与制品身份；
+  - 全局 CLI 在一次性项目中：未开启时范围与 0.16.26 一致；开启后提案级验收只采信三层合集、收窄的夹具入口未启动集合外用例、报告标明级别；声明缺失时扩大；主链路超限 FAIL 且不执行预跑；`verify --release` 实际执行全量并写独立报告，未配置命令时拒绝；`--release --check` 在同一提交后一次失败、或提交变化后判为无有效结果；
+  - 目标环境非 test 时 runner 先写带原因的 skip。
+
+## [code] 代码实现
+
+- [x] 切片1：主链路小节与提案「受影响场景」声明——写规格阶段的读取、脚手架与检查。① 新模块实现主链路小节读取（§2.109.3：标题「主链路用例」/ Main Path Cases、列表项以用例 ID 开头、只能列本文档已定义且不带 [manual] 的 UT/ST；返回集合与六类结构错误 undefined_id / manual_case / not_ut_st / duplicate_id / duplicate_section / item_without_id），复用 cli/src/lib/test-id.ts 的首格读法，不改首格语法。② 新模块实现受影响场景声明读取与可用性判定（§2.109.4：usable / missing / invalid / unknown / scenario_unknown；不论状态都独立给出共享标志与已识别场景；场景存在 = 已合并场景文档或测试用例文档，或本提案 deltas 中的同类文件），供后续切片的 verify 与本片的 change-lint 共用同一判定。③ cli/src/commands/change.ts 的 proposal 脚手架（zh / en）在「验收标准」之后、「变更概述」之前生成「受影响场景 / Affected Scenarios」段（fenced YAML：schema openlogos/affected-scenarios@1、assessment: pending、shared_change: false、scenarios: []）；不进 PLAN_SECTION_REGISTRY、不改 plan_ready 判据；同步更新断言脚手架全文的既有基线。④ cli/src/lib/change-lint.ts：缺段警告 affected_scenarios_missing；pending、结构非法、理由为空、编号重复、场景不存在报违规 affected_scenarios_invalid 并带 fix_hint；unknown 通过并警告 affected_scenarios_unknown；主链路小节按测试文档有效视图（已合并叠加本提案 deltas/test 的合成后态）检查，结构错误警告 main_path_invalid、超过生效上限警告 main_path_over_limit（本片读取 verify.layered.main_path_max 的缺省 50 与配置值，配置的完整归一化与警告在切片 2）。⑤ 同步根 skills/change-writer、skills/test-writer 已合并内容到插件与托管副本（按既有同步脚本，只保留本提案相关变化），i18n 中英文案。同步 UT + OpenLogos reporter。删后续自检：(a) 只做本片时，新建提案带「受影响场景」段、change-lint 能检查声明与主链路小节，端到端可观察；本片 owned 用例只调用两个读取函数、change 与 change-lint，不依赖切片 2 的 verify 分层、切片 3 的 checkpoint 与切片 4 的发布级；(b) 这是写规格阶段的完整能力线（声明 → 检查），不是只给 verify 铺读取函数——两个读取函数在本片就有 change-lint 这个消费方。（覆盖 UT-S13-219、UT-S13-220、UT-S09-504、UT-S09-505、UT-S09-506、UT-S35-231、UT-S35-232、UT-S35-233、UT-S35-234、UT-S35-235、UT-S35-236、UT-S35-237、UT-S35-238、UT-S35-239）
+- [x] 切片2：分层开启时的提案级验收（final）——三层集合、扩大、执行核对、主链路约束、报告与历史。① spec/logos.config.schema.json 与 cli/src/lib/verify-config.ts 新增 verify.layered（enabled 缺省 false、main_path_max 缺省 50、shared_paths 缺省依赖清单且配置值替换缺省），非法项按缺省值处理并警告 layered_config_invalid。② 新模块实现三层集合计算（§2.109.5～§2.109.7，verify 与切片状态派生共用的单一事实源）：C 取经校验的测试变更集；AS = 已识别场景 ∪ deltas 触及场景，A 按测试用例文档文件名的场景编号取全部不带 [manual] 的 UT/ST；P = C ∪ A ∪ MP；扩大规则（全量：no_active_change、base_ref_unavailable、shared_path_changed、shared_change_declared；按模块：declaration_missing / declaration_invalid / assessment_unknown / scenario_unknown，A 取「模块范围内用例 ∪ AS 用例」，模块范围不可用时全量并记 module_scope_unavailable），复用 cli/src/lib/verify-scope.ts 的 baseRef 与改动文件集合；同时给出执行集合 E（本片 final 时 E=P）与本次命令组。③ cli/src/commands/verify.ts：分层开启时先只读算出 P、E、扩大级别与命令组，再对同一组命令组服务的模块做环境预检；主链路结构错误 / 超限在预检通过后、执行前判 FAIL（main_path_invalid / main_path_over_limit，result_source none，不执行命令；变更集无效时取 test_change_set_invalid）；注入 OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS=E（final 不注入 SLICE_SCOPE），以 E 为已定义集合；P 之外的已定义用例结果只计数 layers.outside_result_count 并警告 layered_runner_not_narrowed，不判越界；命令退出状态照常计入；复跑集合与 E 求交；主链路用例偶发判 main_path_flaky；原因优先级按 §2.109.10；模块范围启用时命令组按 §2.109.8 选择。④ JSON 恒输出 level，分层开启输出 layers（changed / affected / main_path / total / execution / declaration / expansion / outside_result_count），spec/schema/verify.schema.json 同步；提案级报告在分层开启时新增「级别」行与「验收范围」小节及「不等于可以发布」提示，未开启时字节不变；提案级文本输出的级别与提示。⑤ 验收历史中央索引新增 level、platform（verify 记录恒写，缺失按 proposal / null 读取，非法按损坏），history list 新增 --level、--commit 筛选。同步 UT/ST + OpenLogos reporter；更新受字段新增影响的既有白名单 / golden 断言。删后续自检：(a) 只做本片时，分层开启的 final 验收端到端可观察（JSON、报告、调用记录、历史）；本片 owned 用例都是 final 或非切片 verify 与 history list，不依赖切片 3 的 checkpoint 基线部分——分层开启的 baseline checkpoint 在本片阶段仍按引入前的全量基线执行（范围更大、不会漏测），owned checkpoint 不变；不依赖切片 4：UT-S13-250 / 251 中的发布级记录是预置的历史文件，不需要 verify --release；(b) 本片是 #5 的核心用户可见能力。依赖切片 1 的两个读取函数（已落地）。（覆盖 UT-S13-217、UT-S13-218、UT-S13-221、UT-S13-222、UT-S13-223、UT-S13-224、UT-S13-225、UT-S13-226、UT-S13-227、UT-S13-228、UT-S13-229、UT-S13-230、UT-S13-231、UT-S13-232、UT-S13-233、UT-S13-234、UT-S13-235、UT-S13-236、UT-S13-237、UT-S13-238、UT-S13-239、UT-S13-240、UT-S13-241、UT-S13-242、UT-S13-243、UT-S13-244、UT-S13-245、UT-S13-246、UT-S13-247、UT-S13-249、UT-S13-250、UT-S13-251、UT-S13-269、UT-S13-270、UT-S13-271、UT-S13-272、ST-S13-48、ST-S13-49）
+- [x] 切片3：分层开启时切片 checkpoint 的执行集合。cli/src/lib/test-slice-manifest.ts 的切片状态派生在 verify_scope 为 baseline 且分层开启时，基线部分取切片 2 的三层集合计算结果（未扩大为 A ∪ MP；按模块扩大取 §2.109.7 第 2 级的 A，模块范围外的已识别场景同样保留；全量扩大与引入前相同），去掉 pending 的本提案用例后并上已确认切片与本片的 owned；不另行计算 A。verify 在 checkpoint 下注入的清单、已定义集合与复跑集合取当前 eligible（执行集合 E），layers.total 输出 P、layers.execution 输出 E；pending 被提前上报照旧判 result_outside_eligible_scope；baseline 下提案集合之外的结果只计数并告警；owned 范围完全沿用既有越界规则（E 之外的任何已定义用例结果都判越界，outside_result_count 恒为 0）；checkpoint 同样受主链路约束（执行前 / 执行后判 FAIL，checkpoint 记 FAIL）；OPENLOGOS_VERIFY_SLICE_SCOPE 取值不变。同步 UT + OpenLogos reporter。删后续自检：(a) 只依赖切片 1、2 已落地的读取与三层集合计算，不依赖切片 4；本片 owned 用例都是 slice-checkpoint 下的 verify，做完即可过 checkpoint；(b) 落地后切片验收不再超出提案级验收范围（切片 ⊂ 提案），在 JSON 与调用记录中可观察。（覆盖 UT-S32-118、UT-S32-119、UT-S32-120、UT-S32-121、UT-S32-122、UT-S32-123、UT-S32-124、UT-S32-125）
+- [x] 切片4：发布级全量验收与查询，及 0.16.27 安装态验收。① openlogos verify --release（cli/src/index.ts 参数与 cli/src/commands/verify.ts）：前置检查按序以错误信封拒绝且不执行、不写历史（RELEASE_VERIFY_NOT_GIT；RELEASE_VERIFY_DIRTY，lifecycle 路径除外，details.paths 至多 20 条；RELEASE_VERIFY_NO_COMMAND，不接受只读取既有结果）；执行前固定完整提交号 R，报告、JSON、历史共用；恒为全量（不读 layered.enabled、命令组等同 --all、不进切片模式、清除并不注入 ELIGIBLE / SLICE_SCOPE）；沿用环境预检、沙箱、运行锁、失败复跑；对全部自动化 UT/ST 严格判定跳过（平台跳过接受，其余 case_tier_mismatch）；不检查主链路约束；不触碰提案标记、循环与 checkpoint 账本、提案完整记录、共用与模块验收报告，不做 smoke 覆盖预检；收尾复核 HEAD 与工作区，变化时 release_commit_changed（优先于其他原因）；历史记录 level=release、commit.head=R、dirty=false、proposal=null、raw_location=none。② 发布级报告写 logos/resources/verify/release/acceptance-report.md（级别、提交号、平台），cli/src/lib/module-phase-report.ts 把该路径纳入报告保留路径与冲突检查、沙箱写入白名单；文本输出标明发布级、提交号与平台。③ openlogos verify --release --check [--commit <sha>]：只读，取目标提交与当前平台下最近一次有结论的发布级运行（completed 且 result_source=executed）判定 valid 与 reason（latest_failed / other_platform_only / other_commit_only / no_conclusive_run），退出码 0 / 1；RELEASE_CHECK_COMMIT_INVALID；--check、--commit 的用法检查。④ 升版：按部署方案第 3 条复核候选版本，node cli/scripts/bump-version.mjs <候选版本>（规划值 0.16.27），CHANGELOG 新增条目；新增安装态 smoke runner scripts/smoke-layered-verification.js，显式分派 SMOKE-core-352～SMOKE-core-358，目标非 test 先写 env-not-test skip，窗口为活跃变更 layered-verification 或 OPENLOGOS_LV_SMOKE=1，部署前置先读账本、回执 entry_realpath 须为非空绝对路径，stdout（错误信封在 stderr）整体解析，调用次数与实际执行的用例读项目外调用记录，由 scripts/run-smoke.js 发现执行、写 smoke-results.jsonl（试运行时用 OPENLOGOS_SMOKE_RESULT_PATH 指向临时文件，不写本仓结果文件），完成后跑 smoke 覆盖预检。本仓 logos.config.json 不写 verify.layered。同步 UT/ST + OpenLogos reporter。删后续自检：本片为最后一片，前序切片 1～3 已落地；发布级验收与查询落地后端到端可观察；ST-S13-50 需要同一提交先跑分层的提案级再跑发布级、UT-S13-248 含发布级文本输出、UT-S13-255 需要分层与切片并存的夹具，只能放在本片；SMOKE-core-352～358 需部署后执行，checkpoint 阶段由 runner 窗口与部署前置写显式 skip。（覆盖 UT-S13-248、UT-S13-252、UT-S13-253、UT-S13-254、UT-S13-255、UT-S13-256、UT-S13-257、UT-S13-258、UT-S13-259、UT-S13-260、UT-S13-261、UT-S13-262、UT-S13-263、UT-S13-264、UT-S13-265、UT-S13-266、UT-S13-267、UT-S13-268、UT-S13-273、UT-S13-274、ST-S13-50、ST-S13-51、SMOKE-core-352、SMOKE-core-353、SMOKE-core-354、SMOKE-core-355、SMOKE-core-356、SMOKE-core-357、SMOKE-core-358）
+
+## [deploy] 部署到 test（本机全局，C06）
+- [x] 按已合并部署方案「OpenLogos 0.16.27 本机测试环境发布（layered-verification）」执行 `openlogos deploy --env test`，部署后在本仓执行 `openlogos sync`，确认安装态版本为 0.16.27 且回滚目标为 test 部署前的 current_ref

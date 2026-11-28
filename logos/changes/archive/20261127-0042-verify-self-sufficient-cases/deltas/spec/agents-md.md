@@ -1,0 +1,9 @@
+## MODIFIED — 变更管理例外文件清单与保护范围配置（guard-versioned-content-scope）
+
+生成的指令文件（AGENTS.md / CLAUDE.md 托管段，以及各宿主等价的托管指令）中「⛔ 变更管理 → 行为约束 → 唯一例外」一条，必须与 guard 的保护判定保持一致（`spec/pretooluse-guard.md`「版本控制内容保护与事后检查（规范性）」，决策 C14；verify-self-sufficient-cases 评审 proposal-r2 F5 收窄第 2、3 条的适用范围）：
+
+1. 「可不经提案直接修改的非方法论文件」示例**不再包含 `.gitignore`**；示例保留 `README.md` 等仍在硬编码白名单内的文件。
+2. 同一段追加一行：`.gitignore`、`.git/info/exclude` 与 `logos/logos.config.json` 的 `guard` 字段决定 guard 的保护范围，不得直接修改；需要忽略或豁免路径时，直接执行 `openlogos ignore add|remove …` 或 `openlogos exempt add|remove …`（`list` 不受限），由宿主对这次命令弹出原生审批、用户批准后执行；若 guard 提示当前权限模式下宿主不会弹出审批，请用户在终端用 `! <命令原文>` 自行执行，或切换到默认权限模式后重试，不得以对话中的口头同意替代审批。`logos/logos.config.json` 的其他字段（如 `verify.requirements`）只在已立案且属于当前提案范围时，由实现任务直接修改。
+3. 中英文模板同口径；en 文案：`` `.gitignore`, `.git/info/exclude` and the `guard` field of `logos/logos.config.json` define the guard's protection scope and must not be edited directly. To ignore or exempt a path, run `openlogos ignore add|remove …` or `openlogos exempt add|remove …` directly (`list` is unrestricted); the host will show its native approval prompt for that command and it runs only after the user approves. If the guard reports that the current permission mode will not show an approval prompt, ask the user to run `! <command>` in the terminal or switch to the default permission mode and retry; a verbal "yes" in the conversation never replaces the approval. Other fields of `logos/logos.config.json` (such as `verify.requirements`) may be edited directly by the implementation task only when a change proposal is active and the edit is within its scope. ``
+4. 生成时机与托管片段合并规则沿用本规范既有「托管片段合并规则」「生成时机」，`openlogos sync` 后存量项目的托管段同步更新，用户段外内容不动。
+5. 第 2、3 条与 guard 同口径的依据：guard 对 `logos/logos.config.json` 的不可豁免保护在有活跃提案时按提案范围处理（`spec/pretooluse-guard.md`「受保护判定」第 3、4 步说明）；指令不得比 guard 更严到让实现任务无法交付提案承诺的配置（如 proposal「验收标准」列出、须写入 `verify.requirements` 的环境要求），也不得放宽 `guard` 字段只能经受限命令修改的约束。
