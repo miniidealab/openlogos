@@ -6,25 +6,16 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 3028 |
+| Defined cases | 3045 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 3028 |
-| Passed | 3023 |
+| Executed cases | 3045 |
+| Passed | 3040 |
 | Failed | 0 |
 | Skipped | 5 |
 | Uncovered | 0 |
 | Coverage | 100% |
 | Pass rate | 100% |
 | **Gate 3.5** | **PASS** |
-
-## Slice Verification
-
-- Mode: `final`
-- Attempted slice: `null`
-- Confirmed slices: `slice-01-slice-plan-target-and-module`, `slice-02-shared-config-fields-and-release`
-- Eligible tests: 3028
-- Pending tests: 0
-- Final: true
 
 ## Skipped Cases
 
