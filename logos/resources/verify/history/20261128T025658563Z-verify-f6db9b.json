@@ -1,0 +1,43 @@
+{
+  "schema": "openlogos/verification-run@1",
+  "run_id": "20261128T025658563Z-verify-f6db9b",
+  "kind": "verify",
+  "started_at": "2026-11-28T02:56:58.563Z",
+  "finished_at": "2026-11-28T02:57:34.481Z",
+  "outcome": "completed",
+  "gate": {
+    "result": "PASS",
+    "reason": null
+  },
+  "error_code": null,
+  "proposal": {
+    "slug": "verify-scope-fields-and-slice-module",
+    "run_dir": "verify-runs/20261128T025658563Z-verify-f6db9b"
+  },
+  "module_scope": null,
+  "verify_mode": "slice-checkpoint",
+  "attempted_slice_id": "slice-02-shared-config-fields-and-release",
+  "environment": null,
+  "deploy_id": null,
+  "counts": {
+    "defined": 34,
+    "executed": 34,
+    "passed": 34,
+    "failed": 0,
+    "skipped": 0,
+    "uncovered": 0
+  },
+  "failed_ids": [],
+  "skipped_ids": [],
+  "uncovered_ids": [],
+  "flaky_ids": [],
+  "level": "proposal",
+  "platform": "darwin-arm64",
+  "result_source": "executed",
+  "commit": {
+    "head": "c68871205ca838eae1d572eb6cf72e4cf0d5d9ad",
+    "dirty": true
+  },
+  "cli_version": "0.16.27",
+  "raw_location": "proposal"
+}
