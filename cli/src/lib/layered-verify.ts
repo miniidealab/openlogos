@@ -17,7 +17,7 @@ import {
 } from './verify-scope.js';
 import { classifyRootRelativePath } from './impact-classify.js';
 import { readStrictSkipSet } from './verify-skip-classification.js';
-import { deltaTouchedScenarioIds, readAffectedDeclaration, scenarioIdOfFile, type AffectedDeclarationStatus } from './affected-scenarios.js';
+import { layeredDeltaTouchedScenarioIds, readAffectedDeclaration, scenarioIdOfFile, type AffectedDeclarationStatus } from './affected-scenarios.js';
 import { readMainPathSet, type MainPathProblemCode } from './main-path.js';
 import { MANUAL_MARKER_RE, TABLE_CELL_ID_RE } from './test-id.js';
 
@@ -159,13 +159,15 @@ export function computeLayeredPlan(input: LayeredPlanInput): LayeredPlan {
     sources.get(id)!.add(source);
   };
   for (const item of declaration?.recognized ?? []) addSource(item.id, 'declared');
-  for (const id of proposalDir ? deltaTouchedScenarioIds(proposalDir) : []) addSource(id, 'delta');
+  // 测试变更集只读取一次：既决定本提案用例 C，也决定测试用例文档的 delta 触及按内容还是按文件名判断（§2.109.5）
+  const strictSet = hasProposal ? readStrictSkipSet(root) : null;
+  for (const id of proposalDir ? layeredDeltaTouchedScenarioIds(root, proposalDir, strictSet?.state ?? 'unmerged') : []) addSource(id, 'delta');
   const scenarios = Array.from(sources.keys())
     .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)) || a.localeCompare(b))
     .map(id => ({ id, sources: (['declared', 'delta'] as const).filter(s => sources.get(id)!.has(s)) }));
   const scenarioCases = docs.filter(doc => doc.scenario !== null && sources.has(doc.scenario)).flatMap(doc => doc.ids);
 
-  const changedIds = hasProposal ? Array.from(readStrictSkipSet(root).ids).filter(id => defined.has(id)) : [];
+  const changedIds = strictSet ? Array.from(strictSet.ids).filter(id => defined.has(id)) : [];
 
   if (declaration?.sharedChange) reasons.push({ code: 'shared_change_declared', detail: '提案声明 shared_change: true' });
   const fullByLevelOne = reasons.length > 0;
