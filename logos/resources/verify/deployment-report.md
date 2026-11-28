@@ -2016,3 +2016,39 @@ public_release_commit: bca7fa49f12a69c2d3c1c3b19b1bfb7c7103bcd6
   - 审计：部署前读到的 `data.current_ref` = `9a1e83830212b125eee6f8b5870f8d7a34300f64`（0.16.28，deploy `edb12f69`），与写提案时的观测值一致，期间没有其他部署。
 - 本仓 sync：`openlogos sync`（v0.16.29）完成。`logos/spec/` 下 `test-results.md`、`change-management.md` 与根 `spec/` 同名文件逐字节一致；`logos/skills/change-writer/SKILL.md` 与根 `skills/change-writer/SKILL.md` 逐字节一致。这三个托管副本都不受版本控制（被 `.gitignore` 排除），没有随本记录提交的文件。`plugin/skills/change-writer/SKILL.md` 是带 frontmatter 的英文版，没有「受影响场景」这一段，本提案不改它。AGENTS.md / CLAUDE.md 无内容变化。sync 又改写了 `.claude/settings.json`，按前几版做法已还原，未提交。
 - 未执行：`openlogos smoke`、archive、`git push`（本工作单元仅部署）。SMOKE-core-367～374 由新增的 `scripts/smoke-delta-touched-by-case-change.js` 承担，其中 368～374 的用例本体已在实现阶段用本地构建在一次性项目中跑通，367（版本与制品身份）依赖本次回执，尚未执行；367 失败时其余用例不执行、不记通过。提案通道 deploy 已自行写入 `DEPLOY_DONE` 并勾选 `[deploy]`；派活文案要求「完成后运行 deploy-done」，但提案通道部署成功后再执行 `openlogos deploy-done` 会生成新的 deploy_id 覆盖本次部署身份，沿用前几版做法未执行。
+
+## 部署记录 2026-11-28T13:59:08.416Z → test
+
+- 目标环境: test
+- 通道 / 执行方式: proposal / script
+- deploy_id: 12f80e32-cfe5-4335-b01a-b4e744d096b5
+- ref_requested: fd2b06791475aac1fd33d9a6ab50b4531c64da81（HEAD）
+- ref: fd2b06791475aac1fd33d9a6ab50b4531c64da81
+- 执行脚本: scripts/deploy-local.mjs（workdir: worktree）
+- 耗时: 27726 ms
+- 结果: done
+- log_path: logos/.openlogos-runtime/deploy-logs/12f80e32-cfe5-4335-b01a-b4e744d096b5.log
+- previous_ref: a73e410865f0dacda173b9691ed1580aaf9e940d
+
+### 部署报告（verify-git-local-only，0.16.30 本机全局发布）
+
+- 版本：装入 `0.16.30`，即本提案批准的目标版本（需求 AC-VERIFY-LOCAL-09）。
+  - 升版之前的检查（实现阶段、执行升版命令之前）：`cli/package.json` 为 `0.16.29`，`npm view @miniidealab/openlogos@0.16.30 version` 返回 E404；检查通过后由 `node cli/scripts/bump-version.mjs 0.16.30` 升版。
+  - 部署时的检查：部署前 `cli/package.json` 为 `0.16.30`，registry 仍无该版本；部署后源码版本、候选包版本、回执 `candidate_version` 与全局 `--version` 都是 `0.16.30`。没有触发停止条件。部署前全局为 `0.16.29`。
+- 部署：deploy_id `12f80e32-cfe5-4335-b01a-b4e744d096b5`，ref `fd2b06791475aac1fd33d9a6ab50b4531c64da81`，结果 `done`。部署前按「规格合并 → 代码 → 验收报告」补提交：规格 `f4d18c0`，代码 `299fc2b`，验收 `fd2b067`，工作区干净。`openlogos env check` 未发现问题，`openlogos deploy --env test --dry-run` 全部检查通过。
+- 验收：final verify 运行 `20261128T135231219Z-verify-c43910`，Gate PASS（定义 3061，通过 3056，失败 0，跳过 5，未覆盖 0），没有偶发用例。`VERIFY_PASS` 写入时间晚于 code 第 1、2 轮评审的最后一次修复。本提案的各次 verify（两次切片 checkpoint 与 final）都由当时全局安装的 0.16.29 执行。
+- **本仓不受范围变化影响**：本仓是完整克隆，且未启用按模块限定范围、未开启分层；本次只是让本仓 verify 的 git 调用带上约束，结果不变。
+- 全局复核：入口 realpath `/opt/homebrew/lib/node_modules/@miniidealab/openlogos/dist/index.js`，等于回执 `entry_realpath`；入口 SHA-256 `86af56e7f10b2c185ef2edb97da99a168ff2e7db6402fe7c69715d972d0efe01`，等于回执 `candidate_entry_sha256`。本次入口文件 `dist/index.js` 自身没有变化（本提案不改命令行参数），因此与回执 `previous_entry_sha256` 相同；装上的是本次候选由版本号与候选 tarball 哈希区分。另读回全局包内 `dist/lib/git-readonly.js`，存在且含置空传输协议白名单的实现。
+- 制品：候选 tarball SHA-256 `32db7ce16e8cd0a556d3e0a7bbf34efd353aee46d376e6501a4a20ec50ae6efa`、回滚制品 SHA-256 `67a4847302fb355871349c280f837ac37728fca170f6ce48c7f5d4d3590a567b`（均读回文件重算，与回执一致；回滚制品由部署前全局 0.16.29 打包，与上一版部署记录中的 0.16.29 候选 tarball 哈希相同）。
+- 回滚身份（三项分列）：
+  - 源码回滚常量 `LOCAL_RELEASE_ROLLBACK_VERSION` = `0.16.29`，由 `bump-version.mjs` 产生，与规划值一致。
+  - 部署脚本失败回装依据：回执 `previous_version` = `0.16.29`，`previous_entry_sha256` = `86af56e7f10b2c185ef2edb97da99a168ff2e7db6402fe7c69715d972d0efe01`。
+  - 显式回退目标：部署后 `openlogos env show test --format json` 的 `data.previous_ref` = `a73e410865f0dacda173b9691ed1580aaf9e940d`（0.16.29），与规划值一致；`data.current_ref` = `fd2b06791475aac1fd33d9a6ab50b4531c64da81`。
+  - 审计：部署前读到的 `data.current_ref` = `a73e410865f0dacda173b9691ed1580aaf9e940d`（0.16.29，deploy `6686c703`），与写提案时的观测值一致，期间没有其他部署。
+- 本仓 sync：`openlogos sync`（v0.16.30）完成。`logos/spec/` 下 `test-results.md`、`cli-json-output.md` 与根 `spec/` 同名文件逐字节一致；其中受版本控制的只有 `cli-json-output.md`，随本记录提交。本提案不改技能与生成指令文案，AGENTS.md / CLAUDE.md 无内容变化。sync 又改写了 `.claude/settings.json`，按前几版做法已还原，未提交。
+- 实现与已合并规格文字的三处出入（代码评审修复引入，行为与验收要求不变，规格未随之修订，留待决定是否经增量修正同步）：
+  - 测试规格与 smoke 规格把 git 调用记录描述为「`PATH` 最前的记录型 git 包装」；实现为源码测试用只读执行入口的测试接缝加 `GIT_TRACE`，安装态 smoke 用 `GIT_TRACE`（不依赖 PATH 查找与可执行脚本）。
+  - smoke 规格的失败证据写「含失败的 `init`」；实现保留本用例已执行的全部命令，含成功的 `init`。
+  - 功能规格 §2.111.4 的说明文字只列缺对象与超时；实现另有「本地对象类型不是提交」，并且只在确认缺失时才附缺对象说明。
+- 未取得的证据：没有在真实的旧版 Git（早于 2.45）上执行；没有在原生 Windows 上执行（代码评审中消除了已知的平台相关写法，Windows 入口定位只用按其安装布局造出的目录在 macOS 上做了回归）。
+- 未执行：`openlogos smoke`、archive、`git push`（本工作单元仅部署）。SMOKE-core-375～379 由新增的 `scripts/smoke-verify-git-local-only.js` 承担，其中 376～379 的用例本体已在实现阶段用本地构建在一次性项目中跑通，375（版本与制品身份）依赖本次回执，尚未执行；375 失败时其余用例不执行、不记通过。提案通道 deploy 已自行写入 `DEPLOY_DONE` 并勾选 `[deploy]`；派活文案要求「完成后运行 deploy-done」，但提案通道部署成功后再执行 `openlogos deploy-done` 会生成新的 deploy_id 覆盖本次部署身份，沿用前几版做法未执行。
