@@ -50,6 +50,7 @@ import {
   type LayeredPlan, type VerifyLayersData,
 } from '../lib/layered-verify.js';
 import { checkReleasePreconditions, recheckRelease, type VerifyReleaseData } from './verify-release.js';
+import { readCommitSnapshotReadonly } from '../lib/git-readonly.js';
 import { RELEASE_ACCEPTANCE_REPORT_PATH } from '../lib/module-phase-report.js';
 import {
   runVerifyPrecheck, readRawVerifyConfig, describeMissing,
@@ -2116,6 +2117,11 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
   // 发布级记录不归属活跃提案：只写中央索引，不写提案完整记录
   const historyRun: HistoryRunContext = startHistoryRun(root, 'verify', { withoutProposal: release });
   const releaseHistory = release ? { level: 'release' as const, commit: { head: releaseCommit!, dirty: false } } : { level: 'proposal' as const };
+  /**
+   * 历史记录的级别与提交身份（§2.111.5）。发布级：运行开始时固定的提交，写历史时不重新读取。
+   * 提案级：写历史的那一刻经只读 git 执行入口读出提交快照再传入，不走历史记录的缺省读取（那条读取留给 smoke）。
+   */
+  const historyIdentity = () => (release ? releaseHistory : { ...releaseHistory, commit: readCommitSnapshotReadonly(root) });
   const historyBase = (): Pick<HistoryFinish, 'moduleScope' | 'verifyMode' | 'attemptedSliceId'> => ({
     moduleScope: execScope.scope && !release ? [...execScope.scope.modules] : null,
     verifyMode: sliceVerification?.manifest_status === 'valid' && sliceVerification.verify_mode ? sliceVerification.verify_mode : null,
@@ -2225,7 +2231,7 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
       gate: { result: null, reason: null },
       errorCode: code,
       counts: {},
-      ...releaseHistory,
+      ...historyIdentity(),
       resultSource,
       resultPath: !hasLedgerSnapshot && existsSync(fullResultPath) ? resultPath : null,
       resultCapture: hasLedgerSnapshot ? { bytes: rerunOutcome.ledgerOverride! } : captureResultBytes(root, resultPath),
@@ -2423,7 +2429,7 @@ export function verify(format: OutputFormat = 'text', runOptions: VerifyRunOptio
     skippedIds: data.skipped_cases,
     uncoveredIds: data.uncovered_cases,
     flakyIds: (data.flaky_cases ?? []).map(c => c.id),
-    ...releaseHistory,
+    ...historyIdentity(),
     resultSource,
     resultPath: noResultsRead ? null : resultPath,
     resultCapture,

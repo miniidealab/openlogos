@@ -6,12 +6,12 @@
  *
  * 本段是**非 canonical 段**：不进 `PLAN_SECTION_REGISTRY`，缺段不影响 Plan Package 判定。
  */
-import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { readBaselineBefore, readSpecMergedRecord, sha256Hex } from './merge-baseline.js';
 import { buildTestChangeSet } from './test-change-set.js';
+import { runGitReadonly, runGitReadonlyBuffer, withGitReadonlyEnv } from './git-readonly.js';
 
 export const AFFECTED_SCENARIOS_SECTION_TITLES = ['受影响场景', 'Affected Scenarios'] as const;
 export const AFFECTED_SCENARIOS_SCHEMA = 'openlogos/affected-scenarios@1';
@@ -89,7 +89,7 @@ export interface DeltaTouchSeams {
   compare?: typeof buildTestChangeSet;
   /** 取 Git 版本 `[major, minor]`（缺省执行 `git version`）；测试用接缝，用于覆盖不支持 `GIT_NO_LAZY_FETCH` 的旧版本路径。 */
   gitVersion?: (root: string) => [number, number] | null;
-  /** 读回并复核合并前内容（缺省即 `readBaselineBefore`）；测试用接缝，用于确认哪些对象进入了读取。 */
+  /** 读回并复核合并前内容（缺省经只读 git 执行入口读取并复核 sha256）；测试用接缝，用于确认哪些对象进入了读取。 */
   readBaselineBefore?: typeof readBaselineBefore;
 }
 
@@ -104,16 +104,16 @@ function deltaTestCaseDocs(proposalDir: string): Array<{ file: string; scenario:
   return out;
 }
 
-const GIT_NO_LAZY_FETCH = 'GIT_NO_LAZY_FETCH';
 /** `GIT_NO_LAZY_FETCH` 自 Git 2.45 起生效；更早的版本会忽略它。 */
 const LAZY_FETCH_SWITCH_SINCE: readonly [number, number] = [2, 45];
 
 /** 读取合并前内容时，某个 blob 能否安全读取（不触发按需取回）；每次计算建立一次。 */
 type LocalBlobGate = (blobId: string | null) => boolean;
 
+/** 经验收期间的只读 git 执行入口执行（§2.111.2）。 */
 function gitText(root: string, args: string[], maxBuffer = 1024 * 1024): { status: number | null; stdout: string } {
-  const r = spawnSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000, maxBuffer });
-  return { status: r.error ? null : r.status, stdout: r.stdout ?? '' };
+  const r = runGitReadonly(root, args, { maxBuffer });
+  return { status: r.error ? null : r.status, stdout: r.stdout };
 }
 
 function gitVersionOf(root: string): [number, number] | null {
@@ -158,22 +158,14 @@ function localBlobGate(root: string, gitVersion: (root: string) => [number, numb
 }
 
 /**
- * 只从本地对象库读回并复核合并前内容：读取期间为 git 子进程设置 `GIT_NO_LAZY_FETCH=1`，本地缺对象时直接判不可读，
- * 不访问远端、不向对象库写入（场景 EX-13.66「副作用：无」）。`readBaselineBefore` 同步执行，环境变量在返回前恢复。
+ * 只从本地对象库读回并复核合并前内容（场景 EX-13.66「副作用：无」）：经只读 git 执行入口读取 blob——不连接远端、
+ * 不取回对象、有时限；本地缺对象、超时或 sha256 复核不过都判不可读。
  */
-function readBaselineBeforeLocalOnly(
-  root: string,
-  before: Parameters<typeof readBaselineBefore>[1],
-  read: typeof readBaselineBefore,
-): Buffer | null {
-  const saved = process.env[GIT_NO_LAZY_FETCH];
-  process.env[GIT_NO_LAZY_FETCH] = '1';
-  try {
-    return read(root, before);
-  } finally {
-    if (saved === undefined) delete process.env[GIT_NO_LAZY_FETCH];
-    else process.env[GIT_NO_LAZY_FETCH] = saved;
-  }
+function readBaselineBeforeLocalOnly(root: string, before: Parameters<typeof readBaselineBefore>[1]): Buffer | null {
+  if (before.git_blob === null || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(before.git_blob)) return null;
+  const r = runGitReadonlyBuffer(root, ['cat-file', 'blob', before.git_blob], { maxBuffer: 1024 * 1024 * 512 });
+  if (r.error || r.timedOut || r.status !== 0) return null;
+  return sha256Hex(r.stdout) === before.sha256 ? r.stdout : null;
 }
 
 /**
@@ -186,7 +178,7 @@ function testCaseDocChanged(
   baseline: NonNullable<ReturnType<typeof readSpecMergedRecord>['baseline']>,
   compare: typeof buildTestChangeSet,
   canRead: (blobId: string | null) => boolean,
-  read: typeof readBaselineBefore,
+  read: typeof readBaselineBefore | undefined,
 ): boolean | null {
   const target = baseline.targets.find(t => t.path === targetPath);
   if (!target) return null;
@@ -195,7 +187,8 @@ function testCaseDocChanged(
     if (!target.before) return null;
     // 不能保证这一个对象的读取不触发按需取回时不读（旧版 Git 上本地缺少该对象，或探测失败）：这份文档按文件名回退
     if (!canRead(target.before.git_blob)) return null;
-    beforeBytes = readBaselineBeforeLocalOnly(root, target.before, read);
+    // 测试接缝提供的读取函数在三项约束的环境下执行；缺省读取经只读 git 执行入口（带时限）
+    beforeBytes = read ? withGitReadonlyEnv(() => read(root, target.before!)) : readBaselineBeforeLocalOnly(root, target.before);
     if (beforeBytes === null) return null;
   } else if (target.before !== null) {
     return null;
@@ -248,7 +241,7 @@ export function layeredDeltaTouchedScenarioIds(
     const canRead: LocalBlobGate = blobId => (gate ??= localBlobGate(root, seams.gitVersion ?? gitVersionOf))(blobId);
     for (const doc of docs) {
       if (ids.has(doc.scenario)) continue;
-      const changed = baseline === null ? null : testCaseDocChanged(root, `${TEST_DOC_DIR}/${doc.file}`, baseline, compare, canRead, seams.readBaselineBefore ?? readBaselineBefore);
+      const changed = baseline === null ? null : testCaseDocChanged(root, `${TEST_DOC_DIR}/${doc.file}`, baseline, compare, canRead, seams.readBaselineBefore);
       if (changed !== false) ids.add(doc.scenario);
     }
   }

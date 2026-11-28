@@ -5,12 +5,12 @@
  * 发布级验收的执行本体在 verify.ts（与提案级共用环境预检、沙箱、运行锁、失败复跑与门禁判据）；本文件只放
  * 它独有的部分：git 身份与工作区检查、`--release --check` 的只读查询。
  */
-import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeEnvelope, makeErrorEnvelope, type OutputFormat } from '../lib/json-output.js';
 import { classifyInputPath } from '../lib/impact-classify.js';
 import { currentPlatform, readAllRuns, type VerificationRun } from '../lib/verification-history.js';
+import { runGitReadonly } from '../lib/git-readonly.js';
 
 export type ReleaseCheckReason = 'latest_failed' | 'other_platform_only' | 'other_commit_only' | 'no_conclusive_run';
 
@@ -23,9 +23,16 @@ export interface VerifyReleaseData {
   head_at_finish: string | null;
 }
 
+/** 发布级验收与发布查询的 git 调用时限（既有取值，§2.111.2）。 */
+const RELEASE_GIT_TIMEOUT_MS = 60_000;
+
+/**
+ * 经验收期间的只读 git 执行入口执行（§2.111.2）：不连接远端、不取回对象、不弹提示，时限保留 60 秒。
+ * 本地解析不出的提交（含本地没有该提交对象、调用超时）与其他失败一样按非零状态返回，调用方的既有判定不变。
+ */
 function git(root: string, args: string[]): { status: number | null; stdout: string } {
-  const r = spawnSync('git', args, { cwd: root, encoding: 'utf8', timeout: 60_000, maxBuffer: 64 * 1024 * 1024 });
-  return { status: r.error ? null : r.status, stdout: r.stdout ?? '' };
+  const r = runGitReadonly(root, args, { timeoutMs: RELEASE_GIT_TIMEOUT_MS });
+  return { status: r.error ? null : r.status, stdout: r.stdout };
 }
 
 /** 当前 HEAD 的完整提交号；不是 git 仓库或 HEAD 无法解析为提交时为 null。 */

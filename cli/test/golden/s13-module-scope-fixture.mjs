@@ -21,6 +21,22 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { normalizeDefaultSandboxRoot } from './normalize-default-sandbox-root.mjs';
 
+/**
+ * 会把 git 的读写引到工作目录之外的环境变量（仓库定位、工作树、索引、对象库、公共目录、命名空间与配置注入）。
+ * 夹具自己的 git 与交给 CLI 子进程的环境都去掉它们：否则即使工作目录是一次性项目，对象、索引或配置也可能写进宿主仓库。
+ */
+const GIT_LOCATION_ENV_KEYS = [
+  'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_COMMON_DIR',
+  'GIT_NAMESPACE', 'GIT_PREFIX', 'GIT_CEILING_DIRECTORIES', 'GIT_CONFIG', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
+  'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS',
+];
+/** 当前进程环境去掉上述变量后的副本。 */
+export function isolatedProcessEnv() {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) if (GIT_LOCATION_ENV_KEYS.includes(key) || /^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(key)) delete env[key];
+  return env;
+}
+
 export const GIT_ENV = {
   GIT_AUTHOR_NAME: 'msv', GIT_AUTHOR_EMAIL: 'msv@example.invalid',
   GIT_COMMITTER_NAME: 'msv', GIT_COMMITTER_EMAIL: 'msv@example.invalid',
@@ -75,7 +91,7 @@ export function put(root, rel, content) {
 }
 
 export function git(root, args) {
-  const r = spawnSync('git', args, { cwd: root, encoding: 'utf8', env: { ...process.env, ...GIT_ENV } });
+  const r = spawnSync('git', args, { cwd: root, encoding: 'utf8', env: { ...isolatedProcessEnv(), ...GIT_ENV } });
   if (r.status !== 0) throw new Error(`git ${args.join(' ')} 失败：${r.stderr}`);
   return r.stdout.trim();
 }
@@ -132,7 +148,7 @@ export function addProposal(root, { slug = 'msv-demo', module = 'portal-web', de
   for (const [rel, content] of Object.entries(deltas)) put(root, `logos/changes/${slug}/deltas/${rel}`, content);
   let ref = baseRef;
   if (ref === undefined) {
-    const r = spawnSync('git', ['rev-parse', '--verify', '--quiet', 'HEAD'], { cwd: root, encoding: 'utf8' });
+    const r = spawnSync('git', ['rev-parse', '--verify', '--quiet', 'HEAD'], { cwd: root, encoding: 'utf8', env: isolatedProcessEnv() });
     ref = r.status === 0 ? r.stdout.trim() : null;
   }
   put(root, 'logos/.openlogos-guard', JSON.stringify({
@@ -148,7 +164,7 @@ export function runVerify(cliEntry, root, { args = [], env = {} } = {}) {
   try {
     const r = spawnSync(process.execPath, [resolve(cliEntry), 'verify', '--format', 'json', ...args], {
       cwd: root, encoding: 'utf8', timeout: 120_000,
-      env: { ...process.env, ...GIT_ENV, OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS: '', NO_COLOR: '1', MSV_LOG: log, ...env },
+      env: { ...isolatedProcessEnv(), ...GIT_ENV, OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS: '', NO_COLOR: '1', MSV_LOG: log, ...env },
     });
     let envelope = null;
     try { envelope = JSON.parse(r.stdout.trim().split('\n').filter(Boolean).pop() ?? ''); } catch { /* 下方报告 */ }

@@ -21,7 +21,7 @@
  *     有 fail 时非零退出，exit 可覆盖某次调用的退出码；invalidLine 让某次调用多写一行非法 JSON；
  *     extra 列出清单之外额外执行并上报的用例（模拟入口只多报了个别用例）；状态 skip-bare 写不带原因的 skip；
  *     during 让某次调用在执行期间新建一个空提交（commit）、留下一个未跟踪的源码文件（untracked），
- *     或暂存一处改动后把工作区改回原样（staged）；foreign 让指定入口额外上报不归它负责的用例；
+ *     暂存一处改动后把工作区改回原样（staged），或改写一个已跟踪的源码文件而不暂存、不提交（modified）；foreign 让指定入口额外上报不归它负责的用例；
  *     writeShared 让入口在当前工作目录（沙箱开启时即副本）生成一份共用验收报告。
  *
  * 变体 LV-rel（opts.rel）：去掉活跃提案，全部内容已提交、工作区干净，用于发布级验收。
@@ -39,6 +39,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { normalizeDefaultSandboxRoot } from './normalize-default-sandbox-root.mjs';
+import { isolatedProcessEnv } from './s13-module-scope-fixture.mjs';
 
 export const GIT_ENV = {
   GIT_AUTHOR_NAME: 'lv', GIT_AUTHOR_EMAIL: 'lv@example.invalid',
@@ -51,7 +52,7 @@ export const P_DEFAULT = ['UT-S01-01', 'UT-S01-02', 'UT-S01-03', 'UT-S01-04', 'U
 export const ALL_DEFAULT = [...P_DEFAULT, 'UT-S03-02', 'UT-S04-02'].sort();
 
 export function git(root, args) {
-  const r = spawnSync('git', args, { cwd: root, encoding: 'utf8', env: { ...process.env, ...GIT_ENV } });
+  const r = spawnSync('git', args, { cwd: root, encoding: 'utf8', env: { ...isolatedProcessEnv(), ...GIT_ENV } });
   if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr}`);
   return r.stdout.trim();
 }
@@ -130,6 +131,8 @@ if (during === 'staged') {
   fs.writeFileSync('src/core.ts', original);
 }
 if (during === 'untracked') fs.writeFileSync('src/left-behind.ts', 'export const left = 1;' + String.fromCharCode(10));
+// modified：改写一个已跟踪的源码文件而不暂存、不提交（HEAD 不变，工作区有改动）
+if (during === 'modified') fs.appendFileSync('src/core.ts', '// modified during run' + String.fromCharCode(10));
 // foreign：某个入口额外上报不归它负责的用例（模拟跨模块上报）；writeShared：在当前工作目录生成一份共用验收报告
 for (const id of ((script.foreign || {})[name] || [])) lines.push(JSON.stringify({ id, status: 'pass', scenario: id.split('-')[1], timestamp: new Date().toISOString() }));
 if (script.writeShared) fs.writeFileSync('logos/resources/verify/acceptance-report.md', '# Acceptance Report' + String.fromCharCode(10) + 'written by the test entry' + String.fromCharCode(10));
@@ -293,7 +296,7 @@ export function destroyLv(f) {
 
 /** 子进程环境：去掉父进程的 OPENLOGOS_VERIFY_* / LV_*，注入剧本与调用记录路径。 */
 export function lvEnv(f, extra = {}) {
-  const env = { ...process.env, ...GIT_ENV, NO_COLOR: '1' };
+  const env = { ...isolatedProcessEnv(), ...GIT_ENV, NO_COLOR: '1' };
   for (const key of Object.keys(env)) {
     if (key.startsWith('OPENLOGOS_VERIFY_') || key.startsWith('OPENLOGOS_TEST_') || key.startsWith('LV_')) delete env[key];
   }

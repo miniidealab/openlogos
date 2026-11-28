@@ -122,7 +122,7 @@ export interface HistoryFinish {
   /** layered-verification：验收级别（只对 verify 记录写入；缺省 proposal）。 */
   level?: HistoryLevel;
   /** layered-verification：发布级验收在执行前固定的提交身份；给出时不在写入时重新读取 HEAD。 */
-  commit?: { head: string; dirty: boolean };
+  commit?: { head: string | null; dirty: boolean | null };
   resultSource: 'executed' | 'reused' | 'none';
   /** 本次实际采集的结果文件（项目根相对）；不存在或未采集时为 null。 */
   resultPath: string | null;

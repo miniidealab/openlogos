@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.30] - 2026-11-28
+
+本机全局发布（未发布到 npm）。
+
+### Changed
+
+- `openlogos verify`（提案级、发布级与发布查询）自己启动的 git 调用不连接远端、不取回对象、不弹出凭据提示，并有时限（没有既有时限的调用缺省 60 秒）。测试命令自己执行的 git、`openlogos smoke` 及其他命令的 git 调用不变。
+- 部分克隆且本地缺少提案起点的提交或其中的文件内容时，verify 不再从远端取回：缺起点提交判为起点不可达（`base_ref_unreachable`），缺文件内容判为差异计算失败（`diff_failed`），都回落或扩大到全量并在说明中写明；调用超过时限时按失败的那一次调用归类。发布查询指定的提交本地不存在时照旧以 `RELEASE_CHECK_COMMIT_INVALID` 拒绝。原因代码与 JSON 字段不变。
+- 对象齐全且调用及时完成的仓库，验收范围、原因、执行的用例与结论不变。
+
+### Fixed
+
+- 部分克隆的项目执行 verify 时会访问远端并向本地对象库写入对象，远端无响应时验收一直挂住。
+
 ## [0.16.29] - 2026-11-28
 
 本机全局发布（未发布到 npm）。

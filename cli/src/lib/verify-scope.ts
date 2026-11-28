@@ -7,7 +7,6 @@
  * - `--all` → mode=all；
  * - 其余进入范围计算 → mode=module，或任一回落条件成立时 mode=fallback-full。
  */
-import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { isMap, parseDocument } from 'yaml';
@@ -17,6 +16,7 @@ import { classifyRootRelativePath } from './impact-classify.js';
 import { readTestChangeSet } from './test-change-set.js';
 import { SPEC_MERGED_MARKER } from './proposal-markers.js';
 import { moduleFromGuard } from './merge-direct.js';
+import { GIT_LOCAL_OBJECT_MISSING_NOTE, gitFailureNote, runGitReadonly } from './git-readonly.js';
 
 export type VerifyScopeMode = 'module' | 'all' | 'fallback-full';
 export type VerifyScopeSource = 'proposal' | 'delta' | 'spec' | 'path';
@@ -71,14 +71,32 @@ export const SHARED_VERIFY_CONFIG_FIELDS: Readonly<Record<string, { related: rea
 
 const TEST_CASES_DIR = 'logos/resources/test';
 
-export interface GitRunResult { status: number | null; stdout: string; error?: unknown }
+export interface GitRunResult {
+  status: number | null;
+  stdout: string;
+  error?: unknown;
+  /** 超过时限被终止（缺省执行器给出；注入的执行器可以不提供）。 */
+  timedOut?: boolean;
+  timeoutMs?: number;
+  /** 失败且表明本地缺少对象、没有取回。 */
+  missingObject?: boolean;
+}
 /** git 调用接缝（测试可注入以模拟差异计算失败）。 */
 export type GitRunner = (root: string, args: string[]) => GitRunResult;
 
+/**
+ * 缺省执行器：验收期间的只读 git 执行入口（§2.111.2）——不连接远端、不取回对象、不弹提示，每次调用限时 60 秒。
+ */
 export const defaultGitRunner: GitRunner = (root, args) => {
-  const r = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  return { status: r.status, stdout: r.stdout ?? '', error: r.error };
+  const r = runGitReadonly(root, args);
+  return { status: r.status, stdout: r.stdout, error: r.error, timedOut: r.timedOut, timeoutMs: r.timeoutMs, missingObject: r.missingObject };
 };
+
+/** 失败说明：既有文字之后补充超时或本地缺少对象的情形（§2.111.4）。 */
+function failureDetail(base: string, r: GitRunResult): string {
+  const note = gitFailureNote({ timedOut: r.timedOut === true, timeoutMs: r.timeoutMs ?? 0, missingObject: r.missingObject === true });
+  return note ? `${base}（${note}）` : base;
+}
 
 export interface ResolveVerifyScopeOptions {
   all?: boolean;
@@ -177,9 +195,9 @@ export function parseNameStatusZ(stdout: string): string[] {
 /** baseRef 到工作区的改动文件集合（已提交、未提交、未跟踪且未忽略），路径相对项目根。 */
 export function collectChangedFiles(root: string, baseRef: string, git: GitRunner = defaultGitRunner): { ok: true; files: string[] } | { ok: false; detail: string } {
   const diff = git(root, ['diff', '--name-status', '-z', '-M', '--relative', baseRef, '--']);
-  if (diff.error || diff.status !== 0) return { ok: false, detail: `git diff 失败（exit ${diff.status ?? 'n/a'}）` };
+  if (diff.error || diff.status !== 0) return { ok: false, detail: failureDetail(`git diff 失败（exit ${diff.status ?? 'n/a'}）`, diff) };
   const untracked = git(root, ['ls-files', '--others', '--exclude-standard', '-z']);
-  if (untracked.error || untracked.status !== 0) return { ok: false, detail: `git ls-files 失败（exit ${untracked.status ?? 'n/a'}）` };
+  if (untracked.error || untracked.status !== 0) return { ok: false, detail: failureDetail(`git ls-files 失败（exit ${untracked.status ?? 'n/a'}）`, untracked) };
   const files = new Set<string>([
     ...parseNameStatusZ(diff.stdout),
     ...untracked.stdout.split('\0').filter(Boolean),
@@ -211,7 +229,28 @@ export function resolveProposalChangedFiles(root: string, git: GitRunner = defau
   const baseRef = typeof guard.baseRef === 'string' && guard.baseRef ? guard.baseRef : null;
   if (!baseRef) return fail('base_ref_missing', 'guard 缺 baseRef（旧版 CLI 创建的提案）');
   const reachable = git(root, ['cat-file', '-e', `${baseRef}^{commit}`]);
-  if (reachable.error || reachable.status !== 0) return fail('base_ref_unreachable', `baseRef ${baseRef} 不可达`);
+  if (reachable.error || reachable.status !== 0) {
+    // 起点不能解析为本地的提交，或检查它的调用超时：都判不可达，不再执行差异计算（§2.111.4）。
+    // 说明文字按原因分开，只在有证据时才附：超时；已确认本地没有这个对象（不从远端取回）；对象在本地但不是提交。
+    // 其余解析失败（git 配置错误、起点不是对象名、原因未知等）只保留通用的「不可达」。
+    let note = '';
+    if (reachable.timedOut) {
+      note = gitFailureNote({ timedOut: true, timeoutMs: reachable.timeoutMs ?? 0, missingObject: false });
+    } else if (!reachable.error) {
+      // `cat-file -e <对象>` 的退出码是缺失的直接证据：0 = 对象在本地；1 = 本地没有这个对象；其他（如 128）= 别的错误
+      const exists = git(root, ['cat-file', '-e', baseRef]);
+      if (!exists.error && !exists.timedOut) {
+        if (exists.status === 1) {
+          note = GIT_LOCAL_OBJECT_MISSING_NOTE;
+        } else if (exists.status === 0) {
+          const typed = git(root, ['cat-file', '-t', baseRef]);
+          const type = !typed.error && !typed.timedOut && typed.status === 0 ? typed.stdout.trim() : '';
+          if (type && type !== 'commit') note = `本地对象类型为 ${type}，不是提交`;
+        }
+      }
+    }
+    return fail('base_ref_unreachable', note ? `baseRef ${baseRef} 不可达（${note}）` : `baseRef ${baseRef} 不可达`);
+  }
   const changed = collectChangedFiles(root, baseRef, git);
   if (!changed.ok) return fail('diff_failed', changed.detail);
   return { ok: true, guard, slug, proposalDir, baseRef, files: changed.files };
