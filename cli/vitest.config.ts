@@ -1,21 +1,15 @@
 import { defineConfig } from 'vitest/config';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { ELIGIBLE_IDS_ENV, eligibleVitestOptions } from './test/eligible-file-selection';
 
-function eligibleTestPattern(): RegExp | undefined {
-  const raw = process.env.OPENLOGOS_VERIFY_ELIGIBLE_TEST_IDS;
-  if (!raw) return undefined;
-  try {
-    const ids = JSON.parse(raw) as unknown;
-    if (!Array.isArray(ids) || ids.some(id => typeof id !== 'string')) return undefined;
-    const escaped = ids.map(id => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    return escaped.length > 0 ? new RegExp(`\\b(?:${escaped.join('|')})\\b`) : undefined;
-  } catch {
-    return undefined;
-  }
-}
+// 收到 verify 注入的用例清单时只收集可能含清单内用例的测试文件，文件内仍按用例名过滤（enable-layered-verify；
+// spec/test-results.md「测试入口的义务」第 2 条）。规则与回落见 test/eligible-file-selection.ts。
+const eligible = eligibleVitestOptions({ raw: process.env[ELIGIBLE_IDS_ENV], root: dirname(fileURLToPath(import.meta.url)) });
 
 export default defineConfig({
   test: {
-    include: ['test/**/*.test.ts'],
+    include: eligible.include,
     globals: true,
     // 全量运行时 vitest 按 CPU 数并发执行 240+ 个测试文件，单独运行 1～3 秒的端到端用例（真实子进程、多宿主部署）
     // 在负载下会被拖慢 5～10 倍：fix-claude-hook-windows-powershell-fallback 期间三轮全量与两轮 verify 每次都有 1～4 条
@@ -27,7 +21,7 @@ export default defineConfig({
     // 同步重度测试文件累计超过 60s 时 worker RPC（onTaskUpdate）应答被饿死：每条用例后让出一次宏任务
     setupFiles: ['./test/setup-yield-event-loop.ts'],
     reporters: ['default', './test/openlogos-reporter.ts'],
-    testNamePattern: eligibleTestPattern(),
+    testNamePattern: eligible.testNamePattern,
     env: {
       OPENLOGOS_INTERNAL_LEGACY_MERGE_APPLY: '1',
       // S16/S19 安装态测试真实执行 `npm uninstall`（含生产回滚命令原样执行）。npm 默认在

@@ -902,3 +902,11 @@ UT 使用可控夹具验证镜像滞后、入口错误和工作流依赖，保�
 
 - 写账本的用例只操作一次性项目的 `logos/.openlogos-runtime/deployments.jsonl`；失败恢复用例通过测试接缝注入，不依赖文件权限。
 - 全部用例写 OpenLogos reporter，测试名含对应 ID。
+
+## 主链路用例
+
+> 主链路用例是「坏了就等于产品不可用」的核心流程用例（功能规格 §2.109.3）。分层验收开启时，每次提案级验收都执行它们，且不允许偶发。只读取下面的列表项；增删须经提案（enable-layered-verify 首次给出）。
+
+- ST-S19-01 — smoke 全部通过
+- ST-S19-04 — 无需 smoke 时部署完成后允许归档
+- ST-S19-09 — 本地负向 smoke 的 runner 与 reporter 契约自检

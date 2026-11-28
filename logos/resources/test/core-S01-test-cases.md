@@ -314,3 +314,10 @@
 ### 自动化与证据要求
 
 - 每个用例通过 OpenLogos reporter 追加 `logos/resources/verify/test-results.jsonl`，`scenario_id="S01"`；失败不得写 pass。
+
+## 主链路用例
+
+> 主链路用例是「坏了就等于产品不可用」的核心流程用例（功能规格 §2.109.3）。分层验收开启时，每次提案级验收都执行它们，且不允许偶发。只读取下面的列表项；增删须经提案（enable-layered-verify 首次给出）。
+
+- ST-S01-01 — 全新项目初始化
+- ST-S01-02 — 项目已初始化时的处理

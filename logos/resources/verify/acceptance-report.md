@@ -6,25 +6,17 @@
 
 | Metric | Value |
 |--------|-------|
-| Defined cases | 3061 |
+| 级别 / Level | 提案级（分层）/ proposal (layered) |
+| Defined cases | 3065 |
 | Manual cases (excluded) | 0 |
-| Executed cases | 3061 |
-| Passed | 3056 |
+| Executed cases | 3065 |
+| Passed | 3060 |
 | Failed | 0 |
 | Skipped | 5 |
 | Uncovered | 0 |
 | Coverage | 100% |
 | Pass rate | 100% |
 | **Gate 3.5** | **PASS** |
-
-## Slice Verification
-
-- Mode: `final`
-- Attempted slice: `null`
-- Confirmed slices: `slice-01-scope-git-local-only`, `slice-02-release-history-and-install`
-- Eligible tests: 3061
-- Pending tests: 0
-- Final: true
 
 ## Skipped Cases
 
@@ -33,4 +25,22 @@
 - ST-S19-37
 - ST-S19-35
 - ST-S19-36
+
+## 验收范围 / Verification Scope
+
+| 层 / Layer | 用例数 / Cases |
+|---|---|
+| 本提案用例 / Changed | 4 |
+| 受影响用例 / Affected | 3065 |
+| 主链路用例 / Main path | 33（上限 / limit 50） |
+| 合计（提案集合）/ Total | 3065 |
+| 本次执行集合 / Execution | 3065 |
+
+- 受影响场景 / Affected scenarios：S13（delta）
+- 声明状态 / Declaration：`usable`
+- 扩大级别 / Expansion：`full`
+  - `shared_change_declared`：提案声明 shared_change: true
+- 集合外结果行数 / Results outside the set：0
+
+> 提案级通过不等于可以发布；发布前须有该提交的发布级全量结论 / A proposal-level pass does not mean the product can be released; a release-level full run for this commit is required before release
 

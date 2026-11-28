@@ -1736,3 +1736,17 @@
 ### 自动化与证据要求
 
 - 由 `cli/test` 下的自动化测试实现，结果经 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。不需要人参与，无平台限定。
+
+## 主链路用例
+
+> 主链路用例是「坏了就等于产品不可用」的核心流程用例（功能规格 §2.109.3）。分层验收开启时，每次提案级验收都执行它们，且不允许偶发。只读取下面的列表项；增删须经提案（enable-layered-verify 首次给出）。
+
+- ST-S09-01 — 创建提案工作区
+- ST-S09-13 — 只按 delta section 产出可 merge 的 delta
+- ST-S09-26 — launched 提案的 status / next 输出零漂移
+- ST-S09-29 — 纯代码提案端到端无死锁
+- ST-S09-46 — 归档走快路径
+- ST-S09-87 — 现有宿主的 guard 拦截回归
+- ST-S09-110 — 真实 CLI 下 merge 与 change-lint 一致
+- ST-S09-120 — 子目录下的 guard 拦截与放行
+- ST-S09-123 — 链条补齐后归档放行

@@ -500,3 +500,10 @@
 - 由 `cli/test` 下的自动化测试实现，结果经 OpenLogos reporter 写入 `logos/resources/verify/test-results.jsonl`。不需要人参与，无平台限定，不需要额外的环境要求。
 - `slice plan` 拒绝时的读取位置按既有输出合同（`spec/cli-json-output.md`「openlogos slice plan 输出合同」）：归属类违规（`test-slice-test-id-missing` 等）的顶层错误码为 `SLICE_PLAN_UNKNOWN_TEST_ID`、退出码 1，明细在 stderr 错误信封根的 `violations`；只有顶层码为 `SLICE_PLAN_ARTIFACT_INVALID` 时退出码才是 2（功能规格 §2.78.3 的表已按此改正）。本提案不改 CLI 的这一行为。
 - 命令一律以构建后的 CLI 在夹具项目根执行；「与引入前一致」以同一夹具在引入前实现上生成的 golden 比对。
+
+## 主链路用例
+
+> 主链路用例是「坏了就等于产品不可用」的核心流程用例（功能规格 §2.109.3）。分层验收开启时，每次提案级验收都执行它们，且不允许偶发。只读取下面的列表项；增删须经提案（enable-layered-verify 首次给出）。
+
+- ST-S32-01 — merge 后切片规划端到端到放行
+- ST-S32-02 — 纯文档提案跳过切片规划
